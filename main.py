@@ -3,7 +3,7 @@ import json
 import hmac
 import hashlib
 import base64
-from datetime import datetime, timezone
+from datetime import datetime
 from flask import Flask, request, abort
 import requests
 
@@ -14,19 +14,17 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "").rstrip("/")
 SHOPIFY_WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
 DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
-# Example:
-# VENDOR_GROUP_MAP='{"Dean & David Passau": -1001234567890, "Pizza Roma": -1002233445566}'
+# Example JSON: {"Dean & David Passau": -1001234567890, "Pizza Roma": -1002233445566}
 VENDOR_GROUP_MAP = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# --- Helpers: Telegram ---
+# --- Ephemeral state (resets on deploy) ---
+STATE = {}  # key: f"{order_num}|{vendor}" -> {"items":[...], "addr":(name,phone,line1,line2,cityzip), "requested": str, "total": str}
+
+# --- Telegram helpers ---
 def tg_send_message(chat_id, text, reply_markup=None, parse_mode="HTML", disable_web_page_preview=True):
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "disable_web_page_preview": disable_web_page_preview
-    }
+    payload = {"chat_id": chat_id, "text": text, "disable_web_page_preview": disable_web_page_preview}
     if parse_mode:
         payload["parse_mode"] = parse_mode
     if reply_markup:
@@ -38,12 +36,7 @@ def tg_send_message(chat_id, text, reply_markup=None, parse_mode="HTML", disable
         return {"ok": False, "status_code": r.status_code, "text": r.text}
 
 def tg_edit_message(chat_id, message_id, text, reply_markup=None, parse_mode="HTML", disable_web_page_preview=True):
-    payload = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "text": text,
-        "disable_web_page_preview": disable_web_page_preview
-    }
+    payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "disable_web_page_preview": disable_web_page_preview}
     if parse_mode:
         payload["parse_mode"] = parse_mode
     if reply_markup:
@@ -56,48 +49,36 @@ def tg_answer_callback_query(cb_id, text=None, show_alert=False):
         payload["text"] = text
     requests.post(f"{TELEGRAM_API}/answerCallbackQuery", data=payload, timeout=10)
 
-# --- Helpers: Shopify HMAC ---
+# --- Shopify HMAC ---
 def verify_shopify_hmac(req) -> bool:
     h = req.headers.get("X-Shopify-Hmac-Sha256")
     if not h:
         return False
-    digest = hmac.new(
-        SHOPIFY_WEBHOOK_SECRET.encode("utf-8"),
-        msg=req.get_data(),
-        digestmod=hashlib.sha256
-    ).digest()
+    digest = hmac.new(SHOPIFY_WEBHOOK_SECRET.encode("utf-8"), msg=req.get_data(), digestmod=hashlib.sha256).digest()
     calc = base64.b64encode(digest).decode()
     return hmac.compare_digest(calc, h)
 
-# --- Formatting ---
+# --- Formatting helpers ---
 def safe(val, default="—"):
     return val if val not in (None, "", []) else default
 
 def parse_requested_time(payload):
-    """
-    Looks for requested delivery/pickup time in common places:
-    - note_attributes (keys like delivery_time, requested_time, asap=false, etc.)
-    Falls back to 'ASAP' if nothing is found.
-    """
-    try:
-        for na in payload.get("note_attributes", []):
-            k = (na.get("name") or "").lower()
-            v = (na.get("value") or "").strip()
-            if k in ("delivery_time", "requested_time", "requested at", "lieferzeit", "time"):
-                return v or "ASAP"
-        return "ASAP"
-    except Exception:
-        return "ASAP"
+    for na in payload.get("note_attributes", []):
+        k = (na.get("name") or "").lower()
+        v = (na.get("value") or "").strip()
+        if k in ("delivery_time", "requested_time", "requested at", "lieferzeit", "time"):
+            return v or "ASAP"
+    return "ASAP"
 
 def extract_address(addr):
     if not addr:
         return ("", "", "", "", "")
-    name = safe(addr.get("first_name", "")) + " " + safe(addr.get("last_name", ""))
-    phone = safe(addr.get("phone", ""))
-    line1 = safe(addr.get("address1", ""))
-    line2 = safe(addr.get("address2", ""))
+    name = f'{safe(addr.get("first_name",""))} {safe(addr.get("last_name",""))}'.strip()
+    phone = safe(addr.get("phone",""))
+    line1 = safe(addr.get("address1",""))
+    line2 = safe(addr.get("address2",""))
     city_zip = f'{safe(addr.get("zip",""))} {safe(addr.get("city",""))}'.strip()
-    return name.strip(), phone, line1, line2, city_zip
+    return name, phone, line1, line2, city_zip
 
 def euro(amount_str):
     try:
@@ -123,20 +104,13 @@ def lines_for_items(items):
 
 def build_mdg_message(payload, requested_time, address_tuple, vendors_grouped):
     order_num = payload.get("order_number") or payload.get("name") or payload.get("id")
-    created_at = payload.get("created_at") or payload.get("processed_at") or ""
     total = euro(payload.get("total_price", "0"))
     currency = payload.get("currency", "EUR")
     pay_status = safe(payload.get("financial_status", ""))
     tip = euro(payload.get("total_tip_received", "0"))
     name, phone, line1, line2, city_zip = address_tuple
+    vendor_summary = ", ".join([f"{v} ({len(items)})" for v, items in vendors_grouped.items()]) or "—"
 
-    # Vendor summary line: show counts by vendor
-    vendor_summary_parts = []
-    for v, items in vendors_grouped.items():
-        vendor_summary_parts.append(f"{v} ({len(items)})")
-    vendor_summary = ", ".join(vendor_summary_parts) if vendor_summary_parts else "—"
-
-    # Status: 🟥 new
     lines = [
         f"🟥 <b>New order #{order_num}</b>",
         f"🕒 <b>Requested:</b> {requested_time}",
@@ -151,43 +125,36 @@ def build_mdg_message(payload, requested_time, address_tuple, vendors_grouped):
     ]
     return "\n".join(lines)
 
-def build_vendor_card(vendor, items, payload, requested_time, collapsed=True):
-    # collapsed → show short header only; expanded → include item list + address
-    order_num = payload.get("order_number") or payload.get("name") or payload.get("id")
-    total = euro(payload.get("total_price", "0"))
-
-    name, phone, line1, line2, city_zip = extract_address(payload.get("shipping_address") or payload.get("billing_address"))
+def build_vendor_card_text(order_num, vendor, items, addr_tuple, requested_time, total, expanded=False):
+    name, phone, line1, line2, city_zip = addr_tuple
     header = f"🟧 <b>Order #{order_num} — {vendor}</b>\n🕒 {requested_time} • 💶 {total}"
+    if not expanded:
+        return header
+    return (
+        f"{header}\n\n"
+        f"<b>Items</b>\n{lines_for_items(items)}\n\n"
+        f"<b>Customer</b>\n"
+        f"{safe(name)}\n{safe(phone)}\n{safe(line1)} {safe(line2)}\n{safe(city_zip)}"
+    )
 
-    if collapsed:
-        text = header
-    else:
-        text = (
-            f"{header}\n\n"
-            f"<b>Items</b>\n{lines_for_items(items)}\n\n"
-            f"<b>Customer</b>\n"
-            f"{safe(name)}\n{safe(phone)}\n{safe(line1)} {safe(line2)}\n{safe(city_zip)}"
-        )
-
-    # Buttons: Expand/Hide + Works/Later/Will prepare
-    action = "exp" if collapsed else "col"
-    kb = {
+def vendor_keyboard(order_num, vendor, expanded):
+    action = "col" if expanded else "exp"
+    label = "Hide ⬆️" if expanded else "Expand ⬇️"
+    return {
         "inline_keyboard": [
-            [
-                {"text": ("Expand ⬇️" if collapsed else "Hide ⬆️"),
-                 "callback_data": f"{action}:{order_num}:{vendor}"}
-            ],
+            [{"text": label, "callback_data": f"{action}:{order_num}:{vendor}"}],
             [
                 {"text": "Works ✅", "callback_data": f"ack:{order_num}:{vendor}:Works"},
                 {"text": "Later ⏳", "callback_data": f"ack:{order_num}:{vendor}:Later"},
                 {"text": "Will prepare 👩‍🍳", "callback_data": f"ack:{order_num}:{vendor}:Will prepare"},
-            ]
+            ],
         ]
     }
-    return text, kb
 
-# --- Flask routes ---
+def state_key(order_num, vendor):
+    return f"{order_num}|{vendor}"
 
+# --- Routes ---
 @app.route("/")
 def root():
     return "OK", 200
@@ -196,126 +163,87 @@ def root():
 def telegram_updates():
     update = request.get_json(force=True, silent=True) or {}
     cb = update.get("callback_query")
-    if cb:
-        data = cb.get("data", "")
-        cb_id = cb.get("id")
-        msg = cb.get("message", {})
-        chat_id = msg.get("chat", {}).get("id")
-        message_id = msg.get("message_id")
-        from_user = cb.get("from", {})
-        who = from_user.get("first_name", "User")
+    if not cb:
+        return "OK", 200
 
-        # callback_data patterns:
-        # exp:<order>:<vendor>
-        # col:<order>:<vendor>
-        # ack:<order>:<vendor>:<status>
-        try:
-            parts = data.split(":", 3)
-            kind = parts[0]
-            if kind in ("exp", "col"):
-                _, order_num, vendor = parts
-                # There's no DB; we can't retrieve items here unless we re-encode them in callback_data (too long).
-                # So we keep messages minimal on expand and rely on reusing the same text but toggling; to show items,
-                # we encode items compactly in the message text itself at send time for expanded view only.
-                # Implementation detail: we included all info in text when expanded and not when collapsed.
-                # We reconstruct "expanded" by swapping the button and keeping the same text (already contained).
-                # => We’ll simply toggle by looking at whether text contains "<b>Items</b>".
-                current_text = msg.get("text") or msg.get("caption") or ""
-                is_expanded = "<b>Items</b>" in current_text
-                if kind == "exp" and not is_expanded:
-                    # Cannot reconstruct items without payload; so we leave as-is but still flip the button label.
-                    # (If you want true expand with items, see NOTE below to persist last order payload in memory/kv.)
-                    new_kb = {
-                        "inline_keyboard": [
-                            [{"text": "Hide ⬆️", "callback_data": f"col:{order_num}:{vendor}"}],
-                            [
-                                {"text": "Works ✅", "callback_data": f"ack:{order_num}:{vendor}:Works"},
-                                {"text": "Later ⏳", "callback_data": f"ack:{order_num}:{vendor}:Later"},
-                                {"text": "Will prepare 👩‍🍳", "callback_data": f"ack:{order_num}:{vendor}:Will prepare"},
-                            ],
-                        ]
-                    }
-                    tg_edit_message(chat_id, message_id, current_text, reply_markup=new_kb)
-                elif kind == "col" and is_expanded:
-                    new_kb = {
-                        "inline_keyboard": [
-                            [{"text": "Expand ⬇️", "callback_data": f"exp:{order_num}:{vendor}"}],
-                            [
-                                {"text": "Works ✅", "callback_data": f"ack:{order_num}:{vendor}:Works"},
-                                {"text": "Later ⏳", "callback_data": f"ack:{order_num}:{vendor}:Later"},
-                                {"text": "Will prepare 👩‍🍳", "callback_data": f"ack:{order_num}:{vendor}:Will prepare"},
-                            ],
-                        ]
-                    }
-                    tg_edit_message(chat_id, message_id, current_text, reply_markup=new_kb)
-                tg_answer_callback_query(cb_id)
+    data = cb.get("data", "")
+    cb_id = cb.get("id")
+    msg = cb.get("message", {})
+    chat_id = msg.get("chat", {}).get("id")
+    message_id = msg.get("message_id")
+
+    try:
+        parts = data.split(":", 3)
+        kind = parts[0]
+
+        if kind in ("exp", "col"):
+            _, order_num, vendor = parts
+            key = state_key(order_num, vendor)
+            st = STATE.get(key)
+            if not st:
+                tg_answer_callback_query(cb_id, "No details available (state reset).", show_alert=False)
                 return "OK", 200
 
-            if kind == "ack":
-                _, order_num, vendor, status = parts
-                # Post a NEW message to MDG (no edits), per spec
-                tg_send_message(
-                    DISPATCH_MAIN_CHAT_ID,
-                    f"📣 <b>{vendor}</b> responded: <b>{status}</b> for order <b>#{order_num}</b>."
-                )
-                tg_answer_callback_query(cb_id, "Noted.")
-                return "OK", 200
-
-        except Exception:
+            expanded = (kind == "exp")
+            text = build_vendor_card_text(order_num, vendor, st["items"], st["addr"], st["requested"], st["total"], expanded=expanded)
+            kb = vendor_keyboard(order_num, vendor, expanded=expanded)
+            tg_edit_message(chat_id, message_id, text, reply_markup=kb)
             tg_answer_callback_query(cb_id)
             return "OK", 200
 
-    # Ignore regular messages for now; assignment flow will use commands later.
+        if kind == "ack":
+            _, order_num, vendor, status = parts
+            tg_send_message(
+                DISPATCH_MAIN_CHAT_ID,
+                f"📣 <b>{vendor}</b> responded: <b>{status}</b> for order <b>#{order_num}</b>."
+            )
+            tg_answer_callback_query(cb_id, "Noted.")
+            return "OK", 200
+
+    except Exception:
+        tg_answer_callback_query(cb_id)
+        return "OK", 200
+
     return "OK", 200
 
 @app.route("/webhooks/shopify", methods=["POST"])
 def shopify_webhook():
-    # Verify HMAC
     if not verify_shopify_hmac(request):
         abort(401)
 
     payload = request.get_json(force=True, silent=True) or {}
-    # Proof-of-life message already existed; now we format real details
     order_num = payload.get("order_number") or payload.get("name") or payload.get("id")
-
     requested_time = parse_requested_time(payload)
     shipping_addr = payload.get("shipping_address") or payload.get("billing_address")
     addr_tuple = extract_address(shipping_addr)
     vendors_grouped = group_items_by_vendor(payload.get("line_items", []))
+    total = euro(payload.get("total_price", "0"))
 
-    # Send main MDG message (summary)
+    # Main MDG summary
     mdg_text = build_mdg_message(payload, requested_time, addr_tuple, vendors_grouped)
     tg_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text)
 
-    # Send per-vendor cards to vendor groups, when mapped
+    # Per-vendor cards to vendor groups
     for vendor, items in vendors_grouped.items():
         group_id = VENDOR_GROUP_MAP.get(vendor)
         if not group_id:
-            # If no mapping, skip silently (or fallback to MDG if you prefer)
             continue
 
-        # We'll send vendor cards COLLAPSED; for now, "Expand" only toggles the button label (see NOTE).
-        text_collapsed, kb = build_vendor_card(vendor, items, payload, requested_time, collapsed=True)
-        resp = tg_send_message(group_id, text_collapsed, reply_markup=kb)
+        # Store state for expand/hide
+        STATE[state_key(order_num, vendor)] = {
+            "items": items,
+            "addr": addr_tuple,
+            "requested": requested_time,
+            "total": total,
+        }
 
-        # OPTIONAL: If you want true expand-with-items, immediately send an expanded version after,
-        # OR store `payload` in a quick KV by (order_num, vendor) to rebuild later. See NOTE below.
+        # Send collapsed first
+        text = build_vendor_card_text(order_num, vendor, items, addr_tuple, requested_time, total, expanded=False)
+        kb = vendor_keyboard(order_num, vendor, expanded=False)
+        tg_send_message(group_id, text, reply_markup=kb)
 
     return "OK", 200
 
-# --- NOTE on true expand/hide with full details ---
-# To make the Expand button actually reveal items & address by editing the SAME message,
-# you need a tiny state store (KV) to retrieve items on callback.
-# For a stateless MVP on Render, easiest is in-memory dict (resets on deploy).
-# Uncomment below and wire into build_vendor_card + callbacks if you want this now.
-
-# STATE = {}
-# def state_key(order_num, vendor): return f"{order_num}|{vendor}"
-# In /webhooks/shopify after sending message:
-#   STATE[state_key(order_num, vendor)] = {"items": items, "payload": payload, "requested_time": requested_time}
-# Then in callbacks 'exp'/'col', rebuild text using stored STATE.
-
 if __name__ == "__main__":
-    # Render sets PORT; default to 10000 for local
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
