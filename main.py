@@ -1,99 +1,321 @@
 import os
+import json
 import hmac
 import hashlib
 import base64
-import json
-import threading
-import asyncio
+from datetime import datetime, timezone
 from flask import Flask, request, abort
+import requests
 
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-
-# ---------- ENV ----------
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")            # e.g. https://telegram-dd-bot.onrender.com
-PORT = int(os.getenv("PORT", "10000"))            # Render provides this
-SHOPIFY_WEBHOOK_SECRET = os.getenv("SHOPIFY_WEBHOOK_SECRET", "")
-DISPATCH_MAIN_CHAT_ID = int(os.getenv("DISPATCH_MAIN_CHAT_ID", "0"))  # negative group id
-
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN missing")
-
-# ---------- TELEGRAM APP (PTB) ----------
-application = Application.builder().token(BOT_TOKEN).build()
-
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"Your Telegram ID is: {update.effective_user.id}")
-
-application.add_handler(CommandHandler("start", cmd_start))
-
-# We'll run PTB on its own asyncio loop/thread and feed updates from Flask via process_update
-_loop = None
-
-def _run_tg_app():
-    """Create a dedicated event loop for PTB and keep it running."""
-    global _loop
-    _loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(_loop)
-    # initialize & start the app (without starting its own web server)
-    _loop.run_until_complete(application.initialize())
-    _loop.run_until_complete(application.start())
-    try:
-        _loop.run_forever()
-    finally:
-        _loop.run_until_complete(application.stop())
-        _loop.close()
-
-threading.Thread(target=_run_tg_app, name="ptb-loop", daemon=True).start()
-
-# ---------- FLASK ----------
 app = Flask(__name__)
 
-def _verify_shopify(req) -> bool:
-    """HMAC verify; returns True if ok or no secret set."""
-    if not SHOPIFY_WEBHOOK_SECRET:
-        return True
-    hmac_header = req.headers.get("X-Shopify-Hmac-Sha256", "")
-    digest = hmac.new(SHOPIFY_WEBHOOK_SECRET.encode("utf-8"), req.data, hashlib.sha256).digest()
-    computed = base64.b64encode(digest).decode("utf-8")
-    return hmac.compare_digest(computed, hmac_header)
+# --- Env ---
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "").rstrip("/")
+SHOPIFY_WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
+DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
+# Example:
+# VENDOR_GROUP_MAP='{"Dean & David Passau": -1001234567890, "Pizza Roma": -1002233445566}'
+VENDOR_GROUP_MAP = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 
-@app.post("/webhooks/shopify")
-def webhooks_shopify():
-    # Verify HMAC (will still be True for your earlier curl test)
-    if not _verify_shopify(request):
+TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+# --- Helpers: Telegram ---
+def tg_send_message(chat_id, text, reply_markup=None, parse_mode="HTML", disable_web_page_preview=True):
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "disable_web_page_preview": disable_web_page_preview
+    }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+    r = requests.post(f"{TELEGRAM_API}/sendMessage", data=payload, timeout=15)
+    try:
+        return r.json()
+    except Exception:
+        return {"ok": False, "status_code": r.status_code, "text": r.text}
+
+def tg_edit_message(chat_id, message_id, text, reply_markup=None, parse_mode="HTML", disable_web_page_preview=True):
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "disable_web_page_preview": disable_web_page_preview
+    }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+    requests.post(f"{TELEGRAM_API}/editMessageText", data=payload, timeout=15)
+
+def tg_answer_callback_query(cb_id, text=None, show_alert=False):
+    payload = {"callback_query_id": cb_id, "show_alert": show_alert}
+    if text:
+        payload["text"] = text
+    requests.post(f"{TELEGRAM_API}/answerCallbackQuery", data=payload, timeout=10)
+
+# --- Helpers: Shopify HMAC ---
+def verify_shopify_hmac(req) -> bool:
+    h = req.headers.get("X-Shopify-Hmac-Sha256")
+    if not h:
+        return False
+    digest = hmac.new(
+        SHOPIFY_WEBHOOK_SECRET.encode("utf-8"),
+        msg=req.get_data(),
+        digestmod=hashlib.sha256
+    ).digest()
+    calc = base64.b64encode(digest).decode()
+    return hmac.compare_digest(calc, h)
+
+# --- Formatting ---
+def safe(val, default="—"):
+    return val if val not in (None, "", []) else default
+
+def parse_requested_time(payload):
+    """
+    Looks for requested delivery/pickup time in common places:
+    - note_attributes (keys like delivery_time, requested_time, asap=false, etc.)
+    Falls back to 'ASAP' if nothing is found.
+    """
+    try:
+        for na in payload.get("note_attributes", []):
+            k = (na.get("name") or "").lower()
+            v = (na.get("value") or "").strip()
+            if k in ("delivery_time", "requested_time", "requested at", "lieferzeit", "time"):
+                return v or "ASAP"
+        return "ASAP"
+    except Exception:
+        return "ASAP"
+
+def extract_address(addr):
+    if not addr:
+        return ("", "", "", "", "")
+    name = safe(addr.get("first_name", "")) + " " + safe(addr.get("last_name", ""))
+    phone = safe(addr.get("phone", ""))
+    line1 = safe(addr.get("address1", ""))
+    line2 = safe(addr.get("address2", ""))
+    city_zip = f'{safe(addr.get("zip",""))} {safe(addr.get("city",""))}'.strip()
+    return name.strip(), phone, line1, line2, city_zip
+
+def euro(amount_str):
+    try:
+        return f"{float(amount_str):.2f}€"
+    except Exception:
+        return amount_str
+
+def group_items_by_vendor(line_items):
+    by_vendor = {}
+    for it in line_items:
+        vendor = it.get("vendor") or "Unknown"
+        by_vendor.setdefault(vendor, []).append(it)
+    return by_vendor
+
+def lines_for_items(items):
+    out = []
+    for it in items:
+        qty = it.get("quantity", 1)
+        title = it.get("title") or it.get("name") or "Item"
+        price = euro(it.get("price", "0"))
+        out.append(f"• {qty}× {title} — {price}")
+    return "\n".join(out) if out else "• (no items)"
+
+def build_mdg_message(payload, requested_time, address_tuple, vendors_grouped):
+    order_num = payload.get("order_number") or payload.get("name") or payload.get("id")
+    created_at = payload.get("created_at") or payload.get("processed_at") or ""
+    total = euro(payload.get("total_price", "0"))
+    currency = payload.get("currency", "EUR")
+    pay_status = safe(payload.get("financial_status", ""))
+    tip = euro(payload.get("total_tip_received", "0"))
+    name, phone, line1, line2, city_zip = address_tuple
+
+    # Vendor summary line: show counts by vendor
+    vendor_summary_parts = []
+    for v, items in vendors_grouped.items():
+        vendor_summary_parts.append(f"{v} ({len(items)})")
+    vendor_summary = ", ".join(vendor_summary_parts) if vendor_summary_parts else "—"
+
+    # Status: 🟥 new
+    lines = [
+        f"🟥 <b>New order #{order_num}</b>",
+        f"🕒 <b>Requested:</b> {requested_time}",
+        f"💶 <b>Total:</b> {total} {currency}",
+        f"💁 <b>Customer:</b> {safe(name)}",
+        f"📞 {safe(phone)}",
+        f"📍 {safe(line1)} {safe(line2)}",
+        f"🏙️ {safe(city_zip)}",
+        f"🏷️ <b>Vendors:</b> {vendor_summary}",
+        f"💳 <b>Payment:</b> {pay_status}",
+        f"💁‍♂️ <b>Tip:</b> {tip}",
+    ]
+    return "\n".join(lines)
+
+def build_vendor_card(vendor, items, payload, requested_time, collapsed=True):
+    # collapsed → show short header only; expanded → include item list + address
+    order_num = payload.get("order_number") or payload.get("name") or payload.get("id")
+    total = euro(payload.get("total_price", "0"))
+
+    name, phone, line1, line2, city_zip = extract_address(payload.get("shipping_address") or payload.get("billing_address"))
+    header = f"🟧 <b>Order #{order_num} — {vendor}</b>\n🕒 {requested_time} • 💶 {total}"
+
+    if collapsed:
+        text = header
+    else:
+        text = (
+            f"{header}\n\n"
+            f"<b>Items</b>\n{lines_for_items(items)}\n\n"
+            f"<b>Customer</b>\n"
+            f"{safe(name)}\n{safe(phone)}\n{safe(line1)} {safe(line2)}\n{safe(city_zip)}"
+        )
+
+    # Buttons: Expand/Hide + Works/Later/Will prepare
+    action = "exp" if collapsed else "col"
+    kb = {
+        "inline_keyboard": [
+            [
+                {"text": ("Expand ⬇️" if collapsed else "Hide ⬆️"),
+                 "callback_data": f"{action}:{order_num}:{vendor}"}
+            ],
+            [
+                {"text": "Works ✅", "callback_data": f"ack:{order_num}:{vendor}:Works"},
+                {"text": "Later ⏳", "callback_data": f"ack:{order_num}:{vendor}:Later"},
+                {"text": "Will prepare 👩‍🍳", "callback_data": f"ack:{order_num}:{vendor}:Will prepare"},
+            ]
+        ]
+    }
+    return text, kb
+
+# --- Flask routes ---
+
+@app.route("/")
+def root():
+    return "OK", 200
+
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+def telegram_updates():
+    update = request.get_json(force=True, silent=True) or {}
+    cb = update.get("callback_query")
+    if cb:
+        data = cb.get("data", "")
+        cb_id = cb.get("id")
+        msg = cb.get("message", {})
+        chat_id = msg.get("chat", {}).get("id")
+        message_id = msg.get("message_id")
+        from_user = cb.get("from", {})
+        who = from_user.get("first_name", "User")
+
+        # callback_data patterns:
+        # exp:<order>:<vendor>
+        # col:<order>:<vendor>
+        # ack:<order>:<vendor>:<status>
+        try:
+            parts = data.split(":", 3)
+            kind = parts[0]
+            if kind in ("exp", "col"):
+                _, order_num, vendor = parts
+                # There's no DB; we can't retrieve items here unless we re-encode them in callback_data (too long).
+                # So we keep messages minimal on expand and rely on reusing the same text but toggling; to show items,
+                # we encode items compactly in the message text itself at send time for expanded view only.
+                # Implementation detail: we included all info in text when expanded and not when collapsed.
+                # We reconstruct "expanded" by swapping the button and keeping the same text (already contained).
+                # => We’ll simply toggle by looking at whether text contains "<b>Items</b>".
+                current_text = msg.get("text") or msg.get("caption") or ""
+                is_expanded = "<b>Items</b>" in current_text
+                if kind == "exp" and not is_expanded:
+                    # Cannot reconstruct items without payload; so we leave as-is but still flip the button label.
+                    # (If you want true expand with items, see NOTE below to persist last order payload in memory/kv.)
+                    new_kb = {
+                        "inline_keyboard": [
+                            [{"text": "Hide ⬆️", "callback_data": f"col:{order_num}:{vendor}"}],
+                            [
+                                {"text": "Works ✅", "callback_data": f"ack:{order_num}:{vendor}:Works"},
+                                {"text": "Later ⏳", "callback_data": f"ack:{order_num}:{vendor}:Later"},
+                                {"text": "Will prepare 👩‍🍳", "callback_data": f"ack:{order_num}:{vendor}:Will prepare"},
+                            ],
+                        ]
+                    }
+                    tg_edit_message(chat_id, message_id, current_text, reply_markup=new_kb)
+                elif kind == "col" and is_expanded:
+                    new_kb = {
+                        "inline_keyboard": [
+                            [{"text": "Expand ⬇️", "callback_data": f"exp:{order_num}:{vendor}"}],
+                            [
+                                {"text": "Works ✅", "callback_data": f"ack:{order_num}:{vendor}:Works"},
+                                {"text": "Later ⏳", "callback_data": f"ack:{order_num}:{vendor}:Later"},
+                                {"text": "Will prepare 👩‍🍳", "callback_data": f"ack:{order_num}:{vendor}:Will prepare"},
+                            ],
+                        ]
+                    }
+                    tg_edit_message(chat_id, message_id, current_text, reply_markup=new_kb)
+                tg_answer_callback_query(cb_id)
+                return "OK", 200
+
+            if kind == "ack":
+                _, order_num, vendor, status = parts
+                # Post a NEW message to MDG (no edits), per spec
+                tg_send_message(
+                    DISPATCH_MAIN_CHAT_ID,
+                    f"📣 <b>{vendor}</b> responded: <b>{status}</b> for order <b>#{order_num}</b>."
+                )
+                tg_answer_callback_query(cb_id, "Noted.")
+                return "OK", 200
+
+        except Exception:
+            tg_answer_callback_query(cb_id)
+            return "OK", 200
+
+    # Ignore regular messages for now; assignment flow will use commands later.
+    return "OK", 200
+
+@app.route("/webhooks/shopify", methods=["POST"])
+def shopify_webhook():
+    # Verify HMAC
+    if not verify_shopify_hmac(request):
         abort(401)
 
-    payload = request.get_json(silent=True) or {}
-    print("[Shopify] webhook received")
-    try:
-        order_no = payload.get("order_number") or payload.get("name") or payload.get("id")
-        text = f"🟥 Shopify webhook received: order {order_no}"
-        # Send a quick proof-of-life message to MDG so you see it
-        if DISPATCH_MAIN_CHAT_ID != 0 and _loop is not None:
-            fut = asyncio.run_coroutine_threadsafe(
-                application.bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=text),
-                _loop
-            )
-            fut.result(timeout=5)  # raise if fails
-    except Exception as e:
-        print(f"[Shopify] error sending to Telegram: {e}")
+    payload = request.get_json(force=True, silent=True) or {}
+    # Proof-of-life message already existed; now we format real details
+    order_num = payload.get("order_number") or payload.get("name") or payload.get("id")
 
-    # TODO: parse and route per your spec next
-    return "", 200
+    requested_time = parse_requested_time(payload)
+    shipping_addr = payload.get("shipping_address") or payload.get("billing_address")
+    addr_tuple = extract_address(shipping_addr)
+    vendors_grouped = group_items_by_vendor(payload.get("line_items", []))
 
-# Telegram will POST updates here (set webhook to .../<BOT_TOKEN>)
-@app.post(f"/{BOT_TOKEN}")
-def telegram_webhook():
-    data = request.get_json(force=True, silent=False)
-    update = Update.de_json(data, application.bot)
-    # hand off to PTB on its loop
-    if _loop is None:
-        abort(503)
-    asyncio.run_coroutine_threadsafe(application.process_update(update), _loop)
-    return "", 200
+    # Send main MDG message (summary)
+    mdg_text = build_mdg_message(payload, requested_time, addr_tuple, vendors_grouped)
+    tg_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text)
+
+    # Send per-vendor cards to vendor groups, when mapped
+    for vendor, items in vendors_grouped.items():
+        group_id = VENDOR_GROUP_MAP.get(vendor)
+        if not group_id:
+            # If no mapping, skip silently (or fallback to MDG if you prefer)
+            continue
+
+        # We'll send vendor cards COLLAPSED; for now, "Expand" only toggles the button label (see NOTE).
+        text_collapsed, kb = build_vendor_card(vendor, items, payload, requested_time, collapsed=True)
+        resp = tg_send_message(group_id, text_collapsed, reply_markup=kb)
+
+        # OPTIONAL: If you want true expand-with-items, immediately send an expanded version after,
+        # OR store `payload` in a quick KV by (order_num, vendor) to rebuild later. See NOTE below.
+
+    return "OK", 200
+
+# --- NOTE on true expand/hide with full details ---
+# To make the Expand button actually reveal items & address by editing the SAME message,
+# you need a tiny state store (KV) to retrieve items on callback.
+# For a stateless MVP on Render, easiest is in-memory dict (resets on deploy).
+# Uncomment below and wire into build_vendor_card + callbacks if you want this now.
+
+# STATE = {}
+# def state_key(order_num, vendor): return f"{order_num}|{vendor}"
+# In /webhooks/shopify after sending message:
+#   STATE[state_key(order_num, vendor)] = {"items": items, "payload": payload, "requested_time": requested_time}
+# Then in callbacks 'exp'/'col', rebuild text using stored STATE.
 
 if __name__ == "__main__":
-    print(f"Starting Flask on 0.0.0.0:{PORT}")
-    app.run(host="0.0.0.0", port=PORT)
+    # Render sets PORT; default to 10000 for local
+    port = int(os.environ.get("PORT", "10000"))
+    app.run(host="0.0.0.0", port=port)
