@@ -1,418 +1,748 @@
-import os
-import json
-import hmac
-import hashlib
-import base64
+import os, json, hmac, hashlib, base64
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, abort
 import requests
 
 app = Flask(__name__)
 
-# --- Env ---
+# ==== ENV ====
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "").rstrip("/")
+TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 SHOPIFY_WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
 DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
-
-# JSON envs:
-# VENDOR_GROUP_MAP='{"Dean & David Passau": -1001234567890, "Pizza Roma": -1002233445566}'
-# COURIER_MAP='{"Bee 1": 111111111, "Bee 2": 222222222}'
-# VENDOR_KEYWORDS_MAP='{"Dean & David Passau":["spätzle","bergkäse"], "Pizza Roma":["pizza","margherita","roma"]}'
 VENDOR_GROUP_MAP = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
-COURIER_MAP = json.loads(os.environ.get("COURIER_MAP", "{}"))
-VENDOR_KEYWORDS_MAP = json.loads(os.environ.get("VENDOR_KEYWORDS_MAP", "{}"))
-FALLBACK_VENDOR_GROUP_ID = os.environ.get("FALLBACK_VENDOR_GROUP_ID")  # optional; int-like
+COURIER_MAP = json.loads(os.environ.get("COURIER_MAP", "{}"))  # {"Bee 1": 111..., "Bee 2": 222...}
+RESTAURANT_CONTACTS = json.loads(os.environ.get("RESTAURANT_CONTACTS", "{}"))  # {"Julis Spätzlerei": {"telegram":"@julischef","phone":"+49..."}}
+TIMEZONE = os.environ.get("TIMEZONE", "Europe/Prague")  # label only; Shopify timestamps carry offset
 
-TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+# ==== STATE (ephemeral; resets on deploy) ====
+ORDERS = {}   # order_key -> dict with parsed order (see cache_order)
+RECENT = []   # list of (ts_utc, order_key)
+VENDOR_STATE = {}  # f"{order_key}|{vendor}" -> {"agreed_time": "HH:MM", "last_request": "...", "pickup": bool}
+EXPECT_ISSUE_MSG = {}  # f"{chat_id}|{order_key}" -> {"kind": "tech"|"other"}
 
-# --- Ephemeral state (resets on deploy) ---
-# For vendor expand/hide and minimal order context (assign/time)
-STATE = {}        # key: f"{order}|{vendor}" -> {"items":[...], "addr":(name,phone,line1,line2,cityzip), "requested": str, "total": str}
-ORDER_CACHE = {}  # key: str(order) -> {"requested": str, "addr": tuple, "total": str, "vendors": dict(vendor->count)}
+# ==== HELPERS: Telegram ====
+def tg_send(chat_id, text, reply_markup=None, parse_mode="HTML"):
+    data = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+    if parse_mode: data["parse_mode"] = parse_mode
+    if reply_markup: data["reply_markup"] = json.dumps(reply_markup)
+    r = requests.post(f"{TELEGRAM_API}/sendMessage", data=data, timeout=15)
+    try: return r.json()
+    except Exception: return {"ok": False, "status": r.status_code, "text": r.text}
 
-# --- Telegram helpers ---
-def tg_send_message(chat_id, text, reply_markup=None, parse_mode="HTML", disable_web_page_preview=True):
-    payload = {"chat_id": chat_id, "text": text, "disable_web_page_preview": disable_web_page_preview}
-    if parse_mode:
-        payload["parse_mode"] = parse_mode
-    if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
-    r = requests.post(f"{TELEGRAM_API}/sendMessage", data=payload, timeout=15)
-    try:
-        return r.json()
-    except Exception:
-        return {"ok": False, "status_code": r.status_code, "text": r.text}
+def tg_edit(chat_id, message_id, text, reply_markup=None, parse_mode="HTML"):
+    data = {"chat_id": chat_id, "message_id": message_id, "text": text, "disable_web_page_preview": True}
+    if parse_mode: data["parse_mode"] = parse_mode
+    if reply_markup: data["reply_markup"] = json.dumps(reply_markup)
+    requests.post(f"{TELEGRAM_API}/editMessageText", data=data, timeout=15)
 
-def tg_edit_message(chat_id, message_id, text, reply_markup=None, parse_mode="HTML", disable_web_page_preview=True):
-    payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "disable_web_page_preview": disable_web_page_preview}
-    if parse_mode:
-        payload["parse_mode"] = parse_mode
-    if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
-    requests.post(f"{TELEGRAM_API}/editMessageText", data=payload, timeout=15)
+def tg_answer(cb_id, text=None, alert=False):
+    data = {"callback_query_id": cb_id, "show_alert": alert}
+    if text: data["text"] = text
+    requests.post(f"{TELEGRAM_API}/answerCallbackQuery", data=data, timeout=10)
 
-def tg_answer_callback_query(cb_id, text=None, show_alert=False):
-    payload = {"callback_query_id": cb_id, "show_alert": show_alert}
-    if text:
-        payload["text"] = text
-    requests.post(f"{TELEGRAM_API}/answerCallbackQuery", data=payload, timeout=10)
-
-# --- Shopify HMAC ---
+# ==== HELPERS: Shopify HMAC ====
 def verify_shopify_hmac(req) -> bool:
-    h = req.headers.get("X-Shopify-Hmac-Sha256")
-    if not h:
-        return False
-    digest = hmac.new(SHOPIFY_WEBHOOK_SECRET.encode("utf-8"), msg=req.get_data(), digestmod=hashlib.sha256).digest()
+    hdr = req.headers.get("X-Shopify-Hmac-Sha256")
+    if not hdr: return False
+    digest = hmac.new(SHOPIFY_WEBHOOK_SECRET.encode(), msg=req.get_data(), digestmod=hashlib.sha256).digest()
     calc = base64.b64encode(digest).decode()
-    return hmac.compare_digest(calc, h)
+    return hmac.compare_digest(calc, hdr)
 
-# --- Formatting helpers ---
-def safe(val, default="—"):
-    return val if val not in (None, "", []) else default
+# ==== UTILS ====
+def safe(x, default=""):
+    return x if x not in (None, "", []) else default
 
-def parse_requested_time(payload):
-    for na in payload.get("note_attributes", []):
-        k = (na.get("name") or "").lower()
-        v = (na.get("value") or "").strip()
-        if k in ("delivery_time", "requested_time", "requested at", "lieferzeit", "time"):
-            return v or "ASAP"
-    return "ASAP"
+def parse_iso(ts: str) -> datetime:
+    # Shopify sends e.g. '2025-08-13T11:53:43+02:00'
+    try:
+        return datetime.fromisoformat(ts)
+    except Exception:
+        return datetime.now(timezone.utc)
 
-def extract_address(addr):
-    if not addr:
-        return ("", "", "", "", "")
-    name = f'{safe(addr.get("first_name",""))} {safe(addr.get("last_name",""))}'.strip()
-    phone = safe(addr.get("phone",""))
-    line1 = safe(addr.get("address1",""))
-    line2 = safe(addr.get("address2",""))
-    city_zip = f'{safe(addr.get("zip",""))} {safe(addr.get("city",""))}'.strip()
-    return name, phone, line1, line2, city_zip
+def last2_digits(order_number) -> str:
+    try:
+        n = int(order_number)
+        return f"{n%100:02d}"
+    except Exception:
+        s = str(order_number)
+        return s[-2:] if len(s) >= 2 else s
 
 def fmt_total(amount_str, currency):
     try:
         val = float(amount_str)
     except Exception:
         return f"{amount_str} {currency}" if currency else str(amount_str)
-    if currency == "EUR":
-        return f"{val:.2f}€"
+    if currency == "EUR": return f"{val:.2f}€"
     return f"{val:.2f} {currency}"
 
-def euro(amount_str):
-    try:
-        return f"{float(amount_str):.2f}€"
-    except Exception:
-        return amount_str
+def map_payment_shopify(fin_status, gateways:list):
+    # Spec: show "Paid" / "Cash"; treat Sofortüberweisung as Paid.
+    gws = [g.lower() for g in (gateways or [])]
+    if any("cash" in g or "cod" in g for g in gws): return "Cash"
+    if any("sofort" in g for g in gws): return "Paid"
+    if str(fin_status).lower() in ("paid","partially_paid","authorized","captured"): return "Paid"
+    return "Paid" if gws else safe(fin_status, "Paid")
+
+def is_pickup(payload):
+    # Shopify: user said "Shipping method" will say "Selbstabholung in <Restaurant>"
+    for sl in payload.get("shipping_lines", []):
+        title = (sl.get("title") or "").lower()
+        if "selbstabholung" in title or "abholung" in title:
+            return True
+    return False
+
+def address_lines(addr):
+    if not addr: return ("","")
+    street = " ".join([safe(addr.get("address1"), ""), safe(addr.get("address2"), "")]).strip()
+    zip_only = safe(addr.get("zip"), "")
+    # MDG requires NO city; Vendor expanded can show city
+    city = safe(addr.get("city"), "")
+    return (street, f"{zip_only} {city}".strip())
 
 def vendor_from_line_item(it):
-    """Resolve vendor per our rules."""
-    # 1) properties Vendor/Restaurant
+    # Prefer Shopify line_item.vendor, else try properties keys
+    if it.get("vendor"): return it["vendor"]
     props = it.get("properties") or []
     for p in props:
-        key = (p.get("name") or p.get("key") or "").strip().lower()
-        val = (p.get("value") or "").strip()
-        if key in ("vendor", "restaurant", "vendor_name", "restaurant_name"):
-            if val:
-                return val
-    # 2) line_item.vendor
-    if it.get("vendor"):
-        return it["vendor"]
-    # 3) keyword fallback (title/SKU match)
-    title = (it.get("title") or it.get("name") or "").lower()
-    sku = (it.get("sku") or "").lower()
-    hay = f"{title} {sku}"
-    for vendor, words in VENDOR_KEYWORDS_MAP.items():
-        for w in words:
-            if isinstance(w, str) and w.lower() in hay:
-                return vendor
-    # 4) unknown
+        k = (p.get("name") or p.get("key") or "").strip().lower()
+        v = (p.get("value") or "").strip()
+        if k in ("vendor","restaurant","vendor_name","restaurant_name") and v:
+            return v
     return "Unknown"
 
-def group_items_by_vendor(line_items):
-    by_vendor = {}
-    for it in line_items or []:
-        vendor = vendor_from_line_item(it)
-        by_vendor.setdefault(vendor, []).append(it)
-    return by_vendor
+def group_items_by_vendor(items):
+    by = {}
+    for it in items or []:
+        v = vendor_from_line_item(it)
+        by.setdefault(v, []).append(it)
+    return by
 
-def lines_for_items(items):
+def lines_products(items):
     out = []
     for it in items:
         qty = it.get("quantity", 1)
         title = it.get("title") or it.get("name") or "Item"
-        price = euro(it.get("price", "0"))
-        out.append(f"• {qty}× {title} — {price}")
+        out.append(f"• {qty}× {title}")
     return "\n".join(out) if out else "• (no items)"
 
-def vendor_summary_text(vendors_grouped):
-    return ", ".join([f"{v} ({len(items)})" for v, items in vendors_grouped.items()]) or "—"
+def per_vendor_counts(vendors_dict):
+    parts = []
+    for v, items in vendors_dict.items():
+        parts.append(f"{v} {len(items)}")
+    return " · ".join(parts) if parts else "0"
 
-def build_mdg_message(payload, requested_time, address_tuple, vendors_grouped):
-    order_num = payload.get("order_number") or payload.get("name") or payload.get("id")
-    total = fmt_total(payload.get("total_price", "0"), payload.get("currency", "EUR"))
-    pay_status = safe(payload.get("financial_status", ""))
-    tip_raw = payload.get("total_tip_received", "0")
-    name, phone, line1, line2, city_zip = address_tuple
+def gmaps_link(street, city_zip_full):
+    q = (street + " " + city_zip_full).strip().replace(" ", "+")
+    return f"https://maps.google.com/?q={q}"
 
-    lines = [
-        f"🟥 <b>New order #{order_num}</b>",
-        f"🕒 <b>Requested:</b> {requested_time}",
-        f"💶 <b>Total:</b> {total}",
-    ]
-    if name or phone:
-        lines += [f"💁 <b>Customer:</b> {safe(name)}", f"📞 {safe(phone)}"]
-    if line1 or line2 or city_zip:
-        lines += [f"📍 {(' '.join([safe(line1,''), safe(line2,'')])).strip()}", f"🏙️ {safe(city_zip)}"]
-    lines += [
-        f"🏷️ <b>Vendors:</b> {vendor_summary_text(vendors_grouped)}",
-        f"💳 <b>Payment:</b> {pay_status}",
-    ]
-    try:
-        if float(tip_raw) > 0:
-            lines.append(f"💁‍♂️ <b>Tip:</b> {euro(tip_raw)}")
-    except Exception:
-        pass
-    return "\n".join([ln for ln in lines if ln.strip()])
+def tel_link(number):
+    num = number.strip().replace(" ", "")
+    return f"tel:{num}" if num else ""
 
-def build_vendor_card_text(order_num, vendor, items, addr_tuple, requested_time, total, expanded=False):
-    name, phone, line1, line2, city_zip = addr_tuple
-    header = f"🟧 <b>Order #{order_num} — {vendor}</b>\n🕒 {requested_time} • 💶 {total}"
-    if not expanded:
-        return header
-    detail = []
-    detail.append(f"<b>Items</b>\n{lines_for_items(items)}")
-    cust_lines = [safe(name)]
-    if phone: cust_lines.append(phone)
-    addr_line = " ".join([safe(line1,""), safe(line2,"")]).strip()
-    if addr_line: cust_lines.append(addr_line)
-    if city_zip: cust_lines.append(city_zip)
-    detail.append(f"<b>Customer</b>\n" + "\n".join([ln for ln in cust_lines if ln]))
-    return f"{header}\n\n" + "\n\n".join(detail)
-
-def vendor_keyboard(order_num, vendor, expanded):
-    action = "col" if expanded else "exp"
-    label = "Hide ⬆️" if expanded else "Expand ⬇️"
+# ==== KEYBOARDS ====
+def mdg_actions_kb(order_key):
     return {
-        "inline_keyboard": [
-            [{"text": label, "callback_data": f"{action}:{order_num}:{vendor}"}],
-            [
-                {"text": "Works ✅", "callback_data": f"ack:{order_num}:{vendor}:Works"},
-                {"text": "Later ⏳", "callback_data": f"ack:{order_num}:{vendor}:Later"},
-                {"text": "Will prepare 👩‍🍳", "callback_data": f"ack:{order_num}:{vendor}:Will prepare"},
-            ],
+        "inline_keyboard":[
+            [{"text":"ASAP","callback_data":f"req_asap:{order_key}"},
+             {"text":"TIME","callback_data":f"req_time:{order_key}"},
+             {"text":"EXACT TIME","callback_data":f"req_exact:{order_key}"},
+             {"text":"SAME TIME AS","callback_data":f"req_same:{order_key}"}]
         ]
     }
 
-def assign_menu_button(order_num):
-    return {"inline_keyboard": [[{"text": "🧩 Assign", "callback_data": f"assignmenu:{order_num}"}],
-                                [{"text": "⏱ ASAP", "callback_data": f"time:{order_num}:asap"},
-                                 {"text": "+10", "callback_data": f"time:{order_num}:+10"},
-                                 {"text": "+20", "callback_data": f"time:{order_num}:+20"},
-                                 {"text": "Same time as", "callback_data": f"time:{order_num}:same"}]]}
+def vendor_summary_kb(order_key, vendor, expanded=False):
+    return {
+        "inline_keyboard":[
+            [{"text":"◂ Hide" if expanded else "Details ▸", "callback_data": f"toggle:{order_key}:{vendor}:{'1' if not expanded else '0'}"}]
+        ]
+    }
 
-def assign_keyboard(order_num):
-    rows, row = [], []
-    for i, (name, uid) in enumerate(COURIER_MAP.items()):
-        row.append({"text": name, "callback_data": f"assign:{order_num}:{name}"})
-        if (i + 1) % 3 == 0:
-            rows.append(row); row = []
-    if row: rows.append(row)
-    if not rows:
-        rows = [[{"text": "No couriers configured", "callback_data": "noop"}]]
+def vendor_time_request_kb(order_key, vendor, base_time:datetime=None, requested_label=None, mode="asap"):
+    # mode="asap" -> Will prepare at ... ; mode="time" -> Works / Later at ...
+    rows = []
+    if mode == "asap":
+        # now +5/+10/+15/+20 (clock labels)
+        now = datetime.now().astimezone()
+        options = [now + timedelta(minutes=m) for m in (5,10,15,20)]
+        row=[]
+        for t in options:
+            lbl = t.strftime("%H:%M")
+            row.append({"text": lbl, "callback_data": f"rest_will:{order_key}:{vendor}:{lbl}"})
+        rows.append(row)
+        rows.append([{"text":"Pick time…","callback_data":f"rest_will_pick:{order_key}:{vendor}"}])
+    else:
+        # specific requested time — show Works OR Later at +5/+10/+15/+20
+        row1 = [{"text":"Works 👍","callback_data":f"rest_works:{order_key}:{vendor}:{requested_label or ''}"}]
+        rows.append(row1)
+        if base_time:
+            later_opts = [base_time + timedelta(minutes=m) for m in (5,10,15,20)]
+            row=[]
+            for t in later_opts:
+                lbl = t.strftime("%H:%M")
+                row.append({"text": lbl, "callback_data": f"rest_later:{order_key}:{vendor}:{lbl}"}])
+            rows.append(row)
+        rows.append([{"text":"Pick time…","callback_data":f"rest_later_pick:{order_key}:{vendor}"}])
+    # Something is wrong menu
+    rows.append([{"text":"Something is wrong ⚠️","callback_data":f"rest_wrong:{order_key}:{vendor}"}])
     return {"inline_keyboard": rows}
 
-def courier_dm_text(order_num, requested, addr_tuple, total, vendors_grouped):
-    name, phone, line1, line2, city_zip = addr_tuple
-    vendors_line = vendor_summary_text({v: [None]*c for v, c in vendors_grouped.items()})
-    cust_lines = [safe(name)]
-    if phone: cust_lines.append(phone)
-    addr_line = " ".join([safe(line1,""), safe(line2,"")]).strip()
-    if addr_line: cust_lines.append(addr_line)
-    if city_zip: cust_lines.append(city_zip)
-    return (
-        f"🟨 <b>New assignment — Order #{order_num}</b>\n"
-        f"🕒 {requested} • 💶 {total}\n"
-        f"🏷️ {vendors_line}\n\n"
-        f"<b>Customer</b>\n" + "\n".join([ln for ln in cust_lines if ln])
-    )
+def wrong_menu_kb(order_key,vendor):
+    return {"inline_keyboard":[
+        [{"text":"Products not available","callback_data":f"wrong_na:{order_key}:{vendor}"}],
+        [{"text":"Order is canceled","callback_data":f"wrong_cancel:{order_key}:{vendor}"}],
+        [{"text":"Technical issue","callback_data":f"wrong_tech:{order_key}:{vendor}"}],
+        [{"text":"Something else","callback_data":f"wrong_other:{order_key}:{vendor}"}],
+    ]}
 
-def courier_dm_keyboard(order_num, courier_name):
-    return {
-        "inline_keyboard": [
-            [{"text": "🟩 Delivered", "callback_data": f"deliv:{order_num}:{courier_name}"}],
-            [
-                {"text": "🟧 Delay +10m", "callback_data": f"dly:{order_num}:{courier_name}:10"},
-                {"text": "🟧 Delay +20m", "callback_data": f"dly:{order_num}:{courier_name}:20"},
-            ]
-        ]
+def delay_menu_kb(order_key, vendor, agreed_label):
+    # agreed +5/10/15/20 and time picker
+    try:
+        base = datetime.now().astimezone()
+        # we use now + offsets; text says "agreed time + 5…", but only label matters
+        opts = [base + timedelta(minutes=m) for m in (5,10,15,20)]
+    except Exception:
+        opts = []
+    rows=[]
+    row=[]
+    for t in opts:
+        row.append({"text": t.strftime("%H:%M"), "callback_data": f"rest_delay:{order_key}:{vendor}:{t.strftime('%H:%M')}"})
+    if row: rows.append(row)
+    rows.append([{"text":"Pick time…","callback_data":f"rest_delay_pick:{order_key}:{vendor}"}])
+    return {"inline_keyboard": rows}
+
+def assign_menu_kb(order_key):
+    # shown under the MDG confirmation message
+    rows=[]
+    rows.append([{"text":"Assign to myself","callback_data":f"assign_self:{order_key}"}])
+    # "Assign to…" others (Bee 1/2/3 first per your naming if present)
+    names = list(COURIER_MAP.keys())
+    # Put Bee 1/2/3 first if present
+    for bee in ["Bee 1","Bee 2","Bee 3"]:
+        if bee in names:
+            names.remove(bee); names.insert(0, bee)
+    row=[]
+    for i,name in enumerate(names):
+        row.append({"text":name, "callback_data":f"assign_to:{order_key}:{name}"})
+        if (i+1)%3==0:
+            rows.append(row); row=[]
+    if row: rows.append(row)
+    return {"inline_keyboard": rows}
+
+def time_quick_choices_kb(order_key):
+    # 10-min intervals from now+10 to now+60
+    now = datetime.now().astimezone()
+    base = now + timedelta(minutes=10 - (now.minute % 10))
+    times = [base + timedelta(minutes=10*i) for i in range(0,6)]
+    row=[]
+    rows=[]
+    for i,t in enumerate(times):
+        row.append({"text": t.strftime("%H:%M"), "callback_data": f"req_time_sel:{order_key}:{t.strftime('%H:%M')}"})
+        if (i+1)%3==0:
+            rows.append(row); row=[]
+    if row: rows.append(row)
+    return {"inline_keyboard": rows}
+
+def exact_time_hours_kb(order_key):
+    # Hours from current hour to 23
+    now = datetime.now().astimezone()
+    rows=[]
+    row=[]
+    for h in range(now.hour, 24):
+        row.append({"text": f"{h:02d}", "callback_data": f"exact_h:{order_key}:{h:02d}"})
+        if len(row)==6:
+            rows.append(row); row=[]
+    if row: rows.append(row)
+    return {"inline_keyboard": rows}
+
+def exact_time_minutes_kb(order_key, hour):
+    # Minutes in steps of 5 to end of day
+    rows=[]
+    row=[]
+    for m in range(0,60,5):
+        row.append({"text": f"{m:02d}", "callback_data": f"exact_m:{order_key}:{hour}:{m:02d}"})
+        if len(row)==6:
+            rows.append(row); row=[]
+    if row: rows.append(row)
+    return {"inline_keyboard": rows}
+
+def same_time_list_kb():
+    # list recent orders (≤1h) by Shopify order number (full or last2)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    items=[]
+    for ts, ok in RECENT[::-1]:
+        if ts < cutoff: break
+        od = ORDERS.get(ok, {})
+        if od.get("source") != "shopify": continue
+        label = f"#{od.get('order_last2','??')}"  # per spec
+        items.append({"text": label, "callback_data": f"same_pick:{ok}"})
+        if len(items)>=12: break
+    if not items:
+        return {"inline_keyboard":[[{"text":"No recent orders","callback_data":"noop"}]]}
+    # 3 per row
+    rows=[]; row=[]
+    for i,btn in enumerate(items):
+        row.append(btn)
+        if (i+1)%3==0:
+            rows.append(row); row=[]
+    if row: rows.append(row)
+    return {"inline_keyboard": rows}
+
+# ==== CORE RENDERING ====
+def mdg_message_for_shopify(od):
+    # Title: "dishbee + Restaurant(s)"
+    title = "dishbee + " + ", ".join(od["vendors"].keys())
+    lines = [f"<b>{title}</b>"]
+    # Order number last two
+    lines.append(f"Order: #{od['order_last2']}")
+    # Address (bold, no city)
+    lines.append(f"<b>{od['street']}</b>")
+    lines.append(f"<b>{od['zip']}</b>")
+    # Note (if any)
+    if od["note"]:
+        lines.append(f"📝 {od['note']}")
+    # Tips (if any)
+    if od["tip_val"] > 0:
+        lines.append(f"💁‍♂️ Tip: {od['tip_fmt']}")
+    # Payment method
+    lines.append(f"💳 Payment: {od['payment_label']}")
+    # Products (with vendor headings if multi-vendor)
+    if len(od["vendors"]) > 1:
+        for v, items in od["vendors"].items():
+            lines.append(f"<b>{v}</b>")
+            lines.append(lines_products(items))
+    else:
+        v = next(iter(od["vendors"]))
+        lines.append(lines_products(od["vendors"][v]))
+    # Full name
+    if od["cust_name"]:
+        lines.append(f"👤 {od['cust_name']}")
+    return "\n".join(lines)
+
+def vendor_summary_text(od, vendor):
+    # Short summary: order number (2 digits), ordered products (this vendor), note
+    items = od["vendors"].get(vendor, [])
+    parts = [f"#{od['order_last2']}"]
+    prods = lines_products(items)
+    if prods: parts.append(prods)
+    if od["note"]: parts.append(f"📝 {od['note']}")
+    # Pickup notice
+    if od["pickup"]:
+        parts.insert(0, "<b>Order for Selbstabholung</b>\nPlease call the customer and arrange the pickup time on this number: " + (od["cust_phone"] or "—"))
+    return "\n".join(parts)
+
+def vendor_details_text(od, vendor):
+    # Expanded details: name, phone, time placed, address (with city)
+    dt = od["created_local"]
+    lines = []
+    lines.append(f"<b>Customer</b>\n{od['cust_name'] or '—'}")
+    if od["cust_phone"]: lines.append(od["cust_phone"])
+    lines.append(f"🕒 Placed: {dt.strftime('%H:%M')}")
+    # full address (street + city+zip)
+    lines.append(od["street"])
+    lines.append(od["zip_city"])
+    return "\n".join(lines)
+
+# ==== CACHING ====
+def cache_order(payload):
+    src = "shopify"
+    order_number = payload.get("order_number") or payload.get("name") or payload.get("id")
+    order_key = f"shopify:{order_number}"
+    last2 = last2_digits(order_number)
+    created = parse_iso(payload.get("created_at") or payload.get("processed_at") or datetime.now().astimezone().isoformat())
+    created_local = created.astimezone()
+    shipping_addr = payload.get("shipping_address") or payload.get("billing_address") or {}
+    street, zip_city = address_lines(shipping_addr)
+    name = (" ".join([safe(shipping_addr.get("first_name")), safe(shipping_addr.get("last_name"))])).strip()
+    phone = safe(shipping_addr.get("phone"))
+    vendors = group_items_by_vendor(payload.get("line_items", []))
+    tip_raw = safe(payload.get("total_tip_received","0"))
+    try: tip_val = float(tip_raw)
+    except: tip_val = 0.0
+    tip_fmt = fmt_total(tip_raw, payload.get("currency","EUR"))
+    pay_label = map_payment_shopify(payload.get("financial_status"), payload.get("payment_gateway_names"))
+    pickup = is_pickup(payload)
+
+    od = {
+        "source": src,
+        "order_number": order_number,
+        "order_key": order_key,
+        "order_last2": last2,
+        "created_local": created_local,
+        "street": street,
+        "zip": (shipping_addr.get("zip") or ""),
+        "zip_city": zip_city,
+        "cust_name": name,
+        "cust_phone": phone,
+        "vendors": vendors,
+        "note": safe(payload.get("note")),
+        "tip_val": tip_val,
+        "tip_fmt": tip_fmt,
+        "payment_label": pay_label,
+        "pickup": pickup,
+        "currency": payload.get("currency","EUR"),
+        "total_fmt": fmt_total(payload.get("total_price","0"), payload.get("currency","EUR")),
     }
+    ORDERS[order_key] = od
+    RECENT.append((datetime.now(timezone.utc), order_key))
+    return od
 
-def state_key(order_num, vendor):
-    return f"{order_num}|{vendor}"
-
-def broadcast_to_vendors(order_num, text):
-    info = ORDER_CACHE.get(str(order_num)) or {}
-    vendors = info.get("vendors", {})
-    for vendor in vendors.keys():
-        gid = VENDOR_GROUP_MAP.get(vendor)
-        if gid:
-            tg_send_message(gid, text)
-
-# --- Routes ---
+# ==== ROUTES ====
 @app.route("/")
-def root():
+def root(): return "OK", 200
+
+@app.route("/webhooks/shopify", methods=["POST"])
+def shopify_webhook():
+    if not verify_shopify_hmac(request): abort(401)
+    payload = request.get_json(force=True, silent=True) or {}
+    od = cache_order(payload)
+
+    # 1) MDG summary exactly per spec (+ MDG action buttons inline)
+    mdg_text = mdg_message_for_shopify(od)
+    tg_send(DISPATCH_MAIN_CHAT_ID, mdg_text, reply_markup=mdg_actions_kb(od["order_key"]))
+
+    # 2) Forward vendor-scoped summaries to restaurant groups (no time buttons yet)
+    for vendor, items in od["vendors"].items():
+        gid = VENDOR_GROUP_MAP.get(vendor)
+        if not gid:  # if unmapped, skip silently
+            continue
+        summary = vendor_summary_text(od, vendor)
+        resp = tg_send(gid, summary, reply_markup=vendor_summary_kb(od["order_key"], vendor, expanded=False))
+        # store per-vendor state
+        VENDOR_STATE[f"{od['order_key']}|{vendor}"] = {"agreed_time": None, "last_request": None, "pickup": od["pickup"]}
     return "OK", 200
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def telegram_updates():
-    update = request.get_json(force=True, silent=True) or {}
-    msg_obj = update.get("message")
-    cb = update.get("callback_query")
+    upd = request.get_json(force=True, silent=True) or {}
+    msg = upd.get("message")
+    cb = upd.get("callback_query")
 
-    # Simple /getid
-    if msg_obj and isinstance(msg_obj.get("text"), str) and msg_obj["text"].strip() == "/getid":
-        chat_id = msg_obj["chat"]["id"]
-        tg_send_message(chat_id, f"Your ID is: {chat_id}")
+    # /getid convenience
+    if msg and isinstance(msg.get("text"), str) and msg["text"].strip()=="/getid":
+        tg_send(msg["chat"]["id"], f"Your ID is: {msg['chat']['id']}")
+        return "OK", 200
+
+    # Capture vendor free-text after wrong_tech / wrong_other
+    if msg and msg.get("reply_to_message"):
+        chat_id = msg["chat"]["id"]
+        # Try to detect order_key we are waiting for
+        for k in list(EXPECT_ISSUE_MSG.keys()):
+            if k.startswith(f"{chat_id}|"):
+                info = EXPECT_ISSUE_MSG.pop(k, None)
+                if info:
+                    order_key = k.split("|",1)[1]
+                    tg_send(DISPATCH_MAIN_CHAT_ID, f"⚠️ Vendor message for {order_key}:\n{msg.get('text','(non-text)')}")
+                    break
         return "OK", 200
 
     if not cb:
         return "OK", 200
 
-    data = cb.get("data", "")
+    data = cb.get("data","")
     cb_id = cb.get("id")
-    msg = cb.get("message", {})
-    chat_id = msg.get("chat", {}).get("id")
-    message_id = msg.get("message_id")
+    m = cb.get("message",{})
+    chat_id = m.get("chat",{}).get("id")
+    message_id = m.get("message_id")
 
-    try:
-        parts = data.split(":", 4)
-        kind = parts[0]
+    parts = data.split(":")
+    kind = parts[0]
 
-        # Vendor expand/collapse
-        if kind in ("exp", "col"):
-            _, order_num, vendor = parts[:3]
-            key = state_key(order_num, vendor)
-            st = STATE.get(key)
-            if not st:
-                tg_answer_callback_query(cb_id, "No details (state reset).")
-                return "OK", 200
-            expanded = (kind == "exp")
-            text = build_vendor_card_text(order_num, vendor, st["items"], st["addr"], st["requested"], st["total"], expanded=expanded)
-            kb = vendor_keyboard(order_num, vendor, expanded=expanded)
-            tg_edit_message(chat_id, message_id, text, reply_markup=kb)
-            tg_answer_callback_query(cb_id)
-            return "OK", 200
-
-        # Vendor reply → post to MDG as new message
-        if kind == "ack":
-            _, order_num, vendor, status = parts[:4]
-            tg_send_message(DISPATCH_MAIN_CHAT_ID, f"📣 <b>{vendor}</b> responded: <b>{status}</b> for order <b>#{order_num}</b>.")
-            tg_answer_callback_query(cb_id, "Noted.")
-            return "OK", 200
-
-        # Open assign menu (separate message; we never edit the summary text)
-        if kind == "assignmenu":
-            _, order_num = parts[:2]
-            tg_send_message(DISPATCH_MAIN_CHAT_ID, f"🧩 Assign order <b>#{order_num}</b>:", reply_markup=assign_keyboard(str(order_num)))
-            tg_answer_callback_query(cb_id)
-            return "OK", 200
-
-        # Assign courier
-        if kind == "assign":
-            _, order_num, courier_name = parts[:3]
-            courier_id = COURIER_MAP.get(courier_name)
-            info = ORDER_CACHE.get(str(order_num))
-            if not (courier_id and info):
-                tg_answer_callback_query(cb_id, "Missing courier or order data.")
-                return "OK", 200
-            dm_text = courier_dm_text(order_num, info["requested"], info["addr"], info["total"], info["vendors"])
-            tg_send_message(courier_id, dm_text, reply_markup=courier_dm_keyboard(order_num, courier_name))
-            tg_send_message(DISPATCH_MAIN_CHAT_ID, f"🟨 Order <b>#{order_num}</b> assigned to <b>{courier_name}</b>.")
-            tg_answer_callback_query(cb_id, f"Assigned to {courier_name}.")
-            return "OK", 200
-
-        # Courier marks delivered
-        if kind == "deliv":
-            _, order_num, courier_name = parts[:3]
-            tg_send_message(DISPATCH_MAIN_CHAT_ID, f"🟩 Order <b>#{order_num}</b> delivered by <b>{courier_name}</b>.")
-            tg_answer_callback_query(cb_id, "Marked delivered.")
-            return "OK", 200
-
-        # Courier declares delay
-        if kind == "dly":
-            _, order_num, courier_name, mins = parts[:4]
-            tg_send_message(DISPATCH_MAIN_CHAT_ID, f"🟧 Order <b>#{order_num}</b> delay {mins} min — <b>{courier_name}</b>.")
-            tg_answer_callback_query(cb_id, "Delay noted.")
-            return "OK", 200
-
-        # Dispatcher time requests from MDG summary
-        if kind == "time":
-            _, order_num, which = parts[:3]
-            note = "ASAP" if which == "asap" else (which if which in ("+10","+20") else "Same time as others")
-            broadcast_to_vendors(order_num, f"⏱ Dispatcher request for order #{order_num}: {note}.")
-            tg_send_message(DISPATCH_MAIN_CHAT_ID, f"⏱ Sent time request for <b>#{order_num}</b>: {note}.")
-            tg_answer_callback_query(cb_id, "Sent.")
-            return "OK", 200
-
-        if kind == "noop":
-            tg_answer_callback_query(cb_id); return "OK", 200
-
-    except Exception:
-        tg_answer_callback_query(cb_id)
+    # --- MDG: Time requests ---
+    if kind == "req_asap":
+        _, order_key = parts
+        od = ORDERS.get(order_key); 
+        if not od: return "OK", 200
+        # push ASAP request to each vendor group
+        for vendor in od["vendors"].keys():
+            gid = VENDOR_GROUP_MAP.get(vendor)
+            if not gid: continue
+            txt = f"#{od['order_last2']} ASAP?"
+            kb = vendor_time_request_kb(order_key, vendor, mode="asap")
+            tg_send(gid, txt, reply_markup=kb)
+            VENDOR_STATE[f"{order_key}|{vendor}"]["last_request"] = "ASAP"
+        tg_answer(cb_id, "Sent ASAP.")
         return "OK", 200
 
+    if kind == "req_time":
+        _, order_key = parts
+        tg_edit(chat_id, message_id, m.get("text",""), reply_markup=time_quick_choices_kb(order_key))
+        tg_answer(cb_id)
+        return "OK", 200
+
+    if kind == "req_time_sel":
+        _, order_key, hhmm = parts
+        od = ORDERS.get(order_key); 
+        if not od: return "OK", 200
+        base = datetime.now().astimezone()
+        # send to each vendor with specific time
+        for vendor in od["vendors"].keys():
+            gid = VENDOR_GROUP_MAP.get(vendor)
+            if not gid: continue
+            txt = f"#{od['order_last2']} at {hhmm}?"
+            kb = vendor_time_request_kb(order_key, vendor, base_time=base, requested_label=hhmm, mode="time")
+            tg_send(gid, txt, reply_markup=kb)
+            VENDOR_STATE[f"{order_key}|{vendor}"]["last_request"] = hhmm
+        tg_answer(cb_id, f"Requested {hhmm}.")
+        return "OK", 200
+
+    if kind == "req_exact":
+        _, order_key = parts
+        tg_edit(chat_id, message_id, m.get("text",""), reply_markup=exact_time_hours_kb(order_key))
+        tg_answer(cb_id)
+        return "OK", 200
+
+    if kind == "exact_h":
+        _, order_key, hour = parts
+        tg_edit(chat_id, message_id, m.get("text",""), reply_markup=exact_time_minutes_kb(order_key, hour))
+        tg_answer(cb_id)
+        return "OK", 200
+
+    if kind == "exact_m":
+        _, order_key, hour, minute = parts
+        hhmm = f"{hour}:{minute}"
+        # simulate selecting exact time -> same handling as req_time_sel
+        od = ORDERS.get(order_key); 
+        if od:
+            base = datetime.now().astimezone()
+            for vendor in od["vendors"].keys():
+                gid = VENDOR_GROUP_MAP.get(vendor)
+                if not gid: continue
+                txt = f"#{od['order_last2']} at {hhmm}?"
+                kb = vendor_time_request_kb(order_key, vendor, base_time=base, requested_label=hhmm, mode="time")
+                tg_send(gid, txt, reply_markup=kb)
+                VENDOR_STATE[f"{order_key}|{vendor}"]["last_request"] = hhmm
+        tg_answer(cb_id, f"Requested {hhmm}.")
+        return "OK", 200
+
+    if kind == "req_same":
+        # list recent ≤1h orders
+        tg_edit(chat_id, message_id, m.get("text",""), reply_markup=same_time_list_kb())
+        tg_answer(cb_id)
+        return "OK", 200
+
+    if kind == "same_pick":
+        _, prev_okey = parts
+        # We need a time to pair with; assume last_request or agreed_time on prev order for any vendor
+        prev_od = ORDERS.get(prev_okey)
+        if not prev_od:
+            tg_answer(cb_id, "No data.")
+            return "OK", 200
+        # Pick first vendor's time if known
+        time_label = None
+        for v in prev_od["vendors"].keys():
+            st = VENDOR_STATE.get(f"{prev_okey}|{v}")
+            if st and (st.get("agreed_time") or st.get("last_request")):
+                time_label = st.get("agreed_time") or st.get("last_request")
+                break
+        if not time_label:
+            tg_answer(cb_id, "No time on that order yet.")
+            return "OK", 200
+        # Broadcast SAME TIME AS request to all vendors of the CURRENT order (the message we clicked on belongs to current order message)
+        # We don't know current order_key here (Telegram doesn't give us), so we show a small notice:
+        tg_answer(cb_id, f"Use TIME and pick {time_label}, then say “Same time as #{ORDERS.get(prev_okey,{}).get('order_last2','')}” in MDG (we'll wire exact cross-link next).")
+        return "OK", 200
+
+    # --- Vendor group: details toggle ---
+    if kind == "toggle":
+        _, order_key, vendor, want_expand = parts
+        od = ORDERS.get(order_key)
+        if not od: 
+            tg_answer(cb_id, "No order.")
+            return "OK", 200
+        expanded = want_expand == "1"
+        if expanded:
+            text = vendor_summary_text(od, vendor) + "\n\n" + vendor_details_text(od, vendor)
+        else:
+            text = vendor_summary_text(od, vendor)
+        tg_edit(chat_id, message_id, text, reply_markup=vendor_summary_kb(order_key, vendor, expanded=expanded))
+        tg_answer(cb_id)
+        return "OK", 200
+
+    # --- Vendor group: respond to requests ---
+    if kind == "rest_will":
+        _, order_key, vendor, hhmm = parts
+        VENDOR_STATE[f"{order_key}|{vendor}"]["agreed_time"] = hhmm
+        tg_send(DISPATCH_MAIN_CHAT_ID, f"✅ {vendor} will prepare order #{ORDERS[order_key]['order_last2']} at {hhmm}.",
+                reply_markup=assign_menu_kb(order_key))  # assignment appears AFTER time confirmed
+        tg_answer(cb_id, "Noted.")
+        return "OK", 200
+
+    if kind == "rest_will_pick":
+        _, order_key, vendor = parts
+        # show hour/min picker in vendor chat
+        tg_edit(chat_id, message_id, m.get("text",""), reply_markup=exact_time_hours_kb(f"{order_key}|{vendor}|will"))
+        tg_answer(cb_id)
+        return "OK", 200
+
+    if kind == "rest_works":
+        _, order_key, vendor, hhmm = parts
+        VENDOR_STATE[f"{order_key}|{vendor}"]["agreed_time"] = hhmm
+        tg_send(DISPATCH_MAIN_CHAT_ID, f"✅ {vendor} confirmed order #{ORDERS[order_key]['order_last2']} for {hhmm}.",
+                reply_markup=assign_menu_kb(order_key))
+        # After confirm, offer "We have a delay"
+        tg_send(chat_id, f"If needed: We have a delay for #{ORDERS[order_key]['order_last2']} at {hhmm}", reply_markup=delay_menu_kb(order_key, vendor, hhmm))
+        tg_answer(cb_id, "Confirmed.")
+        return "OK", 200
+
+    if kind == "rest_later":
+        _, order_key, vendor, hhmm = parts
+        VENDOR_STATE[f"{order_key}|{vendor}"]["agreed_time"] = hhmm
+        tg_send(DISPATCH_MAIN_CHAT_ID, f"✅ {vendor} proposes later time for order #{ORDERS[order_key]['order_last2']}: {hhmm}.",
+                reply_markup=assign_menu_kb(order_key))
+        tg_send(chat_id, f"If needed: We have a delay for #{ORDERS[order_key]['order_last2']} at {hhmm}", reply_markup=delay_menu_kb(order_key, vendor, hhmm))
+        tg_answer(cb_id, "Sent.")
+        return "OK", 200
+
+    if kind == "rest_later_pick":
+        _, order_key, vendor = parts
+        tg_edit(chat_id, message_id, m.get("text",""), reply_markup=exact_time_hours_kb(f"{order_key}|{vendor}|later"))
+        tg_answer(cb_id)
+        return "OK", 200
+
+    if kind == "exact_h" and len(parts)==3 and "|" in parts[2]:
+        # vendor time picker hour, context encoded
+        _, ok_ctx, hour = parts
+        # ok_ctx like "shopify:1234|Julis Spätzlerei|will" or "...|later"
+        tg_edit(chat_id, message_id, m.get("text",""), reply_markup=exact_time_minutes_kb(ok_ctx, hour))
+        tg_answer(cb_id)
+        return "OK", 200
+
+    if kind == "exact_m" and len(parts)==4 and "|" in parts[2]:
+        # vendor time picker minute selected
+        _, ok_ctx, hour, minute = parts
+        order_key, vendor, mode = ok_ctx.split("|", 2)
+        hhmm = f"{hour}:{minute}"
+        if mode == "will":
+            return telegram_updates_helper_vendor_confirm(order_key, vendor, hhmm, chat_id, cb_id, message_id, is_will=True)
+        else:
+            return telegram_updates_helper_vendor_confirm(order_key, vendor, hhmm, chat_id, cb_id, message_id, is_will=False)
+
+    if kind == "rest_wrong":
+        _, order_key, vendor = parts
+        tg_edit(chat_id, message_id, m.get("text",""), reply_markup=wrong_menu_kb(order_key, vendor))
+        tg_answer(cb_id)
+        return "OK", 200
+
+    if kind == "wrong_na":
+        _, order_key, vendor = parts
+        # Shopify text
+        tg_send(DISPATCH_MAIN_CHAT_ID, f"⚠️ {vendor}: Products not available for order #{ORDERS[order_key]['order_last2']}. Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee.")
+        tg_answer(cb_id, "Sent.")
+        return "OK", 200
+
+    if kind == "wrong_cancel":
+        _, order_key, vendor = parts
+        tg_send(DISPATCH_MAIN_CHAT_ID, f"⚠️ {vendor}: Order #{ORDERS[order_key]['order_last2']} is canceled.")
+        tg_answer(cb_id, "Sent.")
+        return "OK", 200
+
+    if kind == "wrong_tech":
+        _, order_key, vendor = parts
+        EXPECT_ISSUE_MSG[f"{chat_id}|{order_key}"] = {"kind":"tech"}
+        tg_send(chat_id, "Please reply to this message with details. I will forward it to dishbee.")
+        tg_answer(cb_id)
+        return "OK", 200
+
+    if kind == "wrong_other":
+        _, order_key, vendor = parts
+        EXPECT_ISSUE_MSG[f"{chat_id}|{order_key}"] = {"kind":"other"}
+        tg_send(chat_id, "Please reply to this message with details. I will forward it to dishbee.")
+        tg_answer(cb_id)
+        return "OK", 200
+
+    if kind == "rest_delay":
+        _, order_key, vendor, hhmm = parts
+        tg_send(DISPATCH_MAIN_CHAT_ID, f"🟧 {vendor} delay for order #{ORDERS[order_key]['order_last2']}: {hhmm}.")
+        tg_answer(cb_id, "Delay sent.")
+        return "OK", 200
+
+    if kind == "rest_delay_pick":
+        _, order_key, vendor = parts
+        tg_edit(chat_id, message_id, m.get("text",""), reply_markup=exact_time_hours_kb(f"{order_key}|{vendor}|delay"))
+        tg_answer(cb_id)
+        return "OK", 200
+
+    # --- Assignment (after restaurant confirm) ---
+    if kind == "assign_self":
+        _, order_key = parts
+        return do_assign_to(order_key, cb.get("from",{}), cb_id)
+
+    if kind == "assign_to":
+        _, order_key, name = parts
+        uid = COURIER_MAP.get(name)
+        if not uid:
+            tg_answer(cb_id, "Courier not configured.")
+            return "OK", 200
+        return do_assign_to(order_key, {"id": uid, "first_name": name}, cb_id)
+
+    # no-op
+    if kind == "noop":
+        tg_answer(cb_id); return "OK", 200
+
+    tg_answer(cb_id); 
     return "OK", 200
 
-@app.route("/webhooks/shopify", methods=["POST"])
-def shopify_webhook():
-    if not verify_shopify_hmac(request):
-        abort(401)
+def telegram_updates_helper_vendor_confirm(order_key, vendor, hhmm, chat_id, cb_id, message_id, is_will):
+    VENDOR_STATE[f"{order_key}|{vendor}"]["agreed_time"] = hhmm
+    if is_will:
+        tg_send(DISPATCH_MAIN_CHAT_ID, f"✅ {vendor} will prepare order #{ORDERS[order_key]['order_last2']} at {hhmm}.",
+                reply_markup=assign_menu_kb(order_key))
+    else:
+        tg_send(DISPATCH_MAIN_CHAT_ID, f"✅ {vendor} proposes {hhmm} for order #{ORDERS[order_key]['order_last2']}.",
+                reply_markup=assign_menu_kb(order_key))
+    tg_send(chat_id, f"If needed: We have a delay for #{ORDERS[order_key]['order_last2']} at {hhmm}", reply_markup=delay_menu_kb(order_key, vendor, hhmm))
+    tg_answer(cb_id, "Noted.")
+    return "OK", 200
 
-    payload = request.get_json(force=True, silent=True) or {}
-    order_num = payload.get("order_number") or payload.get("name") or payload.get("id")
-    requested_time = parse_requested_time(payload)
-    shipping_addr = payload.get("shipping_address") or payload.get("billing_address")
-    addr_tuple = extract_address(shipping_addr)
-    vendors_grouped = group_items_by_vendor(payload.get("line_items", []))
-    total = fmt_total(payload.get("total_price", "0"), payload.get("currency", "EUR"))
+# ==== ASSIGNMENT FLOW ====
+def do_assign_to(order_key, user_obj, cb_id):
+    od = ORDERS.get(order_key)
+    if not od:
+        tg_answer(cb_id, "No order.")
+        return "OK", 200
+    courier_id = user_obj.get("id")
+    courier_name = user_obj.get("first_name") or "Courier"
+    if not courier_id:
+        tg_answer(cb_id, "Cannot DM courier until they message the bot first.")
+        return "OK", 200
 
-    # Cache minimal order info for assignment/time
-    ORDER_CACHE[str(order_num)] = {
-        "requested": requested_time,
-        "addr": addr_tuple,
-        "total": total,
-        "vendors": {v: len(items) for v, items in vendors_grouped.items()},
+    # Build DM text
+    vendors = od["vendors"]
+    per_counts = per_vendor_counts(vendors)
+    cust_phone = od["cust_phone"] or "—"
+    tel = tel_link(od["cust_phone"] or "")
+    maps = gmaps_link(od["street"], od["zip_city"])
+    title = f"dishbee #{od['order_last2']} + {', '.join(vendors.keys())}"
+
+    dm_lines = [
+        f"🟨 <b>{title}</b>",
+        f"{od['street']}",
+        f"{od['zip_city']}",
+        f"📞 <a href=\"{tel}\">{cust_phone}</a>" if tel else f"📞 {cust_phone}",
+        f"🧺 Products: {per_counts}",
+        f"👤 {od['cust_name'] or '—'}",
+        "",
+        "<b>Actions</b>",
+        f"• <a href=\"{tel}\">Call customer</a>" if tel else "• Call customer: (no number)",
+        f"• <a href=\"{maps}\">Navigate</a>",
+        # Postpone handled via callback buttons below
+    ]
+    dm_text = "\n".join(dm_lines)
+
+    kb = {
+        "inline_keyboard":[
+            [{"text":"Postpone +5","callback_data":f"postpone:{order_key}:5"},
+             {"text":"Postpone +10","callback_data":f"postpone:{order_key}:10"},
+             {"text":"Postpone +15","callback_data":f"postpone:{order_key}:15"},
+             {"text":"Pick time…","callback_data":f"postpone_pick:{order_key}"}],
+            [{"text":"Call restaurant (Telegram)","callback_data":f"call_rest_tg:{order_key}"},
+             {"text":"Call restaurant (Phone)","callback_data":f"call_rest_ph:{order_key}"}],
+            [{"text":"Complete 🟩","callback_data":f"complete:{order_key}"}]
+        ]
     }
 
-    # Main MDG summary WITH inline buttons (assign/time)
-    mdg_text = build_mdg_message(payload, requested_time, addr_tuple, vendors_grouped)
-    tg_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, reply_markup=assign_menu_button(str(order_num)))
-
-    # If any vendor unresolved, notify briefly in MDG
-    if "Unknown" in vendors_grouped or any(v not in VENDOR_GROUP_MAP for v in vendors_grouped.keys()):
-        unknowns = [v for v in vendors_grouped.keys() if v == "Unknown" or v not in VENDOR_GROUP_MAP]
-        if unknowns:
-            tg_send_message(DISPATCH_MAIN_CHAT_ID, f"⚠️ No group mapping for vendor(s): {', '.join(sorted(set(unknowns)))}. Update VENDOR_GROUP_MAP or add vendor info in line item properties.")
-
-    # Per-vendor cards to vendor groups (or fallback)
-    for vendor, items in vendors_grouped.items():
-        text = build_vendor_card_text(order_num, vendor, items, addr_tuple, requested_time, total, expanded=False)
-        kb = vendor_keyboard(order_num, vendor, expanded=False)
-
-        group_id = VENDOR_GROUP_MAP.get(vendor)
-        if group_id:
-            tg_send_message(group_id, text, reply_markup=kb)
-        else:
-            # Fallback handling
-            if FALLBACK_VENDOR_GROUP_ID:
-                try:
-                    tg_send_message(int(FALLBACK_VENDOR_GROUP_ID), text, reply_markup=kb)
-                except Exception:
-                    pass  # ignore if invalid
-            # also store state so expand works if sent anywhere
-        STATE[state_key(order_num, vendor)] = {"items": items, "addr": addr_tuple, "requested": requested_time, "total": total}
-
+    tg_send(courier_id, dm_text, reply_markup=kb)
+    tg_send(DISPATCH_MAIN_CHAT_ID, f"🟨 Order #{od['order_last2']} assigned to <b>{courier_name}</b>.")
+    tg_answer(cb_id, f"Assigned to {courier_name}.")
     return "OK", 200
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "10000"))
-    app.run(host="0.0.0.0", port=port)
