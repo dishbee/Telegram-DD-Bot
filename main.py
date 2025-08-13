@@ -3,7 +3,6 @@ import json
 import hmac
 import hashlib
 import base64
-from datetime import datetime
 from flask import Flask, request, abort
 import requests
 
@@ -14,13 +13,19 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "").rstrip("/")
 SHOPIFY_WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
 DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
-# Example JSON: {"Dean & David Passau": -1001234567890, "Pizza Roma": -1002233445566}
+
+# Example JSONs:
+# VENDOR_GROUP_MAP='{"Julis Spätzlerei": -1001234567890, "Pizza Roma": -1002233445566}'
+# COURIER_MAP='{"Alex": 111111111, "Marta": 222222222}'
 VENDOR_GROUP_MAP = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
+COURIER_MAP = json.loads(os.environ.get("COURIER_MAP", "{}"))
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # --- Ephemeral state (resets on deploy) ---
+# For vendor expand/hide and minimal assignment context
 STATE = {}  # key: f"{order_num}|{vendor}" -> {"items":[...], "addr":(name,phone,line1,line2,cityzip), "requested": str, "total": str}
+ORDER_CACHE = {}  # key: order_num -> {"requested": str, "addr": tuple, "total": str, "vendors": dict(vendor -> count)}
 
 # --- Telegram helpers ---
 def tg_send_message(chat_id, text, reply_markup=None, parse_mode="HTML", disable_web_page_preview=True):
@@ -102,6 +107,9 @@ def lines_for_items(items):
         out.append(f"• {qty}× {title} — {price}")
     return "\n".join(out) if out else "• (no items)"
 
+def vendor_summary_text(vendors_grouped):
+    return ", ".join([f"{v} ({len(items)})" for v, items in vendors_grouped.items()]) or "—"
+
 def build_mdg_message(payload, requested_time, address_tuple, vendors_grouped):
     order_num = payload.get("order_number") or payload.get("name") or payload.get("id")
     total = euro(payload.get("total_price", "0"))
@@ -109,7 +117,6 @@ def build_mdg_message(payload, requested_time, address_tuple, vendors_grouped):
     pay_status = safe(payload.get("financial_status", ""))
     tip = euro(payload.get("total_tip_received", "0"))
     name, phone, line1, line2, city_zip = address_tuple
-    vendor_summary = ", ".join([f"{v} ({len(items)})" for v, items in vendors_grouped.items()]) or "—"
 
     lines = [
         f"🟥 <b>New order #{order_num}</b>",
@@ -119,7 +126,7 @@ def build_mdg_message(payload, requested_time, address_tuple, vendors_grouped):
         f"📞 {safe(phone)}",
         f"📍 {safe(line1)} {safe(line2)}",
         f"🏙️ {safe(city_zip)}",
-        f"🏷️ <b>Vendors:</b> {vendor_summary}",
+        f"🏷️ <b>Vendors:</b> {vendor_summary_text(vendors_grouped)}",
         f"💳 <b>Payment:</b> {pay_status}",
         f"💁‍♂️ <b>Tip:</b> {tip}",
     ]
@@ -153,6 +160,31 @@ def vendor_keyboard(order_num, vendor, expanded):
 
 def state_key(order_num, vendor):
     return f"{order_num}|{vendor}"
+
+def assign_keyboard(order_num):
+    # Build inline keyboard with one button per courier
+    rows = []
+    row = []
+    for i, (name, uid) in enumerate(COURIER_MAP.items()):
+        row.append({"text": name, "callback_data": f"assign:{order_num}:{name}"})
+        if (i + 1) % 3 == 0:
+            rows.append(row); row = []
+    if row:
+        rows.append(row)
+    if not rows:
+        rows = [[{"text": "No couriers configured", "callback_data": "noop"}]]
+    return {"inline_keyboard": rows}
+
+def courier_dm_text(order_num, requested, addr_tuple, total, vendors_grouped):
+    name, phone, line1, line2, city_zip = addr_tuple
+    vendors_line = vendor_summary_text(vendors_grouped)
+    return (
+        f"🟨 <b>New assignment — Order #{order_num}</b>\n"
+        f"🕒 {requested} • 💶 {total}\n"
+        f"🏷️ {vendors_line}\n\n"
+        f"<b>Customer</b>\n"
+        f"{safe(name)}\n{safe(phone)}\n{safe(line1)} {safe(line2)}\n{safe(city_zip)}"
+    )
 
 # --- Routes ---
 @app.route("/")
@@ -200,6 +232,29 @@ def telegram_updates():
             tg_answer_callback_query(cb_id, "Noted.")
             return "OK", 200
 
+        if kind == "assign":
+            _, order_num, courier_name = parts
+            # Resolve courier
+            courier_id = COURIER_MAP.get(courier_name)
+            info = ORDER_CACHE.get(order_num)
+            if not (courier_id and info):
+                tg_answer_callback_query(cb_id, "Missing courier or order data.", show_alert=False)
+                return "OK", 200
+
+            # DM courier
+            dm_text = courier_dm_text(order_num, info["requested"], info["addr"], info["total"], info["vendors"])
+            tg_send_message(courier_id, dm_text)
+
+            # Status line in MDG (no edits)
+            tg_send_message(DISPATCH_MAIN_CHAT_ID, f"🟨 Order <b>#{order_num}</b> assigned to <b>{courier_name}</b>.")
+
+            tg_answer_callback_query(cb_id, f"Assigned to {courier_name}.")
+            return "OK", 200
+
+        if kind == "noop":
+            tg_answer_callback_query(cb_id)
+            return "OK", 200
+
     except Exception:
         tg_answer_callback_query(cb_id)
         return "OK", 200
@@ -219,9 +274,22 @@ def shopify_webhook():
     vendors_grouped = group_items_by_vendor(payload.get("line_items", []))
     total = euro(payload.get("total_price", "0"))
 
+    # Cache minimal order info for assignment DMs
+    ORDER_CACHE[str(order_num)] = {
+        "requested": requested_time,
+        "addr": addr_tuple,
+        "total": total,
+        "vendors": {v: len(items) for v, items in vendors_grouped.items()},
+    }
+
     # Main MDG summary
     mdg_text = build_mdg_message(payload, requested_time, addr_tuple, vendors_grouped)
     tg_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text)
+
+    # Assignment helper message with courier buttons
+    if COURIER_MAP:
+        assign_text = f"🧩 Assign order <b>#{order_num}</b>:"
+        tg_send_message(DISPATCH_MAIN_CHAT_ID, assign_text, reply_markup=assign_keyboard(str(order_num)))
 
     # Per-vendor cards to vendor groups
     for vendor, items in vendors_grouped.items():
@@ -237,7 +305,6 @@ def shopify_webhook():
             "total": total,
         }
 
-        # Send collapsed first
         text = build_vendor_card_text(order_num, vendor, items, addr_tuple, requested_time, total, expanded=False)
         kb = vendor_keyboard(order_num, vendor, expanded=False)
         tg_send_message(group_id, text, reply_markup=kb)
