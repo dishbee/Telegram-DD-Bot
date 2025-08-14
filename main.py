@@ -4,6 +4,7 @@ from flask import Flask, request, abort
 import requests
 
 app = Flask(__name__)
+ORDERS = {}
 
 # ========= ENV =========
 def env(name, default=None):
@@ -84,6 +85,43 @@ def tg_answer(cb_id, text=None, alert=False):
         log(f"[TG] answer status={r.status_code} body={r.text[:300]}")
     except Exception:
         log_exc("[TG] answerCallbackQuery failed")
+
+# ========= FORMATTER =========
+def format_shopify_order_mdg(p: dict) -> str:
+    order_number = p.get("order_number") or p.get("name") or p.get("id")
+    last2 = str(order_number)[-2:] if order_number else "??"
+    customer = p.get("customer", {})
+    cust_name = " ".join(filter(None, [customer.get("first_name", ""), customer.get("last_name", "")])) or "—"
+    address_info = p.get("shipping_address", {})
+    address = f"{address_info.get('address1', '')} {address_info.get('zip', '')}".strip()
+    note = p.get("note")
+    tips = p.get("total_tip_received") or p.get("current_total_tip_received")
+    payment = p.get("payment_gateway_names", [""])[0]
+    paid_text = "Paid" if payment.lower() in ["sofort", "sofort_ueberweisung", "credit_card"] else "Cash"
+
+    lines = [f"<b>dishbee + {', '.join(set(li.get('vendor') or 'Unknown' for li in p.get('line_items', [])))}</b>"]
+    lines.append(f"<b>#{last2}</b>")
+    lines.append(f"<b>{address}</b>")
+    if note:
+        lines.append(f"📝 {note}")
+    if tips:
+        lines.append(f"💶 Tip: {tips}")
+    lines.append(f"💳 {paid_text}")
+    lines.append("")  # spacer
+
+    # group products by vendor
+    vendor_items = {}
+    for li in p.get("line_items", []):
+        vendor = li.get("vendor", "Unknown")
+        vendor_items.setdefault(vendor, []).append(f"{li.get('quantity', 1)} × {li.get('name', '')}")
+
+    for vendor, items in vendor_items.items():
+        lines.append(f"<b>{vendor}</b>")
+        lines.extend(items)
+        lines.append("")  # spacer
+
+    lines.append(f"👤 {cust_name}")
+    return "\n".join(lines)
 
 # ========= HEALTH =========
 @app.route("/", methods=["GET", "HEAD"])
@@ -183,7 +221,6 @@ def telegram_updates():
 
     if kind == "req_time":
         _, order_key = parts
-        # Keep simple: just acknowledge for now
         tg_answer(cb_id, "TIME picker would show here.")
         return "OK", 200
 
@@ -204,42 +241,6 @@ def telegram_updates():
 
 # ========= SHOPIFY WEBHOOK =========
 @app.route("/webhooks/shopify", methods=["POST"])
-def format_shopify_order_mdg(p: dict) -> str:
-    order_number = p.get("order_number") or p.get("name") or p.get("id")
-    last2 = str(order_number)[-2:] if order_number else "??"
-    customer = p.get("customer", {})
-    cust_name = " ".join(filter(None, [customer.get("first_name", ""), customer.get("last_name", "")])) or "—"
-    address_info = p.get("shipping_address", {})
-    address = f"{address_info.get('address1', '')} {address_info.get('zip', '')}".strip()
-    note = p.get("note")
-    tips = p.get("total_tip_received") or p.get("current_total_tip_received")
-    payment = p.get("payment_gateway_names", [""])[0]
-    paid_text = "Paid" if payment.lower() in ["sofort", "sofort_ueberweisung", "credit_card"] else "Cash"
-
-    lines = [f"<b>dishbee + {', '.join(set(li.get('vendor') or 'Unknown' for li in p.get('line_items', [])))}</b>"]
-    lines.append(f"<b>#{last2}</b>")
-    lines.append(f"<b>{address}</b>")
-    if note:
-        lines.append(f"📝 {note}")
-    if tips:
-        lines.append(f"💶 Tip: {tips}")
-    lines.append(f"💳 {paid_text}")
-    lines.append("")  # spacer
-
-    # group products by vendor
-    vendor_items = {}
-    for li in p.get("line_items", []):
-        vendor = li.get("vendor", "Unknown")
-        vendor_items.setdefault(vendor, []).append(f"{li.get('quantity', 1)} × {li.get('name', '')}")
-
-    for vendor, items in vendor_items.items():
-        lines.append(f"<b>{vendor}</b>")
-        lines.extend(items)
-        lines.append("")  # spacer
-
-    lines.append(f"👤 {cust_name}")
-
-    return "\n".join(lines)
 def shopify_webhook():
     log("[SHOPIFY] hit /webhooks/shopify")
     if not verify_shopify_hmac(request):
@@ -252,24 +253,17 @@ def shopify_webhook():
     order_key = f"shopify:{order_number}"
     log(f"[SHOPIFY] order_number={order_number} last2={last2}")
 
-    # group items by vendor
     vendors = {}
     for it in p.get("line_items", []):
         v = it.get("vendor") or "Unknown"
         vendors.setdefault(v, []).append(it)
     log(f"[SHOPIFY] vendors={list(vendors.keys())}")
-
-    # cache minimal
     ORDERS[order_key] = {"full": order_number, "last2": last2, "vendors": vendors}
 
-    # send to MDG
-    if not DISPATCH_MAIN_CHAT_ID:
-        log("[CONFIG] DISPATCH_MAIN_CHAT_ID is 0 or missing")
-log("[FLOW] Sending formatted MDG message…")
-mdg_text = format_shopify_order_mdg(p)
-tg_send(DISPATCH_MAIN_CHAT_ID, mdg_text, reply_markup=mdg_actions_kb(order_key))
+    log("[FLOW] Sending formatted MDG message…")
+    mdg_text = format_shopify_order_mdg(p)
+    tg_send(DISPATCH_MAIN_CHAT_ID, mdg_text, reply_markup=mdg_actions_kb(order_key))
 
-    # send to vendors (summary only)
     for vendor, items in vendors.items():
         gid = VENDOR_GROUP_MAP.get(vendor)
         if not gid:
@@ -293,4 +287,3 @@ if __name__ == "__main__":
     log(f"[BOOT] VENDOR_GROUP_MAP keys={list(VENDOR_GROUP_MAP.keys())}")
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
-
