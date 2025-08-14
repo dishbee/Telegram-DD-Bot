@@ -1,5 +1,3 @@
-# telegram_dispatch_bot/main.py
-
 from flask import Flask, request, jsonify
 import telegram
 import hmac
@@ -42,7 +40,7 @@ def format_main_dispatch_message(order):
     lines = [
         f"🟥 *NEW ORDER* #{order.get('order_number')}\n",
         f"👤 {customer.get('first_name', '')} {customer.get('last_name', '')}",
-        f"📍 {shipping_address.get('address1', '')}, {shipping_address.get('city', '')}",
+        f"📍 {shipping_address.get('address1', '')}, {shipping_address.get('zip', '')}",
         f"📞 {shipping_address.get('phone', customer.get('phone', 'N/A'))}",
         f"🕒 {order.get('created_at')} (asap/requested time TBD)",
         "\n🍽 *VENDORS:*"
@@ -61,7 +59,7 @@ def format_vendor_hidden_detail(order):
     shipping_address = order.get("shipping_address", {})
     return (
         f"👤 {customer.get('first_name', '')} {customer.get('last_name', '')}\n"
-        f"📍 {shipping_address.get('address1', '')}, {shipping_address.get('city', '')}\n"
+        f"📍 {shipping_address.get('address1', '')}, {shipping_address.get('zip', '')}\n"
         f"📞 {shipping_address.get('phone', customer.get('phone', 'N/A'))}"
     )
 
@@ -75,8 +73,10 @@ def telegram_webhook():
         query = update.callback_query
         data = query.data
 
-        if data.startswith("expand:" or "collapse:"):
+        if data.startswith("expand:") or data.startswith("collapse:"):
             parts = data.split(":")
+            if len(parts) < 3:
+                return "bad data", 400
             vendor = parts[1]
             detail = parts[2]
 
