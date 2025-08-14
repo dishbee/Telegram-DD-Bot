@@ -17,6 +17,8 @@ VENDOR_GROUP_MAP = json.loads(os.getenv("VENDOR_GROUP_MAP"))
 ORDERS = {}
 VENDOR_MSGS = {}  # order_key -> vendor -> {group_id, message_id, collapsed, items}
 
+DRIVERS = ["Driver A", "Driver B", "Driver C"]
+
 # --- Telegram API wrappers ---
 def tg_send(chat_id, text, reply_markup=None):
     payload = {"chat_id": chat_id, "text": text}
@@ -62,7 +64,7 @@ def shopify_webhook():
     }
     VENDOR_MSGS[order_key] = {}
 
-    mdg_text = f"🆕 New order #{last2}\n"
+    mdg_text = f"🔗 New order #{last2}\n"
     for vendor, items in vendor_lines.items():
         mdg_text += f"\n🍽️ {vendor}\n" + "\n".join(items)
 
@@ -97,6 +99,9 @@ def mdg_actions_kb(order_key):
         [{"text": "EXACT TIME", "callback_data": f"req_exact:{order_key}"}],
         [{"text": "SAME TIME AS", "callback_data": f"req_sameas:{order_key}"}]
     ]}
+
+def driver_kb(order_key):
+    return {"inline_keyboard": [[{"text": d, "callback_data": f"assign_driver:{order_key}:{d}"}] for d in DRIVERS]}
 
 def parse_update(update):
     if "callback_query" in update:
@@ -138,26 +143,28 @@ def telegram_updates():
             tg_answer(cb_id)
             return "OK", 200
 
-        # existing logic continues...
         if data.startswith("req_asap:"):
             _, order_key = parts
             ORDERS[order_key]["delivery_time"] = "ASAP"
             tg_answer(cb_id, "Time set to ASAP.")
-            tg_edit(chat_id, mid, "⏱ Time set to: ASAP")
+            kb = driver_kb(order_key)
+            tg_edit(chat_id, mid, "⏱ Time set to: ASAP\nAssign to:", reply_markup=kb)
             return "OK", 200
 
         if data.startswith("req_time:"):
             _, order_key = parts
             ORDERS[order_key]["delivery_time"] = "Later"
             tg_answer(cb_id, "Time will be sent later.")
-            tg_edit(chat_id, mid, "⏱ Time will be sent later.")
+            kb = driver_kb(order_key)
+            tg_edit(chat_id, mid, "⏱ Time will be sent later.\nAssign to:", reply_markup=kb)
             return "OK", 200
 
         if data.startswith("req_exact:"):
             _, order_key = parts
             ORDERS[order_key]["delivery_time"] = "Exact time (to be confirmed)"
             tg_answer(cb_id, "Please confirm exact time manually.")
-            tg_edit(chat_id, mid, "⏱ Waiting for exact time confirmation.")
+            kb = driver_kb(order_key)
+            tg_edit(chat_id, mid, "⏱ Waiting for exact time confirmation.\nAssign to:", reply_markup=kb)
             return "OK", 200
 
         if data.startswith("req_sameas:"):
@@ -194,26 +201,31 @@ def telegram_updates():
 
         if data.startswith("sameas_choose:"):
             _, current_order_key, selected_order_key = parts
-
             selected = ORDERS.get(selected_order_key)
             if not selected:
                 tg_answer(cb_id, "Selected order not found.")
                 return "OK", 200
-
             delivery_time = selected.get("delivery_time")
             if not delivery_time:
                 tg_answer(cb_id, "Selected order has no delivery time.")
                 return "OK", 200
-
             ORDERS[current_order_key]["delivery_time"] = delivery_time
             vendors = ORDERS[current_order_key]["vendors"]
             for vendor, data in vendors.items():
                 group_id = VENDOR_GROUP_MAP.get(vendor)
                 if group_id:
-                    tg_send(group_id, f"⏱ Same time as previous order:\n{delivery_time}")
-
+                    tg_send(group_id, f"⏱ Same time as previous order: #{selected['last2']}")
             tg_answer(cb_id, "Delivery time copied.")
-            tg_edit(chat_id, mid, f"✅ Time set from #{selected['last2']}: {delivery_time}")
+            tg_edit(chat_id, mid, f"✅ Time set from #{selected['last2']}: {delivery_time}\nAssign to:", reply_markup=driver_kb(current_order_key))
+            return "OK", 200
+
+        if data.startswith("assign_driver:"):
+            _, order_key, driver = parts
+            ORDERS[order_key]["assigned_driver"] = driver
+            last2 = ORDERS[order_key]["last2"]
+            text = f"🚴 Assigned to {driver} for #{last2}"
+            tg_edit(chat_id, mid, text)
+            tg_answer(cb_id, "Driver assigned.")
             return "OK", 200
 
     elif kind == "msg":
