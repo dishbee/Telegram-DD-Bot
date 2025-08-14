@@ -1,4 +1,4 @@
-# Telegram Dispatch Bot — main.py
+# Telegram Dispatch Bot — Phase 2b: Dispatcher requests time, vendor replies with buttons
 
 from flask import Flask, request
 import json
@@ -15,7 +15,7 @@ SHOPIFY_WEBHOOK_SECRET = os.getenv("SHOPIFY_WEBHOOK_SECRET")
 
 VENDOR_GROUP_MAP = json.loads(os.getenv("VENDOR_GROUP_MAP"))
 ORDERS = {}
-VENDOR_MSGS = {}  # order_key -> vendor -> {group_id, message_id, collapsed, items}
+VENDOR_MSGS = {}
 
 DRIVERS = ["Driver A", "Driver B", "Driver C"]
 
@@ -37,6 +37,31 @@ def tg_edit(chat_id, mid, text, reply_markup=None):
 
 def tg_answer(cb_id, text="OK"):
     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cb_id, "text": text})
+
+# --- Keyboards ---
+def expand_button_kb(order_key, vendor, collapsed=True):
+    if collapsed:
+        return {"inline_keyboard": [[{"text": "👁 View items", "callback_data": f"expand:{order_key}:{vendor}"}]]}
+    else:
+        return {"inline_keyboard": [[{"text": "🔽 Hide items", "callback_data": f"collapse:{order_key}:{vendor}"}]]}
+
+def mdg_actions_kb(order_key):
+    return {"inline_keyboard": [
+        [{"text": "ASAP", "callback_data": f"req_asap:{order_key}"}],
+        [{"text": "TIME", "callback_data": f"req_time:{order_key}"}],
+        [{"text": "EXACT TIME", "callback_data": f"req_exact:{order_key}"}],
+        [{"text": "SAME TIME AS", "callback_data": f"req_sameas:{order_key}"}]
+    ]}
+
+def driver_kb(order_key):
+    return {"inline_keyboard": [[{"text": d, "callback_data": f"assign_driver:{order_key}:{d}"} for d in DRIVERS]]}
+
+def vendor_time_kb(order_key):
+    return {"inline_keyboard": [
+        [{"text": "✅ Works 👍", "callback_data": f"vtime:works:{order_key}"}],
+        [{"text": "⏱ Later", "callback_data": f"vtime:later:{order_key}"}],
+        [{"text": "🕒 Will prepare", "callback_data": f"vtime:prep:{order_key}"}]
+    ]}
 
 # --- Shopify Webhook ---
 @app.route("/webhooks/shopify", methods=["POST"])
@@ -68,15 +93,12 @@ def shopify_webhook():
     for vendor, items in vendor_lines.items():
         mdg_text += f"\n🍽️ {vendor}\n" + "\n".join(items)
 
-    mdg_actions = mdg_actions_kb(order_key)
-    tg_send(DISPATCH_MAIN_CHAT_ID, mdg_text, reply_markup=mdg_actions)
+    tg_send(DISPATCH_MAIN_CHAT_ID, mdg_text, reply_markup=mdg_actions_kb(order_key))
 
     for vendor, items in vendor_lines.items():
         group_id = VENDOR_GROUP_MAP.get(vendor)
         if group_id:
-            collapsed_text = f"🍽️ New order #{last2}"
-            kb = expand_button_kb(order_key, vendor, collapsed=True)
-            mid = tg_send(group_id, collapsed_text, reply_markup=kb)
+            mid = tg_send(group_id, f"🍽️ New order #{last2}", reply_markup=expand_button_kb(order_key, vendor))
             VENDOR_MSGS[order_key][vendor] = {
                 "group_id": group_id,
                 "message_id": mid,
@@ -86,165 +108,57 @@ def shopify_webhook():
 
     return "OK", 200
 
-def expand_button_kb(order_key, vendor, collapsed=True):
-    if collapsed:
-        return {"inline_keyboard": [[{"text": "👁 View items", "callback_data": f"expand:{order_key}:{vendor}"}]]}
-    else:
-        return {"inline_keyboard": [[{"text": "🔽 Hide items", "callback_data": f"collapse:{order_key}:{vendor}"}]]}
-
-def mdg_actions_kb(order_key):
-    return {"inline_keyboard": [
-        [{"text": "ASAP", "callback_data": f"req_asap:{order_key}"}],
-        [{"text": "TIME", "callback_data": f"req_time:{order_key}"}],
-        [{"text": "EXACT TIME", "callback_data": f"req_exact:{order_key}"}],
-        [{"text": "SAME TIME AS", "callback_data": f"req_sameas:{order_key}"}]
-    ]}
-
-def driver_kb(order_key):
-    return {"inline_keyboard": [[{"text": d, "callback_data": f"assign_driver:{order_key}:{d}"}] for d in DRIVERS]}
-
-def parse_update(update):
-    if "callback_query" in update:
-        cb = update["callback_query"]
-        return "cb", cb["message"]["chat"].get("id"), cb["message"]["message_id"], cb["id"], cb["data"]
-    if "message" in update:
-        msg = update["message"]
-        return "msg", msg.get("chat", {}).get("id"), msg.get("message_id"), None, msg.get("text")
-    return None, None, None, None, None
-
+# --- Update Handler ---
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def telegram_updates():
     update = request.get_json()
     print(json.dumps(update, indent=2))
-    kind, chat_id, mid, cb_id, data = parse_update(update)
-
-    if kind == "cb":
+    if "callback_query" in update:
+        cb = update["callback_query"]
+        data = cb["data"]
         parts = data.split(":")
+        chat_id = cb["message"]["chat"]["id"]
+        mid = cb["message"]["message_id"]
+        cb_id = cb["id"]
 
-        if data.startswith("expand:"):
-            _, order_key, vendor = parts
-            meta = VENDOR_MSGS.get(order_key, {}).get(vendor)
-            if meta:
-                text = f"🍽️ New order #{ORDERS[order_key]['last2']}\n" + "\n".join(meta["items"])
-                kb = expand_button_kb(order_key, vendor, collapsed=False)
-                tg_edit(meta["group_id"], meta["message_id"], text, reply_markup=kb)
-                meta["collapsed"] = False
+        if data.startswith("req_asap:") or data.startswith("req_time:") or data.startswith("req_exact:"):
+            _, order_key = parts
+            time_type = parts[0].split("_")[1]
+            text_map = {
+                "asap": "⏰ ASAP",
+                "time": "⏱ Later",
+                "exact": "⏰ Waiting for exact time"
+            }
+            reply_text = f"Ⅎ Dispatcher requests: {text_map[time_type]}"
+            for vendor, meta in VENDOR_MSGS[order_key].items():
+                tg_send(meta["group_id"], reply_text, reply_markup=vendor_time_kb(order_key))
+            tg_edit(chat_id, mid, reply_text + "\nAwaiting vendor replies...")
             tg_answer(cb_id)
             return "OK", 200
 
-        if data.startswith("collapse:"):
-            _, order_key, vendor = parts
-            meta = VENDOR_MSGS.get(order_key, {}).get(vendor)
-            if meta:
-                text = f"🍽️ New order #{ORDERS[order_key]['last2']}"
-                kb = expand_button_kb(order_key, vendor, collapsed=True)
-                tg_edit(meta["group_id"], meta["message_id"], text, reply_markup=kb)
-                meta["collapsed"] = True
-            tg_answer(cb_id)
+        if data.startswith("vtime:"):
+            _, choice, order_key = parts
+            vendor_name = None
+            for v, meta in VENDOR_MSGS[order_key].items():
+                if meta["group_id"] == cb["message"]["chat"]["id"]:
+                    vendor_name = v
+                    break
+            if vendor_name:
+                now = datetime.utcnow().strftime("%H:%M")
+                emoji_map = {
+                    "works": "✅ Works 👍",
+                    "later": "⏱ Later",
+                    "prep": "🕒 Will prepare"
+                }
+                status = emoji_map.get(choice, "Responded")
+                last2 = ORDERS[order_key]["last2"]
+                line = f"🟢 {vendor_name} replied {status} for #{last2} at {now}"
+                tg_send(DISPATCH_MAIN_CHAT_ID, line)
+                tg_answer(cb_id, "Response received")
             return "OK", 200
-
-        if data.startswith("req_asap:"):
-            _, order_key = parts
-            ORDERS[order_key]["delivery_time"] = "ASAP"
-            tg_answer(cb_id, "Time set to ASAP.")
-            kb = driver_kb(order_key)
-            tg_edit(chat_id, mid, "⏱ Time set to: ASAP\nAssign to:", reply_markup=kb)
-            return "OK", 200
-
-        if data.startswith("req_time:"):
-            _, order_key = parts
-            ORDERS[order_key]["delivery_time"] = "Later"
-            tg_answer(cb_id, "Time will be sent later.")
-            kb = driver_kb(order_key)
-            tg_edit(chat_id, mid, "⏱ Time will be sent later.\nAssign to:", reply_markup=kb)
-            return "OK", 200
-
-        if data.startswith("req_exact:"):
-            _, order_key = parts
-            ORDERS[order_key]["delivery_time"] = "Exact time (to be confirmed)"
-            tg_answer(cb_id, "Please confirm exact time manually.")
-            kb = driver_kb(order_key)
-            tg_edit(chat_id, mid, "⏱ Waiting for exact time confirmation.\nAssign to:", reply_markup=kb)
-            return "OK", 200
-
-        if data.startswith("req_sameas:"):
-            _, order_key = parts
-            now = datetime.utcnow()
-            recent_orders = []
-
-            for ok, odata in ORDERS.items():
-                if ok == order_key:
-                    continue
-                t = odata.get("timestamp")
-                if not t:
-                    continue
-                try:
-                    dt = datetime.fromisoformat(t.replace("Z", ""))
-                    if now - dt <= timedelta(hours=1):
-                        recent_orders.append((ok, odata))
-                except Exception:
-                    continue
-
-            if not recent_orders:
-                tg_answer(cb_id, "No recent orders found.")
-                return "OK", 200
-
-            kb = {"inline_keyboard": []}
-            for ok, odata in sorted(recent_orders, key=lambda x: x[1]["timestamp"], reverse=True):
-                label = f"#{odata['last2']} – {', '.join(odata['vendors'].keys())}"
-                cbdata = f"sameas_choose:{order_key}:{ok}"
-                kb["inline_keyboard"].append([{"text": label, "callback_data": cbdata}])
-
-            tg_edit(chat_id, mid, "Select an earlier order to copy delivery time from:", reply_markup=kb)
-            tg_answer(cb_id)
-            return "OK", 200
-
-        if data.startswith("sameas_choose:"):
-            _, current_order_key, selected_order_key = parts
-            selected = ORDERS.get(selected_order_key)
-            if not selected:
-                tg_answer(cb_id, "Selected order not found.")
-                return "OK", 200
-            delivery_time = selected.get("delivery_time")
-            if not delivery_time:
-                tg_answer(cb_id, "Selected order has no delivery time.")
-                return "OK", 200
-            ORDERS[current_order_key]["delivery_time"] = delivery_time
-            vendors = ORDERS[current_order_key]["vendors"]
-            for vendor, data in vendors.items():
-                group_id = VENDOR_GROUP_MAP.get(vendor)
-                if group_id:
-                    tg_send(group_id, f"⏱ Same time as previous order: #{selected['last2']}")
-            tg_answer(cb_id, "Delivery time copied.")
-            tg_edit(chat_id, mid, f"✅ Time set from #{selected['last2']}: {delivery_time}\nAssign to:", reply_markup=driver_kb(current_order_key))
-            return "OK", 200
-
-        if data.startswith("assign_driver:"):
-            _, order_key, driver = parts
-            ORDERS[order_key]["assigned_driver"] = driver
-            last2 = ORDERS[order_key]["last2"]
-            text = f"🚴 Assigned to {driver} for #{last2}"
-            tg_edit(chat_id, mid, text)
-            tg_answer(cb_id, "Driver assigned.")
-            return "OK", 200
-
-    elif kind == "msg":
-        text = data
-        chat_id = chat_id
-        if text in ["Works", "Later", "Will prepare"]:
-            for order_key, order in ORDERS.items():
-                for vendor in order["vendors"]:
-                    group_id = VENDOR_GROUP_MAP.get(vendor)
-                    if group_id == chat_id:
-                        now = datetime.utcnow().strftime("%H:%M")
-                        response_line = f"🟢 {vendor} replied ✅ {text} 👍 for #{order['last2']} at {now}"
-                        tg_send(DISPATCH_MAIN_CHAT_ID, response_line)
-                        return "OK", 200
 
     return "OK", 200
 
 if __name__ == "__main__":
-    ts = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-    print(f"{ts} | [BOOT] BOT_TOKEN set={bool(BOT_TOKEN)}  DISPATCH_MAIN_CHAT_ID={DISPATCH_MAIN_CHAT_ID}")
-    print(f"{ts} | [BOOT] VENDOR_GROUP_MAP keys={list(VENDOR_GROUP_MAP.keys())}")
+    print("[BOOT] Running Telegram Dispatch Bot")
     app.run(host="0.0.0.0", port=10000)
