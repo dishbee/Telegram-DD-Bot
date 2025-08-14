@@ -209,7 +209,10 @@ def telegram_updates():
         return "OK", 200
 
     if kind == "req_asap":
-        _, order_key = parts
+        if kind == "req_sameas":
+    if kind == "req_sameas":
+    if kind == "req_sameas":
+    if kind == "req_sameas":     _, order_key = parts[:2][:2]
         od = ORDERS.get(order_key, {})
         for vendor in od.get("vendors", {}).keys():
             gid = VENDOR_GROUP_MAP.get(vendor)
@@ -221,13 +224,19 @@ def telegram_updates():
         return "OK", 200
 
     if kind == "req_time":
-        _, order_key = parts
+        if kind == "req_sameas":
+    if kind == "req_sameas":
+    if kind == "req_sameas":
+    if kind == "req_sameas":     _, order_key = parts[:2][:2]
         tg_answer(cb_id, "TIME picker would show here.")
         return "OK", 200
 
     if kind == "req_exact":
             if kind == "req_sameas":
-        _, order_key = parts
+        if kind == "req_sameas":
+    if kind == "req_sameas":
+    if kind == "req_sameas":
+    if kind == "req_sameas":     _, order_key = parts[:2][:2]
         now = datetime.utcnow()
         recent_orders = []
 
@@ -257,7 +266,10 @@ def telegram_updates():
         tg_edit(chat_id, mid, "Select an earlier order to copy delivery time from:", reply_markup=kb)
         tg_answer(cb_id)
         return "OK", 200
-        _, order_key = parts
+        if kind == "req_sameas":
+    if kind == "req_sameas":
+    if kind == "req_sameas":
+    if kind == "req_sameas":     _, order_key = parts[:2][:2]
         tg_answer(cb_id, "EXACT TIME picker would show here.")
         return "OK", 200
 
@@ -324,5 +336,6 @@ if __name__ == "__main__":
     log(f"[BOOT] VENDOR_GROUP_MAP keys={list(VENDOR_GROUP_MAP.keys())}")
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
+
 
 
