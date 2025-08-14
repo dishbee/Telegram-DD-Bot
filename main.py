@@ -14,15 +14,18 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 SHOPIFY_WEBHOOK_SECRET = os.getenv("SHOPIFY_WEBHOOK_SECRET")
 
 VENDOR_GROUP_MAP = json.loads(os.getenv("VENDOR_GROUP_MAP"))
-
 ORDERS = {}
+VENDOR_MSGS = {}  # order_key -> vendor -> {group_id, message_id, collapsed, items}
 
-# --- Telegram API wrappers (minimal) ---
+# --- Telegram API wrappers ---
 def tg_send(chat_id, text, reply_markup=None):
     payload = {"chat_id": chat_id, "text": text}
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload)
+    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload)
+    if r.ok:
+        return r.json().get("result", {}).get("message_id")
+    return None
 
 def tg_edit(chat_id, mid, text, reply_markup=None):
     payload = {"chat_id": chat_id, "message_id": mid, "text": text}
@@ -57,6 +60,7 @@ def shopify_webhook():
         "vendors": vendor_lines,
         "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z"
     }
+    VENDOR_MSGS[order_key] = {}
 
     mdg_text = f"🆕 New order #{last2}\n"
     for vendor, items in vendor_lines.items():
@@ -68,10 +72,23 @@ def shopify_webhook():
     for vendor, items in vendor_lines.items():
         group_id = VENDOR_GROUP_MAP.get(vendor)
         if group_id:
-            vtext = f"🍽️ New order #{last2}\n" + "\n".join(items)
-            tg_send(group_id, vtext)
+            collapsed_text = f"🍽️ New order #{last2}"
+            kb = expand_button_kb(order_key, vendor, collapsed=True)
+            mid = tg_send(group_id, collapsed_text, reply_markup=kb)
+            VENDOR_MSGS[order_key][vendor] = {
+                "group_id": group_id,
+                "message_id": mid,
+                "collapsed": True,
+                "items": items
+            }
 
     return "OK", 200
+
+def expand_button_kb(order_key, vendor, collapsed=True):
+    if collapsed:
+        return {"inline_keyboard": [[{"text": "👁 View items", "callback_data": f"expand:{order_key}:{vendor}"}]]}
+    else:
+        return {"inline_keyboard": [[{"text": "🔽 Hide items", "callback_data": f"collapse:{order_key}:{vendor}"}]]}
 
 def mdg_actions_kb(order_key):
     return {"inline_keyboard": [
@@ -99,6 +116,29 @@ def telegram_updates():
     if kind == "cb":
         parts = data.split(":")
 
+        if data.startswith("expand:"):
+            _, order_key, vendor = parts
+            meta = VENDOR_MSGS.get(order_key, {}).get(vendor)
+            if meta:
+                text = f"🍽️ New order #{ORDERS[order_key]['last2']}\n" + "\n".join(meta["items"])
+                kb = expand_button_kb(order_key, vendor, collapsed=False)
+                tg_edit(meta["group_id"], meta["message_id"], text, reply_markup=kb)
+                meta["collapsed"] = False
+            tg_answer(cb_id)
+            return "OK", 200
+
+        if data.startswith("collapse:"):
+            _, order_key, vendor = parts
+            meta = VENDOR_MSGS.get(order_key, {}).get(vendor)
+            if meta:
+                text = f"🍽️ New order #{ORDERS[order_key]['last2']}"
+                kb = expand_button_kb(order_key, vendor, collapsed=True)
+                tg_edit(meta["group_id"], meta["message_id"], text, reply_markup=kb)
+                meta["collapsed"] = True
+            tg_answer(cb_id)
+            return "OK", 200
+
+        # existing logic continues...
         if data.startswith("req_asap:"):
             _, order_key = parts
             ORDERS[order_key]["delivery_time"] = "ASAP"
