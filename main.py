@@ -4,6 +4,7 @@ from flask import Flask, request
 import json
 import os
 from datetime import datetime, timedelta
+import requests
 
 app = Flask(__name__)
 
@@ -17,8 +18,6 @@ VENDOR_GROUP_MAP = json.loads(os.getenv("VENDOR_GROUP_MAP"))
 ORDERS = {}
 
 # --- Telegram API wrappers (minimal) ---
-import requests
-
 def tg_send(chat_id, text, reply_markup=None):
     payload = {"chat_id": chat_id, "text": text}
     if reply_markup:
@@ -86,6 +85,9 @@ def parse_update(update):
     if "callback_query" in update:
         cb = update["callback_query"]
         return "cb", cb["message"]["chat"].get("id"), cb["message"]["message_id"], cb["id"], cb["data"]
+    if "message" in update:
+        msg = update["message"]
+        return "msg", msg.get("chat", {}).get("id"), msg.get("message_id"), None, msg.get("text")
     return None, None, None, None, None
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
@@ -173,6 +175,19 @@ def telegram_updates():
             tg_answer(cb_id, "Delivery time copied.")
             tg_edit(chat_id, mid, f"✅ Time set from #{selected['last2']}: {delivery_time}")
             return "OK", 200
+
+    elif kind == "msg":
+        text = data
+        chat_id = chat_id
+        if text in ["Works", "Later", "Will prepare"]:
+            for order_key, order in ORDERS.items():
+                for vendor in order["vendors"]:
+                    group_id = VENDOR_GROUP_MAP.get(vendor)
+                    if group_id == chat_id:
+                        now = datetime.utcnow().strftime("%H:%M")
+                        response_line = f"🟢 {vendor} replied ✅ {text} 👍 for #{order['last2']} at {now}"
+                        tg_send(DISPATCH_MAIN_CHAT_ID, response_line)
+                        return "OK", 200
 
     return "OK", 200
 
