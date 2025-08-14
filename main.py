@@ -150,11 +150,12 @@ def verify_shopify_hmac(req) -> bool:
 
 # ========= SIMPLE KEYBOARDS =========
 def mdg_actions_kb(order_key):
-    return {"inline_keyboard": [[
-        {"text": "ASAP", "callback_data": f"req_asap:{order_key}"},
-        {"text": "TIME", "callback_data": f"req_time:{order_key}"},
-        {"text": "EXACT TIME", "callback_data": f"req_exact:{order_key}"},
-    ]]}
+    return {"inline_keyboard": [
+        [{"text": "ASAP", "callback_data": f"req_asap:{order_key}"}],
+        [{"text": "TIME", "callback_data": f"req_time:{order_key}"}],
+        [{"text": "EXACT TIME", "callback_data": f"req_exact:{order_key}"}],
+        [{"text": "SAME TIME AS", "callback_data": f"req_sameas:{order_key}"}]
+    ]}
 
 def vendor_summary_kb(order_key, vendor, expanded=False):
     return {"inline_keyboard": [[
@@ -287,3 +288,4 @@ if __name__ == "__main__":
     log(f"[BOOT] VENDOR_GROUP_MAP keys={list(VENDOR_GROUP_MAP.keys())}")
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
+
