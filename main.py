@@ -38,6 +38,18 @@ def tg_edit(chat_id, mid, text, reply_markup=None):
 def tg_answer(cb_id, text="OK"):
     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cb_id, "text": text})
 
+# --- Reply keyboard for vendors ---
+def vendor_reply_kb():
+    return {
+        "keyboard": [[
+            {"text": "Works"},
+            {"text": "Later"},
+            {"text": "Will prepare"}
+        ]],
+        "resize_keyboard": True,
+        "one_time_keyboard": True
+    }
+
 # --- Shopify Webhook ---
 @app.route("/webhooks/shopify", methods=["POST"])
 def shopify_webhook():
@@ -151,7 +163,7 @@ def telegram_updates():
                 group_id = VENDOR_GROUP_MAP.get(vendor)
                 if group_id:
                     msg = f"⏱ Can you prepare order #{ORDERS[order_key]['last2']} for delivery ASAP?"
-                    tg_send(group_id, msg)
+                    tg_send(group_id, msg, reply_markup=vendor_reply_kb())
             kb = driver_kb(order_key)
             tg_edit(chat_id, mid, "⏱ Time set to: ASAP\nAssign to:", reply_markup=kb)
             return "OK", 200
@@ -164,7 +176,7 @@ def telegram_updates():
                 group_id = VENDOR_GROUP_MAP.get(vendor)
                 if group_id:
                     msg = f"⏱ Can you prepare order #{ORDERS[order_key]['last2']}? Delivery time will be sent later."
-                    tg_send(group_id, msg)
+                    tg_send(group_id, msg, reply_markup=vendor_reply_kb())
             kb = driver_kb(order_key)
             tg_edit(chat_id, mid, "⏱ Time will be sent later.\nAssign to:", reply_markup=kb)
             return "OK", 200
@@ -177,7 +189,7 @@ def telegram_updates():
                 group_id = VENDOR_GROUP_MAP.get(vendor)
                 if group_id:
                     msg = f"⏱ Can you prepare order #{ORDERS[order_key]['last2']} for a specific time? Please wait for exact confirmation."
-                    tg_send(group_id, msg)
+                    tg_send(group_id, msg, reply_markup=vendor_reply_kb())
             kb = driver_kb(order_key)
             tg_edit(chat_id, mid, "⏱ Waiting for exact time confirmation.\nAssign to:", reply_markup=kb)
             return "OK", 200
@@ -228,7 +240,7 @@ def telegram_updates():
             for vendor in ORDERS[current_order_key]["vendors"]:
                 group_id = VENDOR_GROUP_MAP.get(vendor)
                 if group_id:
-                    tg_send(group_id, f"⏱ Can you prepare order #{ORDERS[current_order_key]['last2']}? Same time as previous order #{selected['last2']}")
+                    tg_send(group_id, f"⏱ Can you prepare order #{ORDERS[current_order_key]['last2']}? Same time as previous order #{selected['last2']}", reply_markup=vendor_reply_kb())
             tg_answer(cb_id, "Delivery time copied.")
             tg_edit(chat_id, mid, f"✅ Time set from #{selected['last2']}: {delivery_time}\nAssign to:", reply_markup=driver_kb(current_order_key))
             return "OK", 200
