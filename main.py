@@ -226,6 +226,37 @@ def telegram_updates():
         return "OK", 200
 
     if kind == "req_exact":
+            if kind == "req_sameas":
+        _, order_key = parts
+        now = datetime.utcnow()
+        recent_orders = []
+
+        for ok, data in ORDERS.items():
+            if ok == order_key:
+                continue  # skip self
+            t = data.get("timestamp")
+            if not t:
+                continue
+            try:
+                dt = datetime.fromisoformat(t.replace("Z", ""))
+                if now - dt <= timedelta(hours=1):
+                    recent_orders.append((ok, data))
+            except Exception:
+                continue
+
+        if not recent_orders:
+            tg_answer(cb_id, "No recent orders found.")
+            return "OK", 200
+
+        kb = {"inline_keyboard": []}
+        for ok, data in sorted(recent_orders, key=lambda x: x[1]["timestamp"], reverse=True):
+            label = f"#{data['last2']} – {', '.join(data['vendors'].keys())}"
+            cbdata = f"sameas_choose:{order_key}:{ok}"
+            kb["inline_keyboard"].append([{"text": label, "callback_data": cbdata}])
+
+        tg_edit(chat_id, mid, "Select an earlier order to copy delivery time from:", reply_markup=kb)
+        tg_answer(cb_id)
+        return "OK", 200
         _, order_key = parts
         tg_answer(cb_id, "EXACT TIME picker would show here.")
         return "OK", 200
@@ -259,7 +290,12 @@ def shopify_webhook():
         v = it.get("vendor") or "Unknown"
         vendors.setdefault(v, []).append(it)
     log(f"[SHOPIFY] vendors={list(vendors.keys())}")
-    ORDERS[order_key] = {"full": order_number, "last2": last2, "vendors": vendors}
+    ORDERS[order_key] = {
+    "full": order_number,
+    "last2": last2,
+    "vendors": vendors,
+    "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z"
+}
 
     log("[FLOW] Sending formatted MDG message…")
     mdg_text = format_shopify_order_mdg(p)
@@ -288,4 +324,5 @@ if __name__ == "__main__":
     log(f"[BOOT] VENDOR_GROUP_MAP keys={list(VENDOR_GROUP_MAP.keys())}")
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
+
 
