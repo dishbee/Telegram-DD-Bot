@@ -14,7 +14,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 SHOPIFY_WEBHOOK_SECRET = os.getenv("SHOPIFY_WEBHOOK_SECRET")
 DISPATCH_MAIN_CHAT_ID = int(os.getenv("DISPATCH_MAIN_CHAT_ID"))
-VENDOR_GROUP_MAP = json.loads(os.getenv("VENDOR_GROUP_MAP", '{}'))  # JSON string: {"VendorName": chat_id}
+VENDOR_GROUP_MAP = json.loads(os.getenv("VENDOR_GROUP_MAP", '{}'))
 
 bot = telegram.Bot(token=BOT_TOKEN)
 
@@ -138,6 +138,13 @@ def telegram_webhook():
             bot.send_message(chat_id=query.message.chat.id, text=f"When should order #{order_number} be prepared?", reply_markup=reply_markup)
             query.answer()
 
+        elif data.startswith("mdg_time_select:"):
+            parts = data.split(":")
+            order_number = parts[1]
+            selected_time = parts[2]
+            bot.send_message(chat_id=query.message.chat.id, text=f"⏰ Requested time for order #{order_number}: {selected_time}?")
+            query.answer()
+
     return "ok"
 
 
@@ -151,12 +158,10 @@ def shopify_webhook():
 
     order = request.get_json()
 
-    # Send to main dispatch group with full formatting and action buttons
     mdg_message, vendors = format_main_dispatch_message(order)
     mdg_buttons = build_mdg_buttons(order)
     bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=mdg_message, parse_mode=telegram.ParseMode.MARKDOWN, reply_markup=mdg_buttons)
 
-    # Send per-vendor summaries with expand button
     for vendor, items in vendors.items():
         if vendor in VENDOR_GROUP_MAP:
             short_msg = format_vendor_message(items)
