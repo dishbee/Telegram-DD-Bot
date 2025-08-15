@@ -23,6 +23,8 @@ def telegram_webhook():
 
 @app.route("/webhooks/shopify", methods=["POST"])
 def shopify_webhook():
+    import asyncio
+    return asyncio.run(handle_shopify_webhook())
     data = request.get_data()
     hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
@@ -31,6 +33,8 @@ def shopify_webhook():
 
     payload = request.get_json()
     print("Received Shopify order:", json.dumps(payload, indent=2))
+
+async def handle_shopify_webhook():
 
     order_name = payload.get("name", "Unknown")
     customer = payload.get("customer", {})
@@ -55,7 +59,7 @@ def shopify_webhook():
         full_message += f"\n📝 Note: {note}"
 
     try:
-        bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=full_message)
+        await bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=full_message)
     except Exception as e:
         print(f"Error sending to dispatch group: {e}")
 
@@ -74,7 +78,7 @@ def shopify_webhook():
                 [InlineKeyboardButton("Expand ⬇", callback_data=f"expand_{order_name}_{vendor.strip()}")]
             ])
             try:
-                bot.send_message(chat_id=group_id, text=vendor_msg, reply_markup=keyboard)
+                await bot.send_message(chat_id=group_id, text=vendor_msg, reply_markup=keyboard)
             except Exception as e:
                 print(f"Error sending to vendor group {vendor.strip()}: {e}")
 
