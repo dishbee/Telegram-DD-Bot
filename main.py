@@ -24,7 +24,15 @@ def telegram_webhook():
 @app.route("/webhooks/shopify", methods=["POST"])
 def shopify_webhook():
     import asyncio
-    return asyncio.run(handle_shopify_webhook())
+    data = request.get_data()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+
+    if not verify_webhook(data, hmac_header):
+        return "Unauthorized", 401
+
+    payload = request.get_json()
+    print("Received Shopify order:", json.dumps(payload, indent=2))
+    return asyncio.run(handle_shopify_webhook(payload))
     data = request.get_data()
     hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
@@ -34,7 +42,7 @@ def shopify_webhook():
     payload = request.get_json()
     print("Received Shopify order:", json.dumps(payload, indent=2))
 
-async def handle_shopify_webhook():
+async def handle_shopify_webhook(payload):
 
     order_name = payload.get("name", "Unknown")
     customer = payload.get("customer", {})
