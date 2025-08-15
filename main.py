@@ -186,16 +186,24 @@ def shopify_webhook():
     data = request.data
     hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
-    if not verify_shopify_webhook(data, hmac_header):
-        return "Unauthorized", 401
+    # DEBUG: Log all incoming webhook data
+    print("--- Shopify webhook received ---")
+    print("Headers:", dict(request.headers))
+    print("Body:", data.decode())
 
+    # TEMPORARILY DISABLED for local testing – re-enable before production
+    # if not verify_shopify_webhook(data, hmac_header):
+    #     print("❌ HMAC verification failed")
+    #     return "Unauthorized", 401
+
+    print("✅ HMAC check skipped for testing")
     order = request.get_json()
+    print("Parsed Order:", order)
 
     mdg_message, vendors = format_main_dispatch_message(order)
     mdg_buttons = build_mdg_buttons(order)
     bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=mdg_message, parse_mode=telegram.ParseMode.MARKDOWN, reply_markup=mdg_buttons)
 
-    # Store order metadata for 'same time as...' logic
     customer = order.get("customer", {})
     recent_orders.append({
         "number": order.get("order_number"),
