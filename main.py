@@ -35,7 +35,10 @@ async_loop = asyncio.new_event_loop()
 threading.Thread(target=async_loop.run_forever, daemon=True).start()
 
 def run_async(coro):
-    asyncio.run_coroutine_threadsafe(coro(), async_loop)
+    if asyncio.iscoroutine(coro):
+        asyncio.run_coroutine_threadsafe(coro, async_loop)
+    else:
+        asyncio.run_coroutine_threadsafe(coro(), async_loop)
 
 # ----------------- Helpers -----------------
 
