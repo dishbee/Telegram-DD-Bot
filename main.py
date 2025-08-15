@@ -54,7 +54,10 @@ def shopify_webhook():
     if note:
         full_message += f"\n📝 Note: {note}"
 
-    bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=full_message)
+    try:
+        bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=full_message)
+    except Exception as e:
+        print(f"Error sending to dispatch group: {e}")
 
     for vendor in vendor_tags:
         group_id = VENDOR_GROUP_MAP.get(vendor.strip())
@@ -70,7 +73,10 @@ def shopify_webhook():
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Expand ⬇", callback_data=f"expand_{order_name}_{vendor.strip()}")]
             ])
-            bot.send_message(chat_id=group_id, text=vendor_msg, reply_markup=keyboard)
+            try:
+                bot.send_message(chat_id=group_id, text=vendor_msg, reply_markup=keyboard)
+            except Exception as e:
+                print(f"Error sending to vendor group {vendor.strip()}: {e}")
 
     return "OK"
 
