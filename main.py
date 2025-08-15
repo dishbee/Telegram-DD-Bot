@@ -88,6 +88,8 @@ def build_time_options(order_number):
         options.append(telegram.InlineKeyboardButton(label, callback_data=f"mdg_time_select:{order_number}:{label}"))
     return telegram.InlineKeyboardMarkup.from_row(options)
 
+pending_exact_time = {}
+
 # --- Routes ---
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
@@ -144,6 +146,20 @@ def telegram_webhook():
             selected_time = parts[2]
             bot.send_message(chat_id=query.message.chat.id, text=f"⏰ Requested time for order #{order_number}: {selected_time}?")
             query.answer()
+
+        elif data.startswith("mdg_exact:"):
+            order_number = data.split(":")[1]
+            user_id = query.from_user.id
+            pending_exact_time[user_id] = order_number
+            bot.send_message(chat_id=query.message.chat.id, text=f"Please send exact time (HH:MM) for order #{order_number}")
+            query.answer()
+
+    elif update.message:
+        user_id = update.message.from_user.id
+        if user_id in pending_exact_time:
+            order_number = pending_exact_time.pop(user_id)
+            text = update.message.text.strip()
+            bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"⏰ Requested exact time for order #{order_number}: {text}")
 
     return "ok"
 
