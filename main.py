@@ -32,7 +32,8 @@ order_assignments: dict[str, dict] = {}  # order_number -> {'vendor_confirmed': 
 
 
 def run_async(coro):
-    threading.Thread(target=asyncio.run, args=(coro,)).start()
+    loop = asyncio.new_event_loop()
+    threading.Thread(target=loop.run_until_complete, args=(coro,)).start()
 
 # ----------------- Helpers -----------------
 
@@ -108,13 +109,13 @@ def build_courier_buttons(order_number: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup.from_column(buttons)
 
 # The assign handler now appends a new line to MDG and edits buttons
-        elif data.startswith("assign:"):
-            _, order_number, courier_name = data.split(":")
-            courier_id = COURIER_MAP.get(courier_name)
-            if courier_id:
-                run_async(bot.send_message(chat_id=courier_id, text=f"📦 You’ve been assigned order #{order_number}"))
-                run_async(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"🟨 Assigned to {courier_name} (order #{order_number})"))
-                order_assignments[order_number]['courier_assigned'] = True
-                order_assignments[order_number]['courier'] = courier_name
+elif data.startswith("assign:"):
+    _, order_number, courier_name = data.split(":")
+    courier_id = COURIER_MAP.get(courier_name)
+    if courier_id:
+        run_async(bot.send_message(chat_id=courier_id, text=f"📦 You’ve been assigned order #{order_number}"))
+        run_async(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"🟨 Assigned to {courier_name} (order #{order_number})"))
+        order_assignments[order_number]['courier_assigned'] = True
+        order_assignments[order_number]['courier'] = courier_name
 
-    return "ok"
+return "ok"
