@@ -13,6 +13,12 @@ import asyncio
 from datetime import datetime, timedelta
 
 from telegram.request import HTTPXRequest
+import httpx
+
+class CustomHTTPXRequest(HTTPXRequest):
+    def __init__(self):
+        client = httpx.AsyncClient(limits=httpx.Limits(max_connections=20, max_keepalive_connections=20))
+        super().__init__(http_version="1.1", client=client)
 
 app = Flask(__name__)
 
@@ -23,7 +29,7 @@ DISPATCH_MAIN_CHAT_ID = int(os.getenv("DISPATCH_MAIN_CHAT_ID"))
 VENDOR_GROUP_MAP = json.loads(os.getenv("VENDOR_GROUP_MAP", '{}'))  # {"VendorName": chat_id}
 COURIER_MAP = json.loads(os.getenv("COURIER_MAP", '{}'))  # {"Paul": user_id, "Jamil": user_id}
 
-request_config = HTTPXRequest(pool_size=20, read_timeout=10.0, write_timeout=10.0, connect_timeout=5.0)
+request_config = CustomHTTPXRequest()
 bot = telegram.Bot(token=BOT_TOKEN, request=request_config)
 
 # track vendor replies by group chat
