@@ -15,10 +15,13 @@ from datetime import datetime, timedelta
 from telegram.request import HTTPXRequest
 import httpx
 
+# --------- FIXED CONNECTION HANDLING ---------
 class CustomHTTPXRequest(HTTPXRequest):
     def __init__(self):
-        client = httpx.AsyncClient(limits=httpx.Limits(max_connections=20, max_keepalive_connections=20))
-        super().__init__(http_version="1.1", client=client)
+        limits = httpx.Limits(max_connections=20, max_keepalive_connections=20)
+        timeout = httpx.Timeout(10.0, connect=5.0)
+        client_args = {"limits": limits, "timeout": timeout}
+        super().__init__(http_version="1.1", **client_args)
 
 app = Flask(__name__)
 
