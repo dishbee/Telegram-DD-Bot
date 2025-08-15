@@ -32,8 +32,7 @@ order_assignments: dict[str, dict] = {}  # order_number -> {'vendor_confirmed': 
 
 
 def run_async(coro):
-    loop = asyncio.new_event_loop()
-    threading.Thread(target=loop.run_until_complete, args=(coro,)).start()
+    asyncio.run(coro)
 
 # ----------------- Helpers -----------------
 
@@ -109,13 +108,21 @@ def build_courier_buttons(order_number: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup.from_column(buttons)
 
 # The assign handler now appends a new line to MDG and edits buttons
-elif data.startswith("assign:"):
-    _, order_number, courier_name = data.split(":")
-    courier_id = COURIER_MAP.get(courier_name)
-    if courier_id:
-        run_async(bot.send_message(chat_id=courier_id, text=f"📦 You’ve been assigned order #{order_number}"))
-        run_async(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"🟨 Assigned to {courier_name} (order #{order_number})"))
-        order_assignments[order_number]['courier_assigned'] = True
-        order_assignments[order_number]['courier'] = courier_name
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+def telegram_webhook():
+    update = telegram.Update.de_json(request.get_json(force=True), bot)
 
-return "ok"
+    if update.callback_query:
+        data = update.callback_query.data
+        if data.startswith("assign:"):
+            _, order_number, courier_name = data.split(":")
+            courier_id = COURIER_MAP.get(courier_name)
+            if courier_id:
+                run_async(bot.send_message(chat_id=courier_id, text=f"📦 You’ve been assigned order #{order_number}"))
+                run_async(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"🟨 Assigned to {courier_name} (order #{order_number})"))
+                order_assignments[order_number] = {
+                    'vendor_confirmed': True,
+                    'courier_assigned': True,
+                    'courier': courier_name
+                }
+    return "ok"
