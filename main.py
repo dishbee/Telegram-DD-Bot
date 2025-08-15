@@ -8,6 +8,7 @@ import hmac
 import hashlib
 import os
 import json
+import asyncio
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -19,6 +20,13 @@ DISPATCH_MAIN_CHAT_ID = int(os.getenv("DISPATCH_MAIN_CHAT_ID"))
 VENDOR_GROUP_MAP = json.loads(os.getenv("VENDOR_GROUP_MAP", '{}'))  # {"VendorName": chat_id}
 
 bot = telegram.Bot(token=BOT_TOKEN)
+
+def run_async(coro):
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(coro)
+    except RuntimeError:
+        asyncio.run(coro)
 
 # ----------------- Helpers -----------------
 
@@ -34,7 +42,6 @@ def format_main_dispatch_message(order: dict):
     shipping = order.get("shipping_address", {}) or {}
     items = order.get("line_items", []) or []
 
-    # Vendor bucket
     vendors: dict[str, list[str]] = {}
     for it in items:
         vendor = it.get("vendor") or "Unknown"
@@ -82,7 +89,6 @@ def build_mdg_buttons(order: dict) -> InlineKeyboardMarkup:
         ],
     ])
 
-
 def build_time_options(order_number: int | str) -> InlineKeyboardMarkup:
     now = datetime.now()
     buttons = []
@@ -92,8 +98,6 @@ def build_time_options(order_number: int | str) -> InlineKeyboardMarkup:
         buttons.append(InlineKeyboardButton(label, callback_data=f"mdg_time_select:{order_number}:{label}"))
     return InlineKeyboardMarkup.from_row(buttons)
 
-
-# Track conversational state for exact-time replies and a small cache of recent orders
 pending_exact_time: dict[int, str] = {}
 recent_orders: list[dict] = []
 
@@ -107,54 +111,52 @@ def telegram_webhook():
         q = update.callback_query
         data = q.data or ""
 
-        # Expand / collapse vendor card in vendor groups
         if data.startswith("expand:") or data.startswith("collapse:"):
             parts = data.split(":", 2)
             if len(parts) < 3:
                 return "bad data", 400
             vendor, detail = parts[1], parts[2]
             if data.startswith("expand:"):
-                bot.edit_message_text(
+                run_async(bot.edit_message_text(
                     chat_id=q.message.chat.id,
                     message_id=q.message.message_id,
                     text=q.message.text + "\n\n" + detail,
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔼 Hide Details", callback_data=f"collapse:{vendor}:{detail}")]])
-                )
+                ))
             else:
                 base = q.message.text.split("\n\n")[0]
-                bot.edit_message_text(
+                run_async(bot.edit_message_text(
                     chat_id=q.message.chat.id,
                     message_id=q.message.message_id,
                     text=base,
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔽 Show Details", callback_data=f"expand:{vendor}:{detail}")]])
-                )
+                ))
 
-        # MDG buttons
         elif data.startswith("mdg_asap:"):
             onum = data.split(":")[1]
-            bot.send_message(chat_id=q.message.chat.id, text=f"ASAP requested for order #{onum}")
+            run_async(bot.send_message(chat_id=q.message.chat.id, text=f"ASAP requested for order #{onum}"))
             q.answer()
 
         elif data.startswith("mdg_time:"):
             onum = data.split(":")[1]
-            bot.send_message(
+            run_async(bot.send_message(
                 chat_id=q.message.chat.id,
                 text=f"When should order #{onum} be prepared?",
                 reply_markup=build_time_options(onum)
-            )
+            ))
             q.answer()
 
         elif data.startswith("mdg_time_select:"):
             _, onum, selected = data.split(":")
-            bot.send_message(chat_id=q.message.chat.id, text=f"⏰ Requested time for order #{onum}: {selected}?")
+            run_async(bot.send_message(chat_id=q.message.chat.id, text=f"⏰ Requested time for order #{onum}: {selected}?"))
             q.answer()
 
         elif data.startswith("mdg_exact:"):
             onum = data.split(":")[1]
             pending_exact_time[q.from_user.id] = onum
-            bot.send_message(chat_id=q.message.chat.id, text=f"Please send exact time (HH:MM) for order #{onum}")
+            run_async(bot.send_message(chat_id=q.message.chat.id, text=f"Please send exact time (HH:MM) for order #{onum}"))
             q.answer()
 
         elif data.startswith("mdg_same:"):
@@ -163,12 +165,12 @@ def telegram_webhook():
             for prev in recent_orders[-3:][::-1]:
                 label = f"Same as #{prev['number']} – {prev['name']}"
                 rows.append([InlineKeyboardButton(label, callback_data=f"mdg_same_select:{onum}:{prev['number']}")])
-            bot.send_message(chat_id=q.message.chat.id, text="Choose an order to copy time from:", reply_markup=InlineKeyboardMarkup(rows or [[InlineKeyboardButton("No previous orders", callback_data="noop")]]))
+            run_async(bot.send_message(chat_id=q.message.chat.id, text="Choose an order to copy time from:", reply_markup=InlineKeyboardMarkup(rows or [[InlineKeyboardButton("No previous orders", callback_data="noop")]])))
             q.answer()
 
         elif data.startswith("mdg_same_select:"):
             _, current_onum, prev_onum = data.split(":")
-            bot.send_message(chat_id=q.message.chat.id, text=f"🔁 Requested same time as order #{prev_onum} for order #{current_onum}")
+            run_async(bot.send_message(chat_id=q.message.chat.id, text=f"🔁 Requested same time as order #{prev_onum} for order #{current_onum}"))
             q.answer()
 
     elif update.message:
@@ -176,7 +178,7 @@ def telegram_webhook():
         if uid in pending_exact_time:
             onum = pending_exact_time.pop(uid)
             txt = (update.message.text or "").strip()
-            bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"⏰ Requested exact time for order #{onum}: {txt}")
+            run_async(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"⏰ Requested exact time for order #{onum}: {txt}"))
 
     return "ok"
 
@@ -188,12 +190,10 @@ def shopify_webhook():
     data = request.data
     hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
 
-    # Debug logging
     print("--- Shopify webhook received ---")
     print("Headers:", dict(request.headers))
     print("Body:", data.decode(errors="ignore"))
 
-    # TEMP: skip HMAC during testing
     # if not verify_shopify_webhook(data, hmac_header):
     #     print("❌ HMAC verification failed")
     #     return "Unauthorized", 401
@@ -202,11 +202,9 @@ def shopify_webhook():
     order = request.get_json(force=True, silent=True) or {}
     print("Parsed Order:", order)
 
-    # Build and send MDG message + buttons
     mdg_message, vendors = format_main_dispatch_message(order)
-    bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=mdg_message, parse_mode=ParseMode.MARKDOWN, reply_markup=build_mdg_buttons(order))
+    run_async(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=mdg_message, parse_mode=ParseMode.MARKDOWN, reply_markup=build_mdg_buttons(order)))
 
-    # Cache for "Same time as..."
     cust = order.get("customer", {}) or {}
     recent_orders.append({
         "number": order.get("order_number"),
@@ -215,18 +213,17 @@ def shopify_webhook():
     if len(recent_orders) > 10:
         recent_orders.pop(0)
 
-    # Send per-vendor summaries as separate messages
     for vendor, items in vendors.items():
         chat_id = VENDOR_GROUP_MAP.get(vendor)
         if chat_id:
             short_msg = format_vendor_message(items)
             detail = format_vendor_hidden_detail(order)
-            bot.send_message(
+            run_async(bot.send_message(
                 chat_id=chat_id,
                 text=short_msg,
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔽 Show Details", callback_data=f"expand:{vendor}:{detail}")]])
-            )
+            ))
 
     return "ok"
 
