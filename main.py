@@ -228,7 +228,7 @@ def shopify_webhook():
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔽 Show Details", callback_data=f"expand:{vendor}:{detail}")]])
             )
 
-    return "ok"}
+    return "ok"
 
 
 if __name__ == "__main__":
