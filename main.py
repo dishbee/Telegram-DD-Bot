@@ -143,7 +143,10 @@ def shopify_webhook():
     recent_orders.append(order)
     mdg_message, vendors = format_main_dispatch_message(order)
 
-    run_async(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=mdg_message, parse_mode=ParseMode.MARKDOWN, reply_markup=build_mdg_buttons(order)))
+    async def send_mdg():
+        await bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=mdg_message, parse_mode=ParseMode.MARKDOWN, reply_markup=build_mdg_buttons(order))
+
+    run_async(send_mdg())
 
     for vendor, items in vendors.items():
         group_id = VENDOR_GROUP_MAP.get(vendor)
@@ -152,6 +155,10 @@ def shopify_webhook():
         summary = format_vendor_message(items)
         details = format_vendor_hidden_detail(order)
         full_text = summary + f"\n\n⬇️ Tap to expand\n\n||{details}||"
-        run_async(bot.send_message(chat_id=group_id, text=full_text, parse_mode=ParseMode.MARKDOWN))
+
+        async def send_vendor():
+            await bot.send_message(chat_id=group_id, text=full_text, parse_mode=ParseMode.MARKDOWN)
+
+        run_async(send_vendor())
 
     return "ok"
