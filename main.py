@@ -12,17 +12,6 @@ import threading
 import asyncio
 from datetime import datetime, timedelta
 
-from telegram.request import HTTPXRequest
-import httpx
-
-# --------- FIXED CONNECTION HANDLING ---------
-class CustomHTTPXRequest(HTTPXRequest):
-    def __init__(self):
-        limits = httpx.Limits(max_connections=20, max_keepalive_connections=20)
-        timeout = httpx.Timeout(10.0, connect=5.0)
-        client_args = {"limits": limits, "timeout": timeout}
-        super().__init__(http_version="1.1", **client_args)
-
 app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -32,8 +21,7 @@ DISPATCH_MAIN_CHAT_ID = int(os.getenv("DISPATCH_MAIN_CHAT_ID"))
 VENDOR_GROUP_MAP = json.loads(os.getenv("VENDOR_GROUP_MAP", '{}'))  # {"VendorName": chat_id}
 COURIER_MAP = json.loads(os.getenv("COURIER_MAP", '{}'))  # {"Paul": user_id, "Jamil": user_id}
 
-request_config = CustomHTTPXRequest()
-bot = telegram.Bot(token=BOT_TOKEN, request=request_config)
+bot = telegram.Bot(token=BOT_TOKEN)
 
 # track vendor replies by group chat
 ORDER_STATUS_RESPONSES = {"works", "later", "will prepare"}
