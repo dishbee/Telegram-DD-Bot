@@ -35,7 +35,7 @@ async_loop = asyncio.new_event_loop()
 threading.Thread(target=async_loop.run_forever, daemon=True).start()
 
 def run_async(coro):
-    asyncio.run_coroutine_threadsafe(coro, async_loop)
+    asyncio.run_coroutine_threadsafe(coro(), async_loop)
 
 # ----------------- Helpers -----------------
 
@@ -122,8 +122,8 @@ def telegram_webhook():
             _, order_number, courier_name = data.split(":")
             courier_id = COURIER_MAP.get(courier_name)
             if courier_id:
-                run_async(bot.send_message(chat_id=courier_id, text=f"📦 You’ve been assigned order #{order_number}"))
-                run_async(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"🟨 Assigned to {courier_name} (order #{order_number})"))
+                run_async(lambda: bot.send_message(chat_id=courier_id, text=f"📦 You’ve been assigned order #{order_number}"))
+                run_async(lambda: bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"🟨 Assigned to {courier_name} (order #{order_number})"))
                 order_assignments[order_number] = {
                     'vendor_confirmed': True,
                     'courier_assigned': True,
@@ -146,7 +146,7 @@ def shopify_webhook():
     async def send_mdg():
         await bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=mdg_message, parse_mode=ParseMode.MARKDOWN, reply_markup=build_mdg_buttons(order))
 
-    run_async(send_mdg())
+    run_async(send_mdg)
 
     for vendor, items in vendors.items():
         group_id = VENDOR_GROUP_MAP.get(vendor)
@@ -159,6 +159,6 @@ def shopify_webhook():
         async def send_vendor():
             await bot.send_message(chat_id=group_id, text=full_text, parse_mode=ParseMode.MARKDOWN)
 
-        run_async(send_vendor())
+        run_async(send_vendor)
 
     return "ok"
