@@ -89,6 +89,7 @@ def build_time_options(order_number):
     return telegram.InlineKeyboardMarkup.from_row(options)
 
 pending_exact_time = {}
+recent_orders = []
 
 # --- Routes ---
 
@@ -154,6 +155,22 @@ def telegram_webhook():
             bot.send_message(chat_id=query.message.chat.id, text=f"Please send exact time (HH:MM) for order #{order_number}")
             query.answer()
 
+        elif data.startswith("mdg_same:"):
+            order_number = data.split(":")[1]
+            buttons = []
+            for prev in recent_orders[-3:][::-1]:
+                label = f"Same as #{prev['number']} – {prev['name']}"
+                cb_data = f"mdg_same_select:{order_number}:{prev['number']}"
+                buttons.append([telegram.InlineKeyboardButton(label, callback_data=cb_data)])
+            reply_markup = telegram.InlineKeyboardMarkup(buttons)
+            bot.send_message(chat_id=query.message.chat.id, text=f"Choose an order to copy time from:", reply_markup=reply_markup)
+            query.answer()
+
+        elif data.startswith("mdg_same_select:"):
+            _, current, previous = data.split(":")
+            bot.send_message(chat_id=query.message.chat.id, text=f"🔁 Requested same time as order #{previous} for order #{current}")
+            query.answer()
+
     elif update.message:
         user_id = update.message.from_user.id
         if user_id in pending_exact_time:
@@ -177,6 +194,15 @@ def shopify_webhook():
     mdg_message, vendors = format_main_dispatch_message(order)
     mdg_buttons = build_mdg_buttons(order)
     bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=mdg_message, parse_mode=telegram.ParseMode.MARKDOWN, reply_markup=mdg_buttons)
+
+    # Store order metadata for 'same time as...' logic
+    customer = order.get("customer", {})
+    recent_orders.append({
+        "number": order.get("order_number"),
+        "name": f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
+    })
+    if len(recent_orders) > 10:
+        recent_orders.pop(0)
 
     for vendor, items in vendors.items():
         if vendor in VENDOR_GROUP_MAP:
