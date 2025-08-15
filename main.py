@@ -8,7 +8,6 @@ import hmac
 import hashlib
 import os
 import json
-import asyncio
 import threading
 from datetime import datetime, timedelta
 
@@ -30,9 +29,9 @@ pending_exact_time: dict[int, str] = {}
 recent_orders: list[dict] = []
 order_assignments: dict[str, dict] = {}  # order_number -> {'vendor_confirmed': True, 'courier_assigned': False, 'courier': 'Paul'}
 
-
-def run_async(coro):
-    asyncio.run(coro)
+# ----------- Safe thread-based async fallback -----------
+def run_async(func, *args, **kwargs):
+    threading.Thread(target=func, args=args, kwargs=kwargs).start()
 
 # ----------------- Helpers -----------------
 
@@ -107,7 +106,8 @@ def build_courier_buttons(order_number: str) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup.from_column(buttons)
 
-# The assign handler now appends a new line to MDG and edits buttons
+# ----------------- Flask Routes -----------------
+
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
     update = telegram.Update.de_json(request.get_json(force=True), bot)
@@ -118,11 +118,36 @@ def telegram_webhook():
             _, order_number, courier_name = data.split(":")
             courier_id = COURIER_MAP.get(courier_name)
             if courier_id:
-                run_async(bot.send_message(chat_id=courier_id, text=f"📦 You’ve been assigned order #{order_number}"))
-                run_async(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"🟨 Assigned to {courier_name} (order #{order_number})"))
+                run_async(bot.send_message, chat_id=courier_id, text=f"📦 You’ve been assigned order #{order_number}")
+                run_async(bot.send_message, chat_id=DISPATCH_MAIN_CHAT_ID, text=f"🟨 Assigned to {courier_name} (order #{order_number})")
                 order_assignments[order_number] = {
                     'vendor_confirmed': True,
                     'courier_assigned': True,
                     'courier': courier_name
                 }
+
+    return "ok"
+
+@app.route("/webhooks/shopify", methods=["POST"])
+def shopify_webhook():
+    data = request.get_data()
+    verified = verify_shopify_webhook(data, request.headers.get("X-Shopify-Hmac-Sha256"))
+    if not verified:
+        return "unauthorized", 401
+
+    order = json.loads(data)
+    recent_orders.append(order)
+    mdg_message, vendors = format_main_dispatch_message(order)
+
+    run_async(bot.send_message, chat_id=DISPATCH_MAIN_CHAT_ID, text=mdg_message, parse_mode=ParseMode.MARKDOWN, reply_markup=build_mdg_buttons(order))
+
+    for vendor, items in vendors.items():
+        group_id = VENDOR_GROUP_MAP.get(vendor)
+        if not group_id:
+            continue
+        summary = format_vendor_message(items)
+        details = format_vendor_hidden_detail(order)
+        full_text = summary + f"\n\n⬇️ Tap to expand\n\n||{details}||"
+        run_async(bot.send_message, chat_id=group_id, text=full_text, parse_mode=ParseMode.MARKDOWN)
+
     return "ok"
