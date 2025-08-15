@@ -21,6 +21,11 @@ VENDOR_GROUP_MAP = json.loads(os.getenv("VENDOR_GROUP_MAP", '{}'))  # {"VendorNa
 
 bot = telegram.Bot(token=BOT_TOKEN)
 
+# track vendor replies by group chat
+ORDER_STATUS_RESPONSES = {"works", "later", "will prepare"}
+ORDER_VENDOR_LOOKUP = {}  # message_id -> (vendor_name, order_number)
+
+
 def run_async(coro):
     try:
         loop = asyncio.get_running_loop()
@@ -175,10 +180,27 @@ def telegram_webhook():
 
     elif update.message:
         uid = update.message.from_user.id
+        chat_id = update.message.chat.id
+        txt = (update.message.text or "").strip().lower()
+
         if uid in pending_exact_time:
             onum = pending_exact_time.pop(uid)
-            txt = (update.message.text or "").strip()
-            run_async(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"⏰ Requested exact time for order #{onum}: {txt}"))
+            run_async(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=f"⏰ Requested exact time for order #{onum}: {update.message.text}"))
+
+        elif txt in ORDER_STATUS_RESPONSES:
+            # find vendor by chat_id
+            vendor = None
+            for name, vid in VENDOR_GROUP_MAP.items():
+                if vid == chat_id:
+                    vendor = name
+                    break
+            # get last order number
+            last_order = recent_orders[-1]['number'] if recent_orders else "?"
+            if vendor:
+                run_async(bot.send_message(
+                    chat_id=DISPATCH_MAIN_CHAT_ID,
+                    text=f"🍴 {vendor}: ✅ {txt.title()} (for order #{last_order})"
+                ))
 
     return "ok"
 
