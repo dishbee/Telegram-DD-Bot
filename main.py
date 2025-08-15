@@ -83,4 +83,5 @@ def verify_webhook(data, hmac_header):
     return hmac.compare_digest(computed_hmac_b64, hmac_header or "")
 
 if __name__ == "__main__":
-    app.run()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
