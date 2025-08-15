@@ -159,8 +159,8 @@ def shopify_webhook():
         details = format_vendor_hidden_detail(order)
         full_text = summary + f"\n\n⬇️ Tap to expand\n\n||{details}||"
 
-        async def send_vendor():
-            await bot.send_message(chat_id=group_id, text=full_text, parse_mode=ParseMode.MARKDOWN)
+        async def send_vendor(gid=group_id, text=full_text):
+            await bot.send_message(chat_id=gid, text=text, parse_mode=ParseMode.MARKDOWN)
 
         run_async(send_vendor)
 
