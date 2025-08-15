@@ -63,7 +63,7 @@ def shopify_webhook():
         full_message += f"\n📝 *Note:* {note}"
     full_message += f"\n\nStatus: {short_status}"
 
-    msg = bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=full_message, parse_mode=ParseMode.MARKDOWN)
+    msg = asyncio.run(bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=full_message, parse_mode=ParseMode.MARKDOWN))
     order_message_map[order_id] = {"dispatch_msg_id": msg.message_id, "vendor_msgs": {}, "status": "🟥", "assigned_to": None}
 
     for vendor in vendor_tags:
@@ -82,7 +82,7 @@ def shopify_webhook():
                 [InlineKeyboardButton("Later", callback_data=f"reply|{order_id}|{vendor}|Later"),
                  InlineKeyboardButton("Will prepare", callback_data=f"reply|{order_id}|{vendor}|Will prepare")]
             ])
-            msg = bot.send_message(chat_id=group_id, text=vendor_msg, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
+            msg = asyncio.run(bot.send_message(chat_id=group_id, text=vendor_msg, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard))
             order_message_map[order_id]["vendor_msgs"][vendor] = msg.message_id
 
     return "OK"
