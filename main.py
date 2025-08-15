@@ -6,6 +6,7 @@ import hmac
 import hashlib
 import os
 import json
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -65,6 +66,28 @@ def format_vendor_hidden_detail(order):
         f"📞 {shipping_address.get('phone', customer.get('phone', 'N/A'))}"
     )
 
+def build_mdg_buttons(order):
+    order_number = order.get("order_number", "?")
+    return telegram.InlineKeyboardMarkup([
+        [
+            telegram.InlineKeyboardButton(f"#{str(order_number)[-2:]} ASAP?", callback_data=f"mdg_asap:{order_number}"),
+            telegram.InlineKeyboardButton("Request TIME", callback_data=f"mdg_time:{order_number}"),
+        ],
+        [
+            telegram.InlineKeyboardButton("Request EXACT TIME", callback_data=f"mdg_exact:{order_number}"),
+            telegram.InlineKeyboardButton("Same time as...", callback_data=f"mdg_same:{order_number}"),
+        ]
+    ])
+
+def build_time_options(order_number):
+    now = datetime.now()
+    options = []
+    for i in range(1, 5):
+        future_time = now + timedelta(minutes=10 * i)
+        label = future_time.strftime("%H:%M")
+        options.append(telegram.InlineKeyboardButton(label, callback_data=f"mdg_time_select:{order_number}:{label}"))
+    return telegram.InlineKeyboardMarkup.from_row(options)
+
 # --- Routes ---
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
@@ -104,6 +127,17 @@ def telegram_webhook():
                     ])
                 )
 
+        elif data.startswith("mdg_asap:"):
+            order_number = data.split(":")[1]
+            bot.send_message(chat_id=query.message.chat.id, text=f"ASAP requested for order #{order_number}")
+            query.answer()
+
+        elif data.startswith("mdg_time:"):
+            order_number = data.split(":")[1]
+            reply_markup = build_time_options(order_number)
+            bot.send_message(chat_id=query.message.chat.id, text=f"When should order #{order_number} be prepared?", reply_markup=reply_markup)
+            query.answer()
+
     return "ok"
 
 
@@ -117,9 +151,10 @@ def shopify_webhook():
 
     order = request.get_json()
 
-    # Send to main dispatch group with full formatting
+    # Send to main dispatch group with full formatting and action buttons
     mdg_message, vendors = format_main_dispatch_message(order)
-    bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=mdg_message, parse_mode=telegram.ParseMode.MARKDOWN)
+    mdg_buttons = build_mdg_buttons(order)
+    bot.send_message(chat_id=DISPATCH_MAIN_CHAT_ID, text=mdg_message, parse_mode=telegram.ParseMode.MARKDOWN, reply_markup=mdg_buttons)
 
     # Send per-vendor summaries with expand button
     for vendor, items in vendors.items():
