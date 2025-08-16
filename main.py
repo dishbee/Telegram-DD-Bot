@@ -1,5 +1,5 @@
 # Telegram Dispatch Bot — Full Assignment Implementation (Webhook-only, PTB v20)
-# FIXED VERSION - Addresses 500 errors and adds proper error handling
+# ENHANCED VERSION - Phase 1: Core MDG Workflow Implementation
 
 import os
 import json
@@ -8,6 +8,7 @@ import hashlib
 import base64
 import asyncio
 import logging
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from flask import Flask, request, jsonify
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
@@ -42,8 +43,17 @@ request_cfg = HTTPXRequest(
 bot = Bot(token=BOT_TOKEN, request=request_cfg)
 
 # --- STATE ---
-# Keeps minimal state per order to support edits & callbacks (in-memory; reset on deploy)
+# Enhanced state to support new features
 STATE: Dict[str, Dict[str, Any]] = {}
+# Added fields:
+# - "order_type": "shopify"|"hubrise"|"smoothr"
+# - "requested_time": str|None (time requested from restaurant)
+# - "confirmed_time": str|None (time confirmed by restaurant)
+# - "grouped_with": List[str] (other order IDs in same group)
+# - "created_at": datetime
+
+# Store recent orders for "same time as" functionality
+RECENT_ORDERS: List[Dict[str, Any]] = []
 
 # --- HELPERS ---
 def verify_webhook(raw: bytes, hmac_header: str) -> bool:
@@ -86,19 +96,73 @@ def fmt_address(addr: Dict[str, Any]) -> str:
         logger.error(f"Address formatting error: {e}")
         return "Address formatting error"
 
+def get_time_intervals(base_time: datetime, count: int = 4) -> List[str]:
+    """Generate time intervals for buttons"""
+    intervals = []
+    for i in range(count):
+        time_option = base_time + timedelta(minutes=(i + 1) * 10)
+        intervals.append(time_option.strftime("%H:%M"))
+    return intervals
+
+def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
+    """Get recent orders (last 1 hour) for 'same time as' functionality"""
+    one_hour_ago = datetime.now() - timedelta(hours=1)
+    recent = []
+    
+    for order_id, order_data in STATE.items():
+        if order_id == current_order_id:
+            continue
+        if order_data.get("created_at") and order_data["created_at"] > one_hour_ago:
+            if order_data.get("order_type") == "shopify":
+                display_name = f"#{order_data['name'][-2:]}"  # Last 2 digits
+            else:
+                # For HubRise/Smoothr - use street + building number
+                address_parts = order_data['customer']['address'].split(',')
+                street_info = address_parts[0] if address_parts else "Unknown"
+                display_name = f"*{street_info}*"
+            
+            recent.append({
+                "order_id": order_id,
+                "display_name": display_name,
+                "vendor": order_data.get("vendors", ["Unknown"])[0]
+            })
+    
+    return recent[-10:]  # Return last 10 orders
+
 def build_dispatch_text(order: Dict[str, Any]) -> str:
     """Build dispatch message text for MDG"""
     try:
         note = order.get("note", "")
         status_emoji = order.get("status", "🟥")
         assigned = order.get("assigned_to")
+        requested_time = order.get("requested_time")
+        confirmed_time = order.get("confirmed_time")
         
+        # Enhanced status line
         status_line = f"Status: {status_emoji}"
         if status_emoji == "🟨" and assigned:
             status_line += f" — Assigned to {assigned}"
         
-        text = (
-            f"🟥 *NEW ORDER* ({order['name']})\n"
+        # Add time information
+        if requested_time:
+            status_line += f"\n⏰ Requested: {requested_time}"
+        if confirmed_time:
+            status_line += f"\n✅ Confirmed: {confirmed_time}"
+        
+        # Order type prefix
+        order_type = order.get("order_type", "shopify")
+        if order_type == "shopify":
+            title_prefix = f"🟥 *NEW ORDER* (dishbee + {', '.join(order.get('vendors', []))})"
+            order_number = f"Order #{order['name'][-2:]}" if len(order['name']) >= 2 else order['name']
+        else:
+            title_prefix = f"🟥 *NEW ORDER* ({', '.join(order.get('vendors', []))})"
+            order_number = ""
+        
+        text = f"{title_prefix}\n"
+        if order_number:
+            text += f"📋 {order_number}\n"
+        
+        text += (
             f"👤 *Customer:* {order['customer']['name']}\n"
             f"📍 *Address:* {order['customer']['address']}\n"
             f"📞 *Phone:* {order['customer']['phone']}\n"
@@ -108,6 +172,23 @@ def build_dispatch_text(order: Dict[str, Any]) -> str:
         
         if note:
             text += f"\n📝 *Note:* {note}"
+        
+        # Add grouping information
+        grouped_with = order.get("grouped_with", [])
+        if grouped_with:
+            group_names = []
+            for group_order_id in grouped_with:
+                if group_order_id in STATE:
+                    group_order = STATE[group_order_id]
+                    if group_order.get("order_type") == "shopify":
+                        group_names.append(f"#{group_order['name'][-2:]}")
+                    else:
+                        address_parts = group_order['customer']['address'].split(',')
+                        street_info = address_parts[0] if address_parts else "Unknown"
+                        group_names.append(f"*{street_info}*")
+            if group_names:
+                text += f"\n🔗 *Grouped with:* {', '.join(group_names)}"
+        
         text += f"\n\n{status_line}"
         
         return text
@@ -122,17 +203,30 @@ def build_vendor_text(order: Dict[str, Any], vendor: str, expanded: bool) -> str
         other_vendors = [v for v in order.get("vendors", []) if v != vendor]
         same_time_line = f"\n🕒 Same time as {', '.join(other_vendors)}" if other_vendors else ""
         
+        # Order number for Shopify
+        order_type = order.get("order_type", "shopify")
+        if order_type == "shopify":
+            order_number = f"Order #{order['name'][-2:]}" if len(order['name']) >= 2 else order['name']
+            title = f"🟥 *NEW ORDER* (dishbee + {vendor})"
+        else:
+            order_number = ""
+            title = f"🟥 *NEW ORDER* ({vendor})"
+        
         if expanded:
             customer_block = (
                 f"👤 *Customer:* {order['customer']['name']}\n"
                 f"📍 *Address:* {order['customer']['address']}\n"
                 f"📞 *Phone:* {order['customer']['phone']}\n"
+                f"🕒 *Order placed:* {order.get('created_at', datetime.now()).strftime('%H:%M')}\n"
             )
         else:
             customer_block = ""
         
-        text = (
-            f"🟥 *NEW ORDER* ({order['name']})\n"
+        text = f"{title}\n"
+        if order_number:
+            text += f"📋 {order_number}\n"
+        
+        text += (
             f"🛒 *Items:*\n{order['items_text']}\n"
             f"🕒 *Time:* {order['delivery_time']}"
             f"{same_time_line}"
@@ -148,8 +242,33 @@ def build_vendor_text(order: Dict[str, Any], vendor: str, expanded: bool) -> str
         logger.error(f"Error building vendor text: {e}")
         return f"Error formatting order for {vendor}"
 
-def mdg_keyboard(order_id: str) -> InlineKeyboardMarkup:
-    """Build MDG inline keyboard"""
+def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build MDG time request keyboard - NEW FEATURE"""
+    try:
+        current_time = datetime.now()
+        time_intervals = get_time_intervals(current_time)
+        
+        rows: List[List[InlineKeyboardButton]] = []
+        
+        # Time request row 1
+        rows.append([
+            InlineKeyboardButton("Request ASAP", callback_data=f"request_asap|{order_id}"),
+            InlineKeyboardButton("Request TIME", callback_data=f"request_time|{order_id}")
+        ])
+        
+        # Time request row 2  
+        rows.append([
+            InlineKeyboardButton("Request EXACT TIME", callback_data=f"request_exact|{order_id}"),
+            InlineKeyboardButton("Request SAME TIME AS", callback_data=f"request_same|{order_id}")
+        ])
+        
+        return InlineKeyboardMarkup(rows)
+    except Exception as e:
+        logger.error(f"Error building MDG time request keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build MDG assignment keyboard"""
     try:
         rows: List[List[InlineKeyboardButton]] = []
         
@@ -169,21 +288,61 @@ def mdg_keyboard(order_id: str) -> InlineKeyboardMarkup:
         
         return InlineKeyboardMarkup(rows)
     except Exception as e:
-        logger.error(f"Error building MDG keyboard: {e}")
+        logger.error(f"Error building MDG assignment keyboard: {e}")
         return InlineKeyboardMarkup([])
 
 def vendor_keyboard(order_id: str, vendor: str, expanded: bool) -> InlineKeyboardMarkup:
     """Build vendor inline keyboard"""
     try:
-        toggle = "Hide ⬆" if expanded else "Expand ⬇"
+        toggle = "◂ Hide" if expanded else "Details ▸"
         return InlineKeyboardMarkup([
             [InlineKeyboardButton(toggle, callback_data=f"expand|{order_id}|{vendor}")],
-            [InlineKeyboardButton("Works", callback_data=f"reply|{order_id}|{vendor}|Works"),
-             InlineKeyboardButton("Later", callback_data=f"reply|{order_id}|{vendor}|Later"),
-             InlineKeyboardButton("Will prepare", callback_data=f"reply|{order_id}|{vendor}|Will prepare")]
+            [InlineKeyboardButton("Works 👍", callback_data=f"reply|{order_id}|{vendor}|Works"),
+             InlineKeyboardButton("Later at", callback_data=f"reply|{order_id}|{vendor}|Later"),
+             InlineKeyboardButton("Will prepare at", callback_data=f"reply|{order_id}|{vendor}|Will prepare")]
         ])
     except Exception as e:
         logger.error(f"Error building vendor keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+def time_picker_keyboard(order_id: str, base_time: datetime, action: str) -> InlineKeyboardMarkup:
+    """Build time picker keyboard"""
+    try:
+        intervals = get_time_intervals(base_time)
+        rows = []
+        
+        # Time options in pairs
+        for i in range(0, len(intervals), 2):
+            row = [InlineKeyboardButton(intervals[i], callback_data=f"{action}_time|{order_id}|{intervals[i]}")]
+            if i + 1 < len(intervals):
+                row.append(InlineKeyboardButton(intervals[i + 1], callback_data=f"{action}_time|{order_id}|{intervals[i + 1]}"))
+            rows.append(row)
+        
+        # Custom time option
+        rows.append([InlineKeyboardButton("Custom Time ⏰", callback_data=f"{action}_custom|{order_id}")])
+        
+        return InlineKeyboardMarkup(rows)
+    except Exception as e:
+        logger.error(f"Error building time picker keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+def same_time_as_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build 'same time as' selection keyboard"""
+    try:
+        recent_orders = get_recent_orders_for_same_time(order_id)
+        rows = []
+        
+        for order_info in recent_orders:
+            button_text = f"{order_info['display_name']} ({order_info['vendor']})"
+            callback_data = f"same_time|{order_id}|{order_info['order_id']}"
+            rows.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+        
+        if not recent_orders:
+            rows.append([InlineKeyboardButton("No recent orders found", callback_data="no_recent")])
+        
+        return InlineKeyboardMarkup(rows)
+    except Exception as e:
+        logger.error(f"Error building same time keyboard: {e}")
         return InlineKeyboardMarkup([])
 
 async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN):
@@ -242,7 +401,8 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "telegram-dispatch-bot",
-        "orders_in_state": len(STATE)
+        "orders_in_state": len(STATE),
+        "recent_orders": len(RECENT_ORDERS)
     }), 200
 
 # --- TELEGRAM WEBHOOK ---
@@ -276,6 +436,7 @@ def telegram_webhook():
             logger.info(f"Processing callback: {kind}")
             
             try:
+                # EXISTING CALLBACKS
                 if kind == "reply":
                     _, order_id, vendor, reply_text = data
                     # Post vendor reply to MDG
@@ -332,7 +493,7 @@ def telegram_webhook():
                         chat_id=DISPATCH_MAIN_CHAT_ID, 
                         message_id=order["dispatch_msg_id"], 
                         text=build_dispatch_text(order), 
-                        reply_markup=mdg_keyboard(order_id)
+                        reply_markup=mdg_assignment_keyboard(order_id)
                     )
                     
                 elif kind == "delivered":
@@ -347,7 +508,7 @@ def telegram_webhook():
                         chat_id=DISPATCH_MAIN_CHAT_ID, 
                         message_id=order["dispatch_msg_id"], 
                         text=build_dispatch_text(order), 
-                        reply_markup=mdg_keyboard(order_id)
+                        reply_markup=mdg_assignment_keyboard(order_id)
                     )
                     
                 elif kind == "delayed":
@@ -362,8 +523,146 @@ def telegram_webhook():
                         chat_id=DISPATCH_MAIN_CHAT_ID, 
                         message_id=order["dispatch_msg_id"], 
                         text=build_dispatch_text(order), 
-                        reply_markup=mdg_keyboard(order_id)
+                        reply_markup=mdg_assignment_keyboard(order_id)
                     )
+                
+                # NEW TIME REQUEST CALLBACKS
+                elif kind == "request_asap":
+                    _, order_id = data
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    # Send ASAP request to vendor
+                    for vendor in order.get("vendors", []):
+                        vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_chat_id:
+                            if order.get("order_type") == "shopify":
+                                request_msg = f"#{order['name'][-2:]} ASAP?"
+                            else:
+                                address_parts = order['customer']['address'].split(',')
+                                street_info = address_parts[0] if address_parts else "Unknown"
+                                request_msg = f"*{street_info}* ASAP?"
+                            
+                            await safe_send_message(vendor_chat_id, request_msg)
+                    
+                    order["requested_time"] = "ASAP"
+                    # Update MDG with assignment keyboard
+                    await safe_edit_message(
+                        chat_id=DISPATCH_MAIN_CHAT_ID,
+                        message_id=order["dispatch_msg_id"],
+                        text=build_dispatch_text(order),
+                        reply_markup=mdg_assignment_keyboard(order_id)
+                    )
+                
+                elif kind == "request_time":
+                    _, order_id = data
+                    # Show time picker
+                    current_time = datetime.now()
+                    time_keyboard = time_picker_keyboard(order_id, current_time, "select")
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID, 
+                        "🕒 *Select time to request:*", 
+                        reply_markup=time_keyboard
+                    )
+                
+                elif kind == "select_time":
+                    _, order_id, selected_time = data
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    # Send time request to vendor
+                    for vendor in order.get("vendors", []):
+                        vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_chat_id:
+                            if order.get("order_type") == "shopify":
+                                request_msg = f"#{order['name'][-2:]} at {selected_time}?"
+                            else:
+                                address_parts = order['customer']['address'].split(',')
+                                street_info = address_parts[0] if address_parts else "Unknown"
+                                request_msg = f"*{street_info}* at {selected_time}?"
+                            
+                            await safe_send_message(vendor_chat_id, request_msg)
+                    
+                    order["requested_time"] = selected_time
+                    # Update MDG with assignment keyboard
+                    await safe_edit_message(
+                        chat_id=DISPATCH_MAIN_CHAT_ID,
+                        message_id=order["dispatch_msg_id"],
+                        text=build_dispatch_text(order),
+                        reply_markup=mdg_assignment_keyboard(order_id)
+                    )
+                
+                elif kind == "request_same":
+                    _, order_id = data
+                    # Show recent orders for selection
+                    same_time_keyboard = same_time_as_keyboard(order_id)
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        "🔗 *Select order to match timing with:*",
+                        reply_markup=same_time_keyboard
+                    )
+                
+                elif kind == "same_time":
+                    _, order_id, reference_order_id = data
+                    order = STATE.get(order_id)
+                    reference_order = STATE.get(reference_order_id)
+                    
+                    if not order or not reference_order:
+                        return
+                    
+                    # Group orders together
+                    if "grouped_with" not in order:
+                        order["grouped_with"] = []
+                    if "grouped_with" not in reference_order:
+                        reference_order["grouped_with"] = []
+                    
+                    order["grouped_with"].append(reference_order_id)
+                    reference_order["grouped_with"].append(order_id)
+                    
+                    # Use the confirmed time from reference order, or requested time
+                    reference_time = reference_order.get("confirmed_time") or reference_order.get("requested_time")
+                    
+                    if reference_time:
+                        # Send grouped request to vendor
+                        for vendor in order.get("vendors", []):
+                            vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
+                            if vendor_chat_id:
+                                # Check if same restaurant
+                                if vendor in reference_order.get("vendors", []):
+                                    if order.get("order_type") == "shopify":
+                                        current_display = f"#{order['name'][-2:]}"
+                                        ref_display = f"#{reference_order['name'][-2:]}"
+                                    else:
+                                        current_addr = order['customer']['address'].split(',')[0]
+                                        ref_addr = reference_order['customer']['address'].split(',')[0]
+                                        current_display = f"*{current_addr}*"
+                                        ref_display = f"*{ref_addr}*"
+                                    
+                                    request_msg = f"Can you prepare {current_display} together with {ref_display} at the same time {reference_time}?"
+                                else:
+                                    # Different restaurant - standard request
+                                    if order.get("order_type") == "shopify":
+                                        request_msg = f"#{order['name'][-2:]} at {reference_time}?"
+                                    else:
+                                        address_parts = order['customer']['address'].split(',')
+                                        street_info = address_parts[0] if address_parts else "Unknown"
+                                        request_msg = f"*{street_info}* at {reference_time}?"
+                                
+                                await safe_send_message(vendor_chat_id, request_msg)
+                        
+                        order["requested_time"] = reference_time
+                    
+                    # Update both MDG messages
+                    for upd_order_id in [order_id, reference_order_id]:
+                        upd_order = STATE[upd_order_id]
+                        await safe_edit_message(
+                            chat_id=DISPATCH_MAIN_CHAT_ID,
+                            message_id=upd_order["dispatch_msg_id"],
+                            text=build_dispatch_text(upd_order),
+                            reply_markup=mdg_assignment_keyboard(upd_order_id)
+                        )
                     
             except Exception as e:
                 logger.error(f"Callback handle error: {e}")
@@ -439,20 +738,25 @@ def shopify_webhook():
             "vendor_expanded": {},
             "status": "🟥",
             "assigned_to": None,
+            "order_type": "shopify",  # NEW: Track order source
+            "requested_time": None,   # NEW: Track requested time
+            "confirmed_time": None,   # NEW: Track confirmed time
+            "grouped_with": [],       # NEW: Track grouped orders
+            "created_at": datetime.now()  # NEW: Track creation time
         }
 
         async def process():
             try:
-                # Send MDG message with inline controls
+                # Send MDG message with TIME REQUEST controls (NEW WORKFLOW)
                 mdg_text = build_dispatch_text(order)
                 mdg_msg = await safe_send_message(
                     DISPATCH_MAIN_CHAT_ID, 
                     mdg_text, 
-                    reply_markup=mdg_keyboard(order_id)
+                    reply_markup=mdg_time_request_keyboard(order_id)  # Start with time request
                 )
                 order["dispatch_msg_id"] = mdg_msg.message_id
 
-                # Send vendor messages
+                # Send vendor messages (ENHANCED)
                 for vendor in vendors:
                     group_id = VENDOR_GROUP_MAP.get(vendor)
                     if not group_id:
@@ -465,8 +769,18 @@ def shopify_webhook():
                     order["vendor_msgs"][vendor] = v_msg.message_id
                     order["vendor_expanded"][vendor] = False
 
-                # Save to state last, after messages are created
+                # Save to state and recent orders
                 STATE[order_id] = order
+                RECENT_ORDERS.append({
+                    "order_id": order_id,
+                    "created_at": datetime.now(),
+                    "vendors": vendors
+                })
+                
+                # Keep only recent orders (last 50)
+                if len(RECENT_ORDERS) > 50:
+                    RECENT_ORDERS.pop(0)
+                
                 logger.info(f"Order {order_id} processed successfully")
                 
             except Exception as e:
@@ -483,5 +797,5 @@ def shopify_webhook():
 # --- APP ENTRY ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"Starting Telegram Dispatch Bot on port {port}")
+    logger.info(f"Starting Enhanced Telegram Dispatch Bot on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
