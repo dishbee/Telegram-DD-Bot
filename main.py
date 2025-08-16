@@ -756,7 +756,7 @@ def shopify_webhook():
         delivery_method = payload.get("delivery_method") or {}
         delivery_time = delivery_method.get("requested_fulfillment_time") or "ASAP"
         
-        # FIXED: Extract vendors from line items vendor field (this is where it actually is!)
+        # FIXED: Extract vendors from ALL line items, not just first one
         original_tags = payload.get("tags", "")
         logger.info(f"Original tags field: '{original_tags}'")
         
@@ -764,19 +764,21 @@ def shopify_webhook():
         tag_vendors = [v.strip() for v in original_tags.split(",") if v.strip()] if original_tags else []
         logger.info(f"Tag vendors: {tag_vendors}")
         
-        # Method 2: From line items vendor field (THIS IS THE REAL SOURCE!)
+        # Method 2: From ALL line items vendor field (FIXED - check all items)
         item_vendors = []
         line_items = payload.get("line_items", [])
-        if line_items:
-            first_item = line_items[0]
-            logger.info(f"First line item keys: {list(first_item.keys())}")
-            item_vendor = first_item.get('vendor')
-            logger.info(f"First line item vendor: {item_vendor}")
-            logger.info(f"First line item title: {first_item.get('title')}")
-            logger.info(f"First line item name: {first_item.get('name')}")
-            
+        logger.info(f"Processing {len(line_items)} line items for vendors")
+        
+        for i, item in enumerate(line_items):
+            item_vendor = item.get('vendor')
             if item_vendor:
-                item_vendors.append(item_vendor)
+                logger.info(f"Item {i}: vendor={item_vendor}, name={item.get('name', 'N/A')}")
+                # Only add vendors that are in our mapping
+                if item_vendor in VENDOR_GROUP_MAP and item_vendor not in item_vendors:
+                    item_vendors.append(item_vendor)
+                    logger.info(f"✅ Added vendor: {item_vendor}")
+                elif item_vendor not in VENDOR_GROUP_MAP:
+                    logger.info(f"❌ Vendor {item_vendor} not in mapping - skipping")
         
         # Use item vendors if available, otherwise use tag vendors
         if item_vendors:
@@ -787,7 +789,7 @@ def shopify_webhook():
             logger.info(f"Using vendors from tags: {vendors}")
         else:
             vendors = []
-            logger.warning("No vendors found in tags or line items")
+            logger.warning("No mapped vendors found in tags or line items")
             
         logger.info(f"Final vendors list: {vendors}")
 
