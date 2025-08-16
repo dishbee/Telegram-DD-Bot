@@ -279,7 +279,7 @@ def telegram_webhook():
                 if kind == "reply":
                     _, order_id, vendor, reply_text = data
                     # Post vendor reply to MDG
-                    msg = f"🍴 *{vendor}* replied: "{reply_text}""
+                    msg = f"🍴 *{vendor}* replied: \"{reply_text}\""
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
                     
                 elif kind == "expand":
