@@ -199,7 +199,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         return f"Error formatting order {order.get('name', 'Unknown')}"
 
 def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
-    """Build vendor short summary (default collapsed state)"""
+    """Build vendor short summary (default collapsed state) - FIXED per assignment"""
     try:
         order_type = order.get("order_type", "shopify")
         
@@ -211,16 +211,21 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
             address_parts = order['customer']['address'].split(',')
             order_number = address_parts[0] if address_parts else "Unknown"
         
-        # Ordered products for this vendor
-        vendor_items = order.get("vendor_items", {}).get(vendor, order.get("items_text", ""))
+        # ONLY ordered products for this vendor (no customer info in summary!)
+        vendor_items = order.get("vendor_items", {}).get(vendor, [])
+        if vendor_items:
+            items_text = "\n".join(vendor_items)
+        else:
+            items_text = order.get("items_text", "")
         
-        # Note if added
+        # Note if added (ONLY note, no other details)
         note = order.get("note", "")
         
+        # Build summary: ONLY order number + products + note
         text = f"Order {order_number}\n"
-        text += f"{vendor_items}\n"
+        text += f"{items_text}"
         if note:
-            text += f"Note: {note}"
+            text += f"\nNote: {note}"
         
         return text
     except Exception as e:
@@ -228,16 +233,18 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         return f"Error formatting order for {vendor}"
 
 def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
-    """Build vendor full details (expanded state)"""
+    """Build vendor full details (expanded state) - FIXED per assignment"""
     try:
+        # Start with summary (order number + products + note)
         summary = build_vendor_summary_text(order, vendor)
         
-        # Add customer details
+        # Add customer details for expanded view
         customer_name = order['customer']['name']
         phone = order['customer']['phone']
         order_time = order.get('created_at', datetime.now()).strftime('%H:%M')
         address = order['customer']['address']
         
+        # Build expanded: summary + customer details
         details = f"{summary}\n\n"
         details += f"Customer: {customer_name}\n"
         details += f"Phone: {phone}\n"
@@ -294,8 +301,9 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([])
 
 def vendor_keyboard(order_id: str, vendor: str, expanded: bool) -> InlineKeyboardMarkup:
-    """Build vendor buttons per assignment"""
+    """Build vendor buttons per assignment - FIXED button text"""
     try:
+        # Correct button text per assignment requirements
         toggle_text = "◂ Hide" if expanded else "Details ▸"
         
         rows = [
