@@ -45,6 +45,8 @@ bot = Bot(token=BOT_TOKEN, request=request_cfg)
 # --- STATE ---
 STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
+ORDER_GROUPS: Dict[str, List[str]] = {}  # group_id -> list of order_ids
+GROUP_COLORS = ["🔴", "🟡", "🟢", "🔵", "🟣", "🟠"]  # Color indicators for groups
 
 # --- HELPERS ---
 def verify_webhook(raw: bytes, hmac_header: str) -> bool:
@@ -83,7 +85,67 @@ def get_time_intervals(base_time: datetime, count: int = 4) -> List[str]:
         intervals.append(time_option.strftime("%H:%M"))
     return intervals
 
-def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
+def get_group_indicator(order_id: str) -> str:
+    """Get visual group indicator for order per assignment requirements"""
+    try:
+        for group_id, order_list in ORDER_GROUPS.items():
+            if order_id in order_list:
+                # Use consistent color for all orders in same group
+                group_index = hash(group_id) % len(GROUP_COLORS)
+                return GROUP_COLORS[group_index]
+        return ""  # No group indicator
+    except Exception as e:
+        logger.error(f"Error getting group indicator: {e}")
+        return ""
+
+def create_order_group(primary_order_id: str, reference_order_id: str) -> str:
+    """Create new order group or add to existing group"""
+    try:
+        # Check if reference order is already in a group
+        reference_group_id = None
+        for group_id, order_list in ORDER_GROUPS.items():
+            if reference_order_id in order_list:
+                reference_group_id = group_id
+                break
+        
+        if reference_group_id:
+            # Add primary order to existing group
+            if primary_order_id not in ORDER_GROUPS[reference_group_id]:
+                ORDER_GROUPS[reference_group_id].append(primary_order_id)
+            return reference_group_id
+        else:
+            # Create new group with both orders
+            group_id = f"group_{datetime.now().strftime('%H%M%S')}_{primary_order_id[:4]}"
+            ORDER_GROUPS[group_id] = [reference_order_id, primary_order_id]
+            return group_id
+    except Exception as e:
+        logger.error(f"Error creating order group: {e}")
+        return ""
+
+def get_grouped_orders_display(order_id: str) -> str:
+    """Get display text for grouped orders per assignment requirements"""
+    try:
+        for group_id, order_list in ORDER_GROUPS.items():
+            if order_id in order_list and len(order_list) > 1:
+                group_indicator = get_group_indicator(order_id)
+                other_orders = [oid for oid in order_list if oid != order_id]
+                
+                display_names = []
+                for other_id in other_orders:
+                    other_order = STATE.get(other_id)
+                    if other_order:
+                        if other_order.get("order_type") == "shopify":
+                            display_names.append(f"#{other_order['name'][-2:]}")
+                        else:
+                            addr = other_order['customer']['address'].split(',')[0]
+                            display_names.append(f"*{addr}*")
+                
+                if display_names:
+                    return f"\n\n{group_indicator} **GROUPED WITH:** {', '.join(display_names)} {group_indicator}"
+        return ""
+    except Exception as e:
+        logger.error(f"Error getting grouped orders display: {e}")
+        return ""
     """Get recent orders (last 1 hour) for 'same time as' functionality"""
     one_hour_ago = datetime.now() - timedelta(hours=1)
     recent = []
@@ -112,16 +174,21 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
     try:
         order_type = order.get("order_type", "shopify")
         vendors = order.get("vendors", [])
+        order_id = str(order.get("id", ""))
+        
+        # Get group indicator per assignment requirements
+        group_indicator = get_group_indicator(order_id)
+        group_prefix = f"{group_indicator} " if group_indicator else ""
         
         # Title: "dishbee + Name of restaurant(s)" for Shopify
         if order_type == "shopify":
             if len(vendors) > 1:
-                title = f"dishbee + {', '.join(vendors)}"
+                title = f"{group_prefix}dishbee + {', '.join(vendors)}"
             else:
-                title = f"dishbee + {vendors[0] if vendors else 'Unknown'}"
+                title = f"{group_prefix}dishbee + {vendors[0] if vendors else 'Unknown'}"
         else:
             # For HubRise/Smoothr: only restaurant name
-            title = vendors[0] if vendors else "Unknown"
+            title = f"{group_prefix}{vendors[0] if vendors else 'Unknown'}"
         
         # Order number with last two digits (only for Shopify)
         order_number_line = ""
@@ -182,6 +249,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         # Customer name
         customer_name = order['customer']['name']
         
+        # Get grouped orders display per assignment requirements
+        grouped_display = get_grouped_orders_display(order_id)
+        
         # Build final message
         text = f"{title}\n"
         text += order_number_line
@@ -192,6 +262,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         text += payment_line
         text += f"{items_text}\n"
         text += f"{customer_name}"
+        text += grouped_display  # Add group indicator at bottom
         
         return text
     except Exception as e:
@@ -727,6 +798,9 @@ def telegram_webhook():
                     if not order or not reference_order:
                         return
                     
+                    # FIXED: Create order group per assignment requirements
+                    group_id = create_order_group(order_id, reference_order_id)
+                    
                     # Get time from reference order
                     reference_time = reference_order.get("confirmed_time") or reference_order.get("requested_time", "ASAP")
                     
@@ -755,15 +829,38 @@ def telegram_webhook():
                             
                             await safe_send_message(vendor_chat, msg)
                     
-                    # Update MDG
+                    # Update MDG with grouped order display per assignment
                     order["requested_time"] = reference_time
+                    order["group_id"] = group_id
+                    
+                    # Update both orders' MDG messages to show grouping
+                    group_indicator = get_group_indicator(order_id)
                     mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {reference_time} (same as {reference_order.get('name', 'other order')})"
+                    
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
                         mdg_assignment_keyboard(order_id)
                     )
+                    
+                    # Also update reference order to show grouping
+                    if "mdg_message_id" in reference_order:
+                        ref_mdg_text = build_mdg_dispatch_text(reference_order)
+                        if reference_order.get("requested_time"):
+                            ref_mdg_text += f"\n\n⏰ Requested: {reference_order['requested_time']}"
+                        if reference_order.get("confirmed_time"):
+                            ref_mdg_text += f"\n\n⏰ Confirmed: {reference_order['confirmed_time']}"
+                        
+                        try:
+                            await safe_edit_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                reference_order["mdg_message_id"],
+                                ref_mdg_text,
+                                mdg_assignment_keyboard(reference_order_id) if reference_order.get("status") == "confirmed" else mdg_time_request_keyboard(reference_order_id)
+                            )
+                        except Exception as e:
+                            logger.error(f"Error updating reference order display: {e}")
                 
                 elif action == "assign_self":
                     order_id = data[1]
@@ -1094,6 +1191,7 @@ def shopify_webhook():
         
         # Build order object
         order = {
+            "id": order_id,  # FIXED: Add order ID for grouping functionality
             "name": order_name,
             "order_type": "shopify",
             "vendors": vendors,
@@ -1114,7 +1212,8 @@ def shopify_webhook():
             "vendor_expanded": {},
             "requested_time": None,
             "confirmed_time": None,
-            "status": "new"
+            "status": "new",
+            "group_id": None  # FIXED: Add group tracking for order grouping
         }
 
         async def process():
