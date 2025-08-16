@@ -756,42 +756,40 @@ def shopify_webhook():
         delivery_method = payload.get("delivery_method") or {}
         delivery_time = delivery_method.get("requested_fulfillment_time") or "ASAP"
         
-        # TEMPORARY FIX: Let's see exactly what your original code was doing
-        # Looking at your working original, let me check the exact same approach
-        
-        # Extract vendors - REVERTING TO ORIGINAL APPROACH + DEBUG
+        # FIXED: Extract vendors from line items vendor field (this is where it actually is!)
         original_tags = payload.get("tags", "")
         logger.info(f"Original tags field: '{original_tags}'")
         
-        # Your original line was likely this:
-        original_vendors = [v.strip() for v in original_tags.split(",") if v.strip()] if original_tags else []
-        logger.info(f"Original vendor parsing result: {original_vendors}")
+        # Method 1: From tags (for test orders)
+        tag_vendors = [v.strip() for v in original_tags.split(",") if v.strip()] if original_tags else []
+        logger.info(f"Tag vendors: {tag_vendors}")
         
-        # But since that's empty for real orders, let's check what field SHOULD be used
-        # Log ALL fields that could contain vendor info
-        logger.info("=== DEBUGGING VENDOR DETECTION ===")
-        logger.info(f"tags: {payload.get('tags')}")
-        logger.info(f"source_name: {payload.get('source_name')}")
-        logger.info(f"referring_site: {payload.get('referring_site')}")
-        
-        # Check line items for vendor info
+        # Method 2: From line items vendor field (THIS IS THE REAL SOURCE!)
+        item_vendors = []
         line_items = payload.get("line_items", [])
         if line_items:
             first_item = line_items[0]
             logger.info(f"First line item keys: {list(first_item.keys())}")
-            logger.info(f"First line item vendor: {first_item.get('vendor')}")
+            item_vendor = first_item.get('vendor')
+            logger.info(f"First line item vendor: {item_vendor}")
             logger.info(f"First line item title: {first_item.get('title')}")
             logger.info(f"First line item name: {first_item.get('name')}")
+            
+            if item_vendor:
+                item_vendors.append(item_vendor)
         
-        # For now, if it's a real order (empty tags), set a test vendor
-        if not original_tags or original_tags in ['tag1, tag2']:
-            logger.warning("Empty tags detected - using test vendor for debugging")
-            vendors = ["Kahaani"]  # Test with known vendor
+        # Use item vendors if available, otherwise use tag vendors
+        if item_vendors:
+            vendors = item_vendors
+            logger.info(f"Using vendors from line items: {vendors}")
+        elif tag_vendors:
+            vendors = tag_vendors
+            logger.info(f"Using vendors from tags: {vendors}")
         else:
-            vendors = original_vendors
+            vendors = []
+            logger.warning("No vendors found in tags or line items")
             
         logger.info(f"Final vendors list: {vendors}")
-        logger.info("=== END VENDOR DEBUG ===")
 
         # Build items text
         items_text = "\n".join([
