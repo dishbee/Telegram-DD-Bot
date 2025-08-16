@@ -301,22 +301,36 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([])
 
 def vendor_keyboard(order_id: str, vendor: str, expanded: bool) -> InlineKeyboardMarkup:
-    """Build vendor buttons per assignment - FIXED button text"""
+    """Build vendor buttons per assignment - FIXED conditional logic"""
     try:
+        # Get order to check request type
+        order = STATE.get(order_id)
+        requested_time = order.get("requested_time") if order else None
+        
         # Correct button text per assignment requirements
         toggle_text = "◂ Hide" if expanded else "Details ▸"
         
         rows = [
-            [InlineKeyboardButton(toggle_text, callback_data=f"toggle|{order_id}|{vendor}")],
-            [
+            [InlineKeyboardButton(toggle_text, callback_data=f"toggle|{order_id}|{vendor}")]
+        ]
+        
+        # Conditional buttons based on request type per assignment
+        if requested_time and requested_time != "ASAP":
+            # Specific time requested - show "Works" and "Later at"
+            rows.append([
                 InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}"),
                 InlineKeyboardButton("Later at", callback_data=f"later|{order_id}|{vendor}")
-            ],
-            [
-                InlineKeyboardButton("Will prepare at", callback_data=f"prepare|{order_id}|{vendor}"),
-                InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}")
-            ]
-        ]
+            ])
+        elif requested_time == "ASAP":
+            # ASAP requested - show "Will prepare at"
+            rows.append([
+                InlineKeyboardButton("Will prepare at", callback_data=f"prepare|{order_id}|{vendor}")
+            ])
+        
+        # "Something is wrong" always shown
+        rows.append([
+            InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}")
+        ])
         
         return InlineKeyboardMarkup(rows)
     except Exception as e:
@@ -449,7 +463,7 @@ def telegram_webhook():
                     if not order:
                         return
                     
-                    # Send ASAP request to vendors
+                    # Send ASAP request to vendors WITH BUTTONS
                     for vendor in order["vendors"]:
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
@@ -458,7 +472,14 @@ def telegram_webhook():
                             else:
                                 addr = order['customer']['address'].split(',')[0]
                                 msg = f"*{addr}* ASAP?"
-                            await safe_send_message(vendor_chat, msg)
+                            
+                            # ASAP request buttons: "Will prepare at" + "Something is wrong"
+                            asap_buttons = InlineKeyboardMarkup([
+                                [InlineKeyboardButton("Will prepare at", callback_data=f"prepare|{order_id}|{vendor}")],
+                                [InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}")]
+                            ])
+                            
+                            await safe_send_message(vendor_chat, msg, asap_buttons)
                     
                     # Update MDG to assignment mode
                     order["requested_time"] = "ASAP"
@@ -496,7 +517,7 @@ def telegram_webhook():
                     if not order:
                         return
                     
-                    # Send time request to vendors
+                    # Send time request to vendors WITH BUTTONS
                     for vendor in order["vendors"]:
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
@@ -505,7 +526,15 @@ def telegram_webhook():
                             else:
                                 addr = order['customer']['address'].split(',')[0]
                                 msg = f"*{addr}* at {selected_time}?"
-                            await safe_send_message(vendor_chat, msg)
+                            
+                            # Specific time request buttons: "Works 👍" + "Later at" + "Something is wrong"
+                            time_buttons = InlineKeyboardMarkup([
+                                [InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}"),
+                                 InlineKeyboardButton("Later at", callback_data=f"later|{order_id}|{vendor}")],
+                                [InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}")]
+                            ])
+                            
+                            await safe_send_message(vendor_chat, msg, time_buttons)
                     
                     # Update MDG
                     order["requested_time"] = selected_time
@@ -550,17 +579,23 @@ def telegram_webhook():
                     expanded = not order["vendor_expanded"].get(vendor, False)
                     order["vendor_expanded"][vendor] = expanded
                     
-                    # Update vendor message
+                    # Update vendor message with only toggle button
                     if expanded:
                         text = build_vendor_details_text(order, vendor)
+                        toggle_text = "◂ Hide"
                     else:
                         text = build_vendor_summary_text(order, vendor)
+                        toggle_text = "Details ▸"
+                    
+                    toggle_keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton(toggle_text, callback_data=f"toggle|{order_id}|{vendor}")]
+                    ])
                     
                     await safe_edit_message(
                         VENDOR_GROUP_MAP[vendor],
                         order["vendor_messages"][vendor],
                         text,
-                        vendor_keyboard(order_id, vendor, expanded)
+                        toggle_keyboard
                     )
                 
                 elif action == "works":
@@ -581,13 +616,72 @@ def telegram_webhook():
                         time_picker_keyboard(order_id, f"{action}_time", requested)
                     )
                 
-                elif action in ["later_time", "prepare_time"]:
-                    order_id, selected_time = data[1], data[2]
-                    # Get vendor from callback context
-                    vendor = "Unknown"  # Would need to track this better
-                    action_name = "Later" if action.startswith("later") else "Will prepare"
-                    msg = f"■ {vendor} replied: {action_name} at {selected_time} ■"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
+                elif action == "wrong":
+                    order_id, vendor = data[1], data[2]
+                    # Show "Something is wrong" submenu per assignment
+                    wrong_buttons = [
+                        [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")]
+                    ]
+                    
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        "What's wrong?",
+                        InlineKeyboardMarkup(wrong_buttons)
+                    )
+                
+                elif action == "wrong_unavailable":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order and order.get("order_type") == "shopify":
+                        msg = "Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee."
+                    else:
+                        msg = "Please call the customer and organize a replacement or a refund."
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: {msg} ■")
+                
+                elif action == "wrong_canceled":
+                    order_id, vendor = data[1], data[2]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
+                
+                elif action in ["wrong_technical", "wrong_other"]:
+                    order_id, vendor = data[1], data[2]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Write a message to dishbee and describe the issue ■")
+                
+                elif action == "wrong_delay":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    agreed_time = order.get("confirmed_time") or order.get("requested_time", "ASAP") if order else "ASAP"
+                    
+                    # Show delay time picker (agreed time + 5 min intervals)
+                    try:
+                        if agreed_time != "ASAP":
+                            hour, minute = map(int, agreed_time.split(':'))
+                            base_time = datetime.now().replace(hour=hour, minute=minute)
+                        else:
+                            base_time = datetime.now()
+                        
+                        delay_intervals = get_time_intervals(base_time, 4)
+                        delay_buttons = []
+                        for i in range(0, len(delay_intervals), 2):
+                            row = [InlineKeyboardButton(delay_intervals[i], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i]}")]
+                            if i + 1 < len(delay_intervals):
+                                row.append(InlineKeyboardButton(delay_intervals[i + 1], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i + 1]}"))
+                            delay_buttons.append(row)
+                        
+                        await safe_send_message(
+                            VENDOR_GROUP_MAP[vendor],
+                            "Select delay time:",
+                            InlineKeyboardMarkup(delay_buttons)
+                        )
+                    except:
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay ■")
+                
+                elif action == "delay_time":
+                    order_id, vendor, delay_time = data[1], data[2], data[3]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
                 
                 elif action == "same_selected":
                     order_id, reference_order_id = data[1], data[2]
@@ -773,15 +867,19 @@ def shopify_webhook():
                 )
                 order["mdg_message_id"] = mdg_msg.message_id
                 
-                # Send to each vendor group (summary by default)
+                # Send to each vendor group (summary by default) - NO BUTTONS on order messages
                 for vendor in vendors:
                     vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                     if vendor_chat:
                         vendor_text = build_vendor_summary_text(order, vendor)
+                        # Order message has only expand/collapse button
+                        toggle_keyboard = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("Details ▸", callback_data=f"toggle|{order_id}|{vendor}")]
+                        ])
                         vendor_msg = await safe_send_message(
                             vendor_chat,
                             vendor_text,
-                            vendor_keyboard(order_id, vendor, False)
+                            toggle_keyboard
                         )
                         order["vendor_messages"][vendor] = vendor_msg.message_id
                         order["vendor_expanded"][vendor] = False
