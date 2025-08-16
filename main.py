@@ -724,83 +724,42 @@ def shopify_webhook():
         delivery_method = payload.get("delivery_method") or {}
         delivery_time = delivery_method.get("requested_fulfillment_time") or "ASAP"
         
-        # Extract vendors from tags - FIXED: Check multiple possible sources
-        tags = payload.get("tags", "")
-        logger.info(f"Raw tags from Shopify: '{tags}'")
+        # TEMPORARY FIX: Let's see exactly what your original code was doing
+        # Looking at your working original, let me check the exact same approach
         
-        # Try multiple sources for vendor information
-        vendors = []
+        # Extract vendors - REVERTING TO ORIGINAL APPROACH + DEBUG
+        original_tags = payload.get("tags", "")
+        logger.info(f"Original tags field: '{original_tags}'")
         
-        # Method 1: From tags (original approach)
-        if tags:
-            tag_vendors = [v.strip() for v in tags.split(",") if v.strip()]
-            vendors.extend(tag_vendors)
+        # Your original line was likely this:
+        original_vendors = [v.strip() for v in original_tags.split(",") if v.strip()] if original_tags else []
+        logger.info(f"Original vendor parsing result: {original_vendors}")
         
-        # Method 2: From line items vendor property (common in multi-vendor setups)
-        for item in items:
-            vendor_name = item.get("vendor")
-            if vendor_name and vendor_name not in vendors:
-                vendors.append(vendor_name)
+        # But since that's empty for real orders, let's check what field SHOULD be used
+        # Log ALL fields that could contain vendor info
+        logger.info("=== DEBUGGING VENDOR DETECTION ===")
+        logger.info(f"tags: {payload.get('tags')}")
+        logger.info(f"source_name: {payload.get('source_name')}")
+        logger.info(f"referring_site: {payload.get('referring_site')}")
         
-        # Method 3: From line items properties (custom field)
-        for item in items:
-            properties = item.get("properties", [])
-            for prop in properties:
-                if prop.get("name", "").lower() in ["vendor", "restaurant", "store"]:
-                    vendor_name = prop.get("value")
-                    if vendor_name and vendor_name not in vendors:
-                        vendors.append(vendor_name)
+        # Check line items for vendor info
+        line_items = payload.get("line_items", [])
+        if line_items:
+            first_item = line_items[0]
+            logger.info(f"First line item keys: {list(first_item.keys())}")
+            logger.info(f"First line item vendor: {first_item.get('vendor')}")
+            logger.info(f"First line item title: {first_item.get('title')}")
+            logger.info(f"First line item name: {first_item.get('name')}")
         
-        # Method 4: Check if vendors are in line item titles/names
-        if not vendors:
-            # Look for vendor names in item names
-            for item in items:
-                item_name = item.get("name", "")
-                for mapped_vendor in VENDOR_GROUP_MAP.keys():
-                    if mapped_vendor.lower() in item_name.lower():
-                        if mapped_vendor not in vendors:
-                            vendors.append(mapped_vendor)
-        
-        logger.info(f"Parsed vendors from all sources: {vendors}")
-        logger.info(f"Available vendor mappings: {list(VENDOR_GROUP_MAP.keys())}")
-        
-        # Check if vendors match our mapping
-        for vendor in vendors:
-            if vendor in VENDOR_GROUP_MAP:
-                logger.info(f"✅ Vendor '{vendor}' found in mapping")
-            else:
-                logger.warning(f"❌ Vendor '{vendor}' NOT found in mapping")
-                logger.warning(f"Available: {list(VENDOR_GROUP_MAP.keys())}")
-        
-        # If still no vendors found, log the full payload structure for debugging
-        if not vendors:
-            logger.warning("No vendors found! Logging payload structure for debugging:")
-            logger.info(f"Payload keys: {list(payload.keys())}")
+        # For now, if it's a real order (empty tags), set a test vendor
+        if not original_tags or original_tags in ['tag1, tag2']:
+            logger.warning("Empty tags detected - using test vendor for debugging")
+            vendors = ["Kahaani"]  # Test with known vendor
+        else:
+            vendors = original_vendors
             
-            # Log line items structure
-            if items:
-                logger.info(f"Number of line items: {len(items)}")
-                for i, item in enumerate(items[:2]):  # Log first 2 items
-                    logger.info(f"Item {i} keys: {list(item.keys())}")
-                    logger.info(f"Item {i} vendor field: {item.get('vendor', 'NOT_FOUND')}")
-                    logger.info(f"Item {i} name: {item.get('name', 'NOT_FOUND')}")
-                    logger.info(f"Item {i} title: {item.get('title', 'NOT_FOUND')}")
-                    if item.get('properties'):
-                        logger.info(f"Item {i} properties: {item.get('properties')}")
-            
-            # Log other potential vendor fields
-            logger.info(f"Order merchant: {payload.get('merchant', 'NOT_FOUND')}")
-            logger.info(f"Order source_name: {payload.get('source_name', 'NOT_FOUND')}")
-            logger.info(f"Order referring_site: {payload.get('referring_site', 'NOT_FOUND')}")
-            logger.info(f"Order gateway: {payload.get('gateway', 'NOT_FOUND')}")
-            
-            # Log full payload (truncated for safety)
-            payload_str = str(payload)[:2000]  # First 2000 chars
-            logger.info(f"Payload sample: {payload_str}")
-            
-            # For now, set a default vendor to continue processing
-            logger.warning("Setting default vendor 'Kahaani' for debugging")
-            vendors = ["Kahaani"]
+        logger.info(f"Final vendors list: {vendors}")
+        logger.info("=== END VENDOR DEBUG ===")
 
         # Build items text
         items_text = "\n".join([
