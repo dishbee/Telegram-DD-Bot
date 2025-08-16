@@ -724,12 +724,44 @@ def shopify_webhook():
         delivery_method = payload.get("delivery_method") or {}
         delivery_time = delivery_method.get("requested_fulfillment_time") or "ASAP"
         
-        # Extract vendors from tags
+        # Extract vendors from tags - FIXED: Check multiple possible sources
         tags = payload.get("tags", "")
         logger.info(f"Raw tags from Shopify: '{tags}'")
         
-        vendors = [v.strip() for v in tags.split(",") if v.strip()] if tags else []
-        logger.info(f"Parsed vendors: {vendors}")
+        # Try multiple sources for vendor information
+        vendors = []
+        
+        # Method 1: From tags (original approach)
+        if tags:
+            tag_vendors = [v.strip() for v in tags.split(",") if v.strip()]
+            vendors.extend(tag_vendors)
+        
+        # Method 2: From line items vendor property (common in multi-vendor setups)
+        for item in items:
+            vendor_name = item.get("vendor")
+            if vendor_name and vendor_name not in vendors:
+                vendors.append(vendor_name)
+        
+        # Method 3: From line items properties (custom field)
+        for item in items:
+            properties = item.get("properties", [])
+            for prop in properties:
+                if prop.get("name", "").lower() in ["vendor", "restaurant", "store"]:
+                    vendor_name = prop.get("value")
+                    if vendor_name and vendor_name not in vendors:
+                        vendors.append(vendor_name)
+        
+        # Method 4: Check if vendors are in line item titles/names
+        if not vendors:
+            # Look for vendor names in item names
+            for item in items:
+                item_name = item.get("name", "")
+                for mapped_vendor in VENDOR_GROUP_MAP.keys():
+                    if mapped_vendor.lower() in item_name.lower():
+                        if mapped_vendor not in vendors:
+                            vendors.append(mapped_vendor)
+        
+        logger.info(f"Parsed vendors from all sources: {vendors}")
         logger.info(f"Available vendor mappings: {list(VENDOR_GROUP_MAP.keys())}")
         
         # Check if vendors match our mapping
@@ -739,6 +771,15 @@ def shopify_webhook():
             else:
                 logger.warning(f"❌ Vendor '{vendor}' NOT found in mapping")
                 logger.warning(f"Available: {list(VENDOR_GROUP_MAP.keys())}")
+        
+        # If still no vendors found, log the full payload structure for debugging
+        if not vendors:
+            logger.warning("No vendors found! Logging payload structure for debugging:")
+            logger.info(f"Payload keys: {list(payload.keys())}")
+            if items:
+                logger.info(f"First item structure: {list(items[0].keys())}")
+                logger.info(f"First item vendor field: {items[0].get('vendor', 'NOT_FOUND')}")
+                logger.info(f"First item name: {items[0].get('name', 'NOT_FOUND')}")
 
         # Build items text
         items_text = "\n".join([
