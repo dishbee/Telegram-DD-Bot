@@ -274,26 +274,32 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([])
 
 def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
-    """Build MDG assignment buttons (shown after time confirmation)"""
+    """Build MDG assignment buttons (shown after time confirmation) - FIXED per assignment"""
     try:
         rows = []
         
-        # Assignment buttons for each driver
-        if DRIVERS:
-            driver_buttons = []
-            for name, uid in DRIVERS.items():
-                driver_buttons.append(
-                    InlineKeyboardButton(f"Assign to {name}", callback_data=f"assign|{order_id}|{name}|{uid}")
-                )
-            # Split into rows of 2-3 buttons
-            for i in range(0, len(driver_buttons), 2):
-                rows.append(driver_buttons[i:i+2])
+        # "Assign to myself" button
+        rows.append([InlineKeyboardButton("Assign to myself", callback_data=f"assign_self|{order_id}")])
         
-        # Status buttons
-        rows.append([
-            InlineKeyboardButton("Delivered ✅", callback_data=f"delivered|{order_id}"),
-            InlineKeyboardButton("Delay 🕧", callback_data=f"delayed|{order_id}")
-        ])
+        # "Assign to..." buttons - prioritize Bee 1, Bee 2, Bee 3 first per assignment
+        if DRIVERS:
+            bee_buttons = []
+            other_buttons = []
+            
+            for name, uid in DRIVERS.items():
+                button = InlineKeyboardButton(f"Assign to {name}", callback_data=f"assign|{order_id}|{name}|{uid}")
+                if name.startswith("Bee "):
+                    bee_buttons.append(button)
+                else:
+                    other_buttons.append(button)
+            
+            # Add Bee buttons first (prioritized per assignment)
+            for i in range(0, len(bee_buttons), 2):
+                rows.append(bee_buttons[i:i+2])
+            
+            # Then add other drivers
+            for i in range(0, len(other_buttons), 2):
+                rows.append(other_buttons[i:i+2])
         
         return InlineKeyboardMarkup(rows)
     except Exception as e:
@@ -563,9 +569,26 @@ def telegram_webhook():
                 
                 elif action == "works":
                     order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
                     # FIXED: Post NEW status line to MDG per assignment
                     status_msg = f"■ {vendor} replied: Works 👍 ■"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                    
+                    # FIXED: Update order status and show assignment buttons after confirmation
+                    order["confirmed_time"] = order.get("requested_time", "ASAP")
+                    order["status"] = "confirmed"
+                    
+                    # Update MDG with assignment buttons after time confirmation
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Confirmed: {order['confirmed_time']}"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_assignment_keyboard(order_id)
+                    )
                 
                 elif action in ["later", "prepare"]:
                     order_id, vendor = data[1], data[2]
@@ -581,15 +604,49 @@ def telegram_webhook():
                 
                 elif action == "later_time":
                     order_id, vendor, selected_time = data[1], data[2], data[3]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
                     # FIXED: Post NEW status line to MDG per assignment
                     status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                    
+                    # FIXED: Update order status and show assignment buttons after confirmation
+                    order["confirmed_time"] = selected_time
+                    order["status"] = "confirmed"
+                    
+                    # Update MDG with assignment buttons after time confirmation
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Confirmed: {selected_time}"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_assignment_keyboard(order_id)
+                    )
                 
                 elif action == "prepare_time":
                     order_id, vendor, selected_time = data[1], data[2], data[3]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
                     # FIXED: Post NEW status line to MDG per assignment
                     status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                    
+                    # FIXED: Update order status and show assignment buttons after confirmation
+                    order["confirmed_time"] = selected_time
+                    order["status"] = "confirmed"
+                    
+                    # Update MDG with assignment buttons after time confirmation
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Confirmed: {selected_time}"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_assignment_keyboard(order_id)
+                    )
                 
                 elif action == "wrong":
                     order_id, vendor = data[1], data[2]
@@ -708,22 +765,178 @@ def telegram_webhook():
                         mdg_assignment_keyboard(order_id)
                     )
                 
+                elif action == "assign_self":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    user_id = cq["from"]["id"]
+                    user_name = cq["from"].get("first_name", "Unknown")
+                    
+                    # Send DM to assigner with detailed assignment info per assignment
+                    dm_text = build_assignment_dm(order)
+                    vendor_names = order.get("vendors", [])
+                    
+                    try:
+                        await safe_send_message(
+                            user_id, 
+                            dm_text, 
+                            assignment_cta_keyboard(order_id, vendor_names),
+                            ParseMode.MARKDOWN
+                        )
+                        
+                        # Update order status
+                        order["assigned_to"] = user_name
+                        order["status"] = "assigned"
+                        
+                        # Notify MDG of assignment
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"Order #{order['name'][-2:]} assigned to {user_name}")
+                        
+                    except Exception as e:
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"⚠️ Could not DM {user_name}: {e}")
+                
                 elif action == "assign":
                     order_id, driver_name, driver_id = data[1], data[2], data[3]
                     order = STATE.get(order_id)
                     if not order:
                         return
                     
-                    # Send DM to driver with assignment details
+                    # Send DM to selected driver with assignment details per assignment
                     dm_text = build_assignment_dm(order)
+                    vendor_names = order.get("vendors", [])
+                    
                     try:
-                        await safe_send_message(int(driver_id), dm_text)
-                    except:
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"⚠️ Could not DM {driver_name}")
+                        await safe_send_message(
+                            int(driver_id), 
+                            dm_text, 
+                            assignment_cta_keyboard(order_id, vendor_names),
+                            ParseMode.MARKDOWN
+                        )
+                        
+                        # Update order status
+                        order["assigned_to"] = driver_name
+                        order["status"] = "assigned"
+                        
+                        # Notify MDG of assignment
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"Order #{order['name'][-2:]} assigned to {driver_name}")
+                        
+                    except Exception as e:
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"⚠️ Could not DM {driver_name}: {e}")
+                
+                # CTA BUTTON HANDLERS for assignment DMs
+                elif action == "call_customer":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if order:
+                        phone = order['customer']['phone']
+                        await safe_send_message(cq["from"]["id"], f"Calling customer: {phone}\n\n*Note: This should open your phone app to call directly (not via Telegram)*")
+                
+                elif action == "navigate":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if order:
+                        address = order['customer']['address']
+                        maps_link = f"https://maps.google.com/maps?q={address.replace(' ', '+')}"
+                        await safe_send_message(
+                            cq["from"]["id"], 
+                            f"Navigate to: [{address}]({maps_link})",
+                            parse_mode=ParseMode.MARKDOWN
+                        )
+                
+                elif action == "postpone":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    # Show postpone time picker per assignment (agreed time + 5, +10, +15, +20)
+                    agreed_time = order.get("confirmed_time", "ASAP")
+                    
+                    if agreed_time != "ASAP":
+                        try:
+                            hour, minute = map(int, agreed_time.split(':'))
+                            base_time = datetime.now().replace(hour=hour, minute=minute)
+                            
+                            postpone_intervals = []
+                            for i in range(4):
+                                new_time = base_time + timedelta(minutes=(i + 1) * 5)
+                                postpone_intervals.append(new_time.strftime("%H:%M"))
+                            
+                            postpone_buttons = []
+                            for i in range(0, len(postpone_intervals), 2):
+                                row = [InlineKeyboardButton(postpone_intervals[i], callback_data=f"postpone_time|{order_id}|{postpone_intervals[i]}")]
+                                if i + 1 < len(postpone_intervals):
+                                    row.append(InlineKeyboardButton(postpone_intervals[i + 1], callback_data=f"postpone_time|{order_id}|{postpone_intervals[i + 1]}"))
+                                postpone_buttons.append(row)
+                            
+                            # Add custom time picker
+                            postpone_buttons.append([InlineKeyboardButton("Custom Time ⏰", callback_data=f"postpone_custom|{order_id}")])
+                            
+                            await safe_send_message(
+                                cq["from"]["id"],
+                                "Select new time:",
+                                InlineKeyboardMarkup(postpone_buttons)
+                            )
+                        except:
+                            await safe_send_message(cq["from"]["id"], "Error processing postpone request")
+                    else:
+                        await safe_send_message(cq["from"]["id"], "Cannot postpone - no confirmed time set")
+                
+                elif action == "postpone_time":
+                    order_id, new_time = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    vendors = order.get("vendors", [])
+                    
+                    # Send postpone message to restaurants per assignment
+                    for vendor in vendors:
+                        vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_chat:
+                            if order.get("order_type") == "shopify":
+                                msg = f"Sorry, we have a delay. Can you prepare #{order['name'][-2:]} at {new_time}? If not, please keep it warm."
+                            else:
+                                addr = order['customer']['address'].split(',')[0]
+                                msg = f"Sorry, we have a delay. Can you prepare *{addr}* at {new_time}? If not, please keep it warm."
+                            
+                            await safe_send_message(vendor_chat, msg)
+                    
+                    # Update order time
+                    order["confirmed_time"] = new_time
+                    
+                    # Notify driver
+                    await safe_send_message(cq["from"]["id"], f"Postpone request sent to restaurant(s). New time: {new_time}")
+                
+                elif action == "call_restaurant":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if order:
+                        vendors = order.get("vendors", [])
+                        vendor_text = ", ".join(vendors) if vendors else "restaurant"
+                        await safe_send_message(cq["from"]["id"], f"*Calling {vendor_text} via Telegram...*\n\n*Note: This should contact the restaurant through Telegram*")
+                
+                elif action == "complete":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    # Send completion message to MDG per assignment
+                    if order.get("order_type") == "shopify":
+                        completion_msg = f"Order #{order['name'][-2:]} was delivered."
+                    else:
+                        addr = order['customer']['address'].split(',')[0]
+                        completion_msg = f"Order *{addr}* was delivered."
+                    
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, completion_msg)
                     
                     # Update order status
-                    order["assigned_to"] = driver_name
-                    order["status"] = "assigned"
+                    order["status"] = "completed"
+                    
+                    # Notify driver
+                    await safe_send_message(cq["from"]["id"], "✅ Order marked as completed!")
                 
                 elif action == "delivered":
                     order_id = data[1]
@@ -746,34 +959,78 @@ def telegram_webhook():
         return jsonify({"error": "Internal server error"}), 500
 
 def build_assignment_dm(order: Dict[str, Any]) -> str:
-    """Build assignment DM text for drivers"""
+    """Build assignment DM text for drivers - FIXED per assignment requirements"""
     try:
         vendors = order.get("vendors", [])
-        vendor_text = ", ".join(vendors) if vendors else "Unknown"
+        order_type = order.get("order_type", "shopify")
         
-        if order.get("order_type") == "shopify":
-            order_info = f"dishbee #{order['name'][-2:]} and {vendor_text}"
+        # Order number + restaurant name per assignment
+        if order_type == "shopify":
+            order_number = f"#{order['name'][-2:]}" if len(order['name']) >= 2 else f"#{order['name']}"
+            order_info = f"dishbee {order_number} and {', '.join(vendors)}"
         else:
-            order_info = vendor_text
+            # For HubRise/Smoothr: only restaurant name
+            order_info = ', '.join(vendors) if vendors else "Unknown"
         
-        address = order['customer']['address']
-        phone = order['customer']['phone']
+        # Customer details
         customer_name = order['customer']['name']
+        phone = order['customer']['phone']
+        address = order['customer']['address']
         
-        # Count total products
+        # Clickable address for Google Maps navigation per assignment
+        # Format: *Street + building number* - clickable with redirecting to Google Maps
+        address_parts = address.split(',')
+        street_building = address_parts[0].strip() if address_parts else address
+        maps_link = f"https://maps.google.com/maps?q={address.replace(' ', '+')}"
+        clickable_address = f"[{street_building}]({maps_link})"
+        
+        # Clickable phone number for direct calling (NOT via Telegram) per assignment
+        clickable_phone = f"[{phone}](tel:{phone})"
+        
+        # Product count (amount of products - but not listing them) per assignment
         vendor_items = order.get("vendor_items", {})
         total_items = sum(len(items) for items in vendor_items.values())
+        product_count = f"{total_items}x Products"
         
+        # Build DM message per assignment format
         dm_text = f"{order_info}\n\n"
-        dm_text += f"📍 {address}\n"
-        dm_text += f"📞 {phone}\n"
-        dm_text += f"📦 {total_items} products\n"
+        dm_text += f"📍 {clickable_address}\n"
+        dm_text += f"📞 {clickable_phone}\n"
+        dm_text += f"📦 {product_count}\n"
         dm_text += f"👤 {customer_name}"
         
         return dm_text
     except Exception as e:
         logger.error(f"Error building assignment DM: {e}")
         return "Error building assignment details"
+
+def assignment_cta_keyboard(order_id: str, vendor_names: List[str]) -> InlineKeyboardMarkup:
+    """Build CTA buttons for assignment DM per assignment requirements"""
+    try:
+        rows = []
+        
+        # Row 1: Call customer + Navigate
+        rows.append([
+            InlineKeyboardButton("Call customer 📞", callback_data=f"call_customer|{order_id}"),
+            InlineKeyboardButton("Navigate 🗺️", callback_data=f"navigate|{order_id}")
+        ])
+        
+        # Row 2: Postpone + Call restaurant
+        restaurant_name = vendor_names[0] if vendor_names else "restaurant"
+        rows.append([
+            InlineKeyboardButton("Postpone ⏰", callback_data=f"postpone|{order_id}"),
+            InlineKeyboardButton(f"Call {restaurant_name} 📱", callback_data=f"call_restaurant|{order_id}")
+        ])
+        
+        # Row 3: Complete
+        rows.append([
+            InlineKeyboardButton("Complete ✅", callback_data=f"complete|{order_id}")
+        ])
+        
+        return InlineKeyboardMarkup(rows)
+    except Exception as e:
+        logger.error(f"Error building CTA keyboard: {e}")
+        return InlineKeyboardMarkup([])
 
 # --- SHOPIFY WEBHOOK ---
 @app.route("/webhooks/shopify", methods=["POST"])
