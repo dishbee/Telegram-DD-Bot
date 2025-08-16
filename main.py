@@ -300,43 +300,6 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
         logger.error(f"Error building assignment keyboard: {e}")
         return InlineKeyboardMarkup([])
 
-def vendor_keyboard(order_id: str, vendor: str, expanded: bool) -> InlineKeyboardMarkup:
-    """Build vendor buttons per assignment - FIXED conditional logic"""
-    try:
-        # Get order to check request type
-        order = STATE.get(order_id)
-        requested_time = order.get("requested_time") if order else None
-        
-        # Correct button text per assignment requirements
-        toggle_text = "◂ Hide" if expanded else "Details ▸"
-        
-        rows = [
-            [InlineKeyboardButton(toggle_text, callback_data=f"toggle|{order_id}|{vendor}")]
-        ]
-        
-        # Conditional buttons based on request type per assignment
-        if requested_time and requested_time != "ASAP":
-            # Specific time requested - show "Works" and "Later at"
-            rows.append([
-                InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}"),
-                InlineKeyboardButton("Later at", callback_data=f"later|{order_id}|{vendor}")
-            ])
-        elif requested_time == "ASAP":
-            # ASAP requested - show "Will prepare at"
-            rows.append([
-                InlineKeyboardButton("Will prepare at", callback_data=f"prepare|{order_id}|{vendor}")
-            ])
-        
-        # "Something is wrong" always shown
-        rows.append([
-            InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}")
-        ])
-        
-        return InlineKeyboardMarkup(rows)
-    except Exception as e:
-        logger.error(f"Error building vendor keyboard: {e}")
-        return InlineKeyboardMarkup([])
-
 def time_picker_keyboard(order_id: str, action: str, requested_time: str = None) -> InlineKeyboardMarkup:
     """Build time picker for various actions"""
     try:
@@ -569,7 +532,7 @@ def telegram_webhook():
                             "No recent orders found (last 1 hour)"
                         )
                 
-                # VENDOR RESPONSES
+                # VENDOR RESPONSES - FIXED: Post NEW status messages to MDG
                 elif action == "toggle":
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
@@ -600,9 +563,9 @@ def telegram_webhook():
                 
                 elif action == "works":
                     order_id, vendor = data[1], data[2]
-                    # Post to MDG with status line
-                    msg = f"■ {vendor} replied: Works 👍 ■"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
+                    # FIXED: Post NEW status line to MDG per assignment
+                    status_msg = f"■ {vendor} replied: Works 👍 ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                 
                 elif action in ["later", "prepare"]:
                     order_id, vendor = data[1], data[2]
@@ -615,6 +578,18 @@ def telegram_webhook():
                         f"Select time for {action}:",
                         time_picker_keyboard(order_id, f"{action}_time", requested)
                     )
+                
+                elif action == "later_time":
+                    order_id, vendor, selected_time = data[1], data[2], data[3]
+                    # FIXED: Post NEW status line to MDG per assignment
+                    status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                
+                elif action == "prepare_time":
+                    order_id, vendor, selected_time = data[1], data[2], data[3]
+                    # FIXED: Post NEW status line to MDG per assignment
+                    status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                 
                 elif action == "wrong":
                     order_id, vendor = data[1], data[2]
@@ -637,18 +612,20 @@ def telegram_webhook():
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
                     if order and order.get("order_type") == "shopify":
-                        msg = "Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee."
+                        msg = "■ " + vendor + ": Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee. ■"
                     else:
-                        msg = "Please call the customer and organize a replacement or a refund."
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: {msg} ■")
+                        msg = "■ " + vendor + ": Please call the customer and organize a replacement or a refund. ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
                 
                 elif action == "wrong_canceled":
                     order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
+                    status_msg = f"■ {vendor}: Order is canceled ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                 
                 elif action in ["wrong_technical", "wrong_other"]:
                     order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Write a message to dishbee and describe the issue ■")
+                    status_msg = f"■ {vendor}: Write a message to dishbee and describe the issue ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                 
                 elif action == "wrong_delay":
                     order_id, vendor = data[1], data[2]
@@ -677,11 +654,13 @@ def telegram_webhook():
                             InlineKeyboardMarkup(delay_buttons)
                         )
                     except:
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay ■")
+                        status_msg = f"■ {vendor}: We have a delay ■"
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                 
                 elif action == "delay_time":
                     order_id, vendor, delay_time = data[1], data[2], data[3]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
+                    status_msg = f"■ {vendor}: We have a delay - new time {delay_time} ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                 
                 elif action == "same_selected":
                     order_id, reference_order_id = data[1], data[2]
@@ -728,13 +707,15 @@ def telegram_webhook():
                         mdg_text,
                         mdg_assignment_keyboard(order_id)
                     )
+                
+                elif action == "assign":
                     order_id, driver_name, driver_id = data[1], data[2], data[3]
                     order = STATE.get(order_id)
                     if not order:
                         return
                     
                     # Send DM to driver with assignment details
-                    dm_text = self.build_assignment_dm(order)
+                    dm_text = build_assignment_dm(order)
                     try:
                         await safe_send_message(int(driver_id), dm_text)
                     except:
@@ -763,6 +744,36 @@ def telegram_webhook():
     except Exception as e:
         logger.error(f"Telegram webhook error: {e}")
         return jsonify({"error": "Internal server error"}), 500
+
+def build_assignment_dm(order: Dict[str, Any]) -> str:
+    """Build assignment DM text for drivers"""
+    try:
+        vendors = order.get("vendors", [])
+        vendor_text = ", ".join(vendors) if vendors else "Unknown"
+        
+        if order.get("order_type") == "shopify":
+            order_info = f"dishbee #{order['name'][-2:]} and {vendor_text}"
+        else:
+            order_info = vendor_text
+        
+        address = order['customer']['address']
+        phone = order['customer']['phone']
+        customer_name = order['customer']['name']
+        
+        # Count total products
+        vendor_items = order.get("vendor_items", {})
+        total_items = sum(len(items) for items in vendor_items.values())
+        
+        dm_text = f"{order_info}\n\n"
+        dm_text += f"📍 {address}\n"
+        dm_text += f"📞 {phone}\n"
+        dm_text += f"📦 {total_items} products\n"
+        dm_text += f"👤 {customer_name}"
+        
+        return dm_text
+    except Exception as e:
+        logger.error(f"Error building assignment DM: {e}")
+        return "Error building assignment details"
 
 # --- SHOPIFY WEBHOOK ---
 @app.route("/webhooks/shopify", methods=["POST"])
