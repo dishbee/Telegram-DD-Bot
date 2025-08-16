@@ -472,11 +472,22 @@ def telegram_webhook():
                 
                 elif action == "req_time":
                     order_id = data[1]
-                    # Show time picker
+                    # Show 10-minute interval time picker per assignment
+                    current_time = datetime.now()
+                    intervals = get_time_intervals(current_time, 4)  # Get 4 intervals
+                    
+                    # Build time selection keyboard with actual times
+                    time_buttons = []
+                    for i in range(0, len(intervals), 2):
+                        row = [InlineKeyboardButton(intervals[i], callback_data=f"time_selected|{order_id}|{intervals[i]}")]
+                        if i + 1 < len(intervals):
+                            row.append(InlineKeyboardButton(intervals[i + 1], callback_data=f"time_selected|{order_id}|{intervals[i + 1]}"))
+                        time_buttons.append(row)
+                    
                     await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         "🕒 Select time to request:",
-                        time_picker_keyboard(order_id, "time_selected")
+                        InlineKeyboardMarkup(time_buttons)
                     )
                 
                 elif action == "time_selected":
@@ -508,11 +519,26 @@ def telegram_webhook():
                 
                 elif action == "req_same":
                     order_id = data[1]
-                    await safe_send_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        "🔗 Select order to match timing:",
-                        same_time_keyboard(order_id)
-                    )
+                    # Show recent orders list per assignment
+                    recent = get_recent_orders_for_same_time(order_id)
+                    
+                    if recent:
+                        same_buttons = []
+                        for order_info in recent:
+                            button_text = f"{order_info['display_name']} ({order_info['vendor']})"
+                            callback_data = f"same_selected|{order_id}|{order_info['order_id']}"
+                            same_buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+                        
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "🔗 Select order to match timing:",
+                            InlineKeyboardMarkup(same_buttons)
+                        )
+                    else:
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "No recent orders found (last 1 hour)"
+                        )
                 
                 # VENDOR RESPONSES
                 elif action == "toggle":
@@ -563,8 +589,51 @@ def telegram_webhook():
                     msg = f"■ {vendor} replied: {action_name} at {selected_time} ■"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
                 
-                # ASSIGNMENT ACTIONS
-                elif action == "assign":
+                elif action == "same_selected":
+                    order_id, reference_order_id = data[1], data[2]
+                    order = STATE.get(order_id)
+                    reference_order = STATE.get(reference_order_id)
+                    
+                    if not order or not reference_order:
+                        return
+                    
+                    # Get time from reference order
+                    reference_time = reference_order.get("confirmed_time") or reference_order.get("requested_time", "ASAP")
+                    
+                    # Send same time request to vendors per assignment
+                    for vendor in order["vendors"]:
+                        vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_chat:
+                            # Check if same restaurant as reference order
+                            if vendor in reference_order.get("vendors", []):
+                                # Same restaurant - special message per assignment
+                                if order["order_type"] == "shopify":
+                                    current_display = f"#{order['name'][-2:]}"
+                                    ref_display = f"#{reference_order['name'][-2:]}"
+                                    msg = f"Can you prepare {current_display} together with {ref_display} at the same time {reference_time}?"
+                                else:
+                                    current_addr = order['customer']['address'].split(',')[0]
+                                    ref_addr = reference_order['customer']['address'].split(',')[0]
+                                    msg = f"Can you prepare *{current_addr}* together with *{ref_addr}* at the same time {reference_time}?"
+                            else:
+                                # Different restaurant - standard message
+                                if order["order_type"] == "shopify":
+                                    msg = f"#{order['name'][-2:]} at {reference_time}?"
+                                else:
+                                    addr = order['customer']['address'].split(',')[0]
+                                    msg = f"*{addr}* at {reference_time}?"
+                            
+                            await safe_send_message(vendor_chat, msg)
+                    
+                    # Update MDG
+                    order["requested_time"] = reference_time
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {reference_time} (same as {reference_order.get('name', 'other order')})"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_assignment_keyboard(order_id)
+                    )
                     order_id, driver_name, driver_id = data[1], data[2], data[3]
                     order = STATE.get(order_id)
                     if not order:
@@ -654,8 +723,12 @@ def shopify_webhook():
                 all_items.extend(vendor_item_list)
             items_text = "\n".join(all_items)
         
-        # Check for pickup orders
-        is_pickup = "Abholung" in str(payload)
+        # Check for pickup orders - detect "Abholung" in payload
+        is_pickup = False
+        payload_str = str(payload).lower()
+        if "abholung" in payload_str:
+            is_pickup = True
+            logger.info("Pickup order detected (Abholung found in payload)")
         
         # Build order object
         order = {
@@ -686,8 +759,12 @@ def shopify_webhook():
             try:
                 # Send to MDG with time request buttons
                 mdg_text = build_mdg_dispatch_text(order)
+                
+                # Special formatting for pickup orders per assignment
                 if is_pickup:
-                    mdg_text = f"**Order for Selbstabholung**\n{mdg_text}\n\nPlease call the customer and arrange the pickup time on this number: {phone}"
+                    pickup_header = "**Order for Selbstabholung**\n"
+                    pickup_message = f"\nPlease call the customer and arrange the pickup time on this number: {phone}"
+                    mdg_text = pickup_header + mdg_text + pickup_message
                 
                 mdg_msg = await safe_send_message(
                     DISPATCH_MAIN_CHAT_ID,
