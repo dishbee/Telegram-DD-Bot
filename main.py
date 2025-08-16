@@ -776,10 +776,31 @@ def shopify_webhook():
         if not vendors:
             logger.warning("No vendors found! Logging payload structure for debugging:")
             logger.info(f"Payload keys: {list(payload.keys())}")
+            
+            # Log line items structure
             if items:
-                logger.info(f"First item structure: {list(items[0].keys())}")
-                logger.info(f"First item vendor field: {items[0].get('vendor', 'NOT_FOUND')}")
-                logger.info(f"First item name: {items[0].get('name', 'NOT_FOUND')}")
+                logger.info(f"Number of line items: {len(items)}")
+                for i, item in enumerate(items[:2]):  # Log first 2 items
+                    logger.info(f"Item {i} keys: {list(item.keys())}")
+                    logger.info(f"Item {i} vendor field: {item.get('vendor', 'NOT_FOUND')}")
+                    logger.info(f"Item {i} name: {item.get('name', 'NOT_FOUND')}")
+                    logger.info(f"Item {i} title: {item.get('title', 'NOT_FOUND')}")
+                    if item.get('properties'):
+                        logger.info(f"Item {i} properties: {item.get('properties')}")
+            
+            # Log other potential vendor fields
+            logger.info(f"Order merchant: {payload.get('merchant', 'NOT_FOUND')}")
+            logger.info(f"Order source_name: {payload.get('source_name', 'NOT_FOUND')}")
+            logger.info(f"Order referring_site: {payload.get('referring_site', 'NOT_FOUND')}")
+            logger.info(f"Order gateway: {payload.get('gateway', 'NOT_FOUND')}")
+            
+            # Log full payload (truncated for safety)
+            payload_str = str(payload)[:2000]  # First 2000 chars
+            logger.info(f"Payload sample: {payload_str}")
+            
+            # For now, set a default vendor to continue processing
+            logger.warning("Setting default vendor 'Kahaani' for debugging")
+            vendors = ["Kahaani"]
 
         # Build items text
         items_text = "\n".join([
