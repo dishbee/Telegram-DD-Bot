@@ -113,62 +113,85 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         order_type = order.get("order_type", "shopify")
         vendors = order.get("vendors", [])
         
-        # Title based on order type
+        # Title: "dishbee + Name of restaurant(s)" for Shopify
         if order_type == "shopify":
-            title = f"dishbee + {vendors[0] if vendors else 'Unknown'}"
             if len(vendors) > 1:
                 title = f"dishbee + {', '.join(vendors)}"
+            else:
+                title = f"dishbee + {vendors[0] if vendors else 'Unknown'}"
         else:
+            # For HubRise/Smoothr: only restaurant name
             title = vendors[0] if vendors else "Unknown"
         
-        # Order number (last two digits for Shopify)
-        order_number = ""
+        # Order number with last two digits (only for Shopify)
+        order_number_line = ""
         if order_type == "shopify":
-            order_number = f"Order #{order['name'][-2:]}" if len(order['name']) >= 2 else order['name']
+            order_name = order.get('name', '')
+            if len(order_name) >= 2:
+                order_number_line = f"#{order_name[-2:]}\n"
         
-        # Address (only street, building number and zip - no city!)
-        address = order['customer']['address']
+        # Address - only street, building number and zip code (no city!) in BOLD
+        full_address = order['customer']['address']
+        # Remove city from address - split by comma and take first parts (street + zip)
+        address_parts = full_address.split(',')
+        if len(address_parts) >= 2:
+            # Take street + zip, skip city
+            clean_address = f"{address_parts[0].strip()}, {address_parts[-1].strip()}"
+        else:
+            clean_address = address_parts[0].strip()
         
-        # Delivery time
-        delivery_time = order.get('delivery_time', 'ASAP')
+        # Delivery time (only for Smoothr/HubRise)
+        delivery_time_line = ""
+        if order_type in ["smoothr", "hubrise"]:
+            delivery_time = order.get('delivery_time', 'ASAP')
+            if delivery_time != "ASAP":
+                delivery_time_line = f"Requested delivery time: {delivery_time}\n"
         
-        # Note and tips
+        # Note (if added)
+        note_line = ""
         note = order.get("note", "")
+        if note:
+            note_line = f"Note: {note}\n"
+        
+        # Tips (if added)
+        tips_line = ""
         tips = order.get("tips", "")
+        if tips:
+            tips_line = f"Tips: {tips}\n"
         
-        # Payment method (only for Shopify)
-        payment_method = ""
+        # Payment method - Paid/Cash (only for Shopify)
+        payment_line = ""
         if order_type == "shopify":
-            payment = order.get("payment_method", "")
-            if payment:
-                payment_method = f"Payment: {payment}\n"
+            payment = order.get("payment_method", "Paid")
+            payment_line = f"Payment: {payment}\n"
         
-        # Build items text with vendor separation for multi-vendor orders
-        items_text = order.get("items_text", "")
+        # Products with vendor names above (for multi-vendor)
         if order_type == "shopify" and len(vendors) > 1:
-            # Display vendor name above products for each vendor
-            items_text = order.get("items_by_vendor", items_text)
+            # Multi-vendor: show vendor name above each vendor's products
+            vendor_items = order.get("vendor_items", {})
+            items_text = ""
+            for vendor in vendors:
+                items_text += f"\n{vendor}:\n"
+                vendor_products = vendor_items.get(vendor, [])
+                for item in vendor_products:
+                    items_text += f"{item}\n"
+        else:
+            # Single vendor: just list items
+            items_text = order.get("items_text", "")
         
         # Customer name
         customer_name = order['customer']['name']
         
-        # Build message
-        text = f"*{title}*\n"
-        if order_number:
-            text += f"{order_number}\n"
-        text += f"*{address}*\n"  # Bold font for address
-        
-        if order_type in ["smoothr", "hubrise"] and delivery_time != "ASAP":
-            text += f"Requested delivery time: {delivery_time}\n"
-        
-        if note:
-            text += f"Note: {note}\n"
-        if tips:
-            text += f"Tips: {tips}\n"
-        
-        text += payment_method
+        # Build final message
+        text = f"{title}\n"
+        text += order_number_line
+        text += f"**{clean_address}**\n"  # Bold font for address
+        text += delivery_time_line
+        text += note_line
+        text += tips_line
+        text += payment_line
         text += f"{items_text}\n"
-        text += f"Customer: {customer_name}"
+        text += f"{customer_name}"
         
         return text
     except Exception as e:
