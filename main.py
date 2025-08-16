@@ -428,7 +428,10 @@ def telegram_webhook():
                 logger.error(f"answer_callback_query error: {e}")
             
             data = (cq.get("data") or "").split("|")
-            if not data:
+            logger.info(f"Raw callback data: '{cq.get('data')}'")
+            logger.info(f"Split callback data: {data}")
+            
+            if not data or not data[0]:
                 logger.warning("Empty callback data")
                 return
             
@@ -436,24 +439,36 @@ def telegram_webhook():
             logger.info(f"Processing callback: {kind} with data: {data}")
             
             try:
-                # EXISTING CALLBACKS
+                # EXISTING CALLBACKS (should work)
                 if kind == "reply":
+                    logger.info("Processing reply callback")
+                    if len(data) < 4:
+                        logger.error(f"Reply callback missing data: {data}")
+                        return
                     _, order_id, vendor, reply_text = data
                     # Post vendor reply to MDG
                     msg = f"🍴 *{vendor}* replied: \"{reply_text}\""
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
+                    logger.info(f"Reply message sent: {msg}")
                     
                 elif kind == "expand":
+                    logger.info("Processing expand callback")
+                    if len(data) < 3:
+                        logger.error(f"Expand callback missing data: {data}")
+                        return
                     _, order_id, vendor = data
                     order = STATE.get(order_id)
                     if not order:
                         logger.warning(f"Order {order_id} not found in state")
+                        logger.info(f"Available orders in state: {list(STATE.keys())}")
                         return
                     
                     expanded = not order["vendor_expanded"].get(vendor, False)
                     order["vendor_expanded"][vendor] = expanded
                     chat_id = VENDOR_GROUP_MAP.get(vendor)
                     msg_id = order["vendor_msgs"].get(vendor)
+                    
+                    logger.info(f"Expand: vendor={vendor}, expanded={expanded}, chat_id={chat_id}, msg_id={msg_id}")
                     
                     if chat_id and msg_id:
                         new_text = build_vendor_text(order, vendor, expanded)
@@ -463,8 +478,13 @@ def telegram_webhook():
                             text=new_text, 
                             reply_markup=vendor_keyboard(order_id, vendor, expanded)
                         )
+                        logger.info("Expand message updated successfully")
                     
                 elif kind == "assign":
+                    logger.info("Processing assign callback")
+                    if len(data) < 4:
+                        logger.error(f"Assign callback missing data: {data}")
+                        return
                     _, order_id, driver_name, driver_id = data
                     order = STATE.get(order_id)
                     if not order:
@@ -484,6 +504,7 @@ def telegram_webhook():
                         await safe_send_message(int(driver_id), dm_text)
                         logger.info(f"Assignment sent to {driver_name}")
                     except Exception as e:
+                        logger.error(f"Failed to send DM to {driver_name}: {e}")
                         await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"⚠️ Could not DM {driver_name} — {e}")
                     
                     # Update status + edit MDG
@@ -495,8 +516,13 @@ def telegram_webhook():
                         text=build_dispatch_text(order), 
                         reply_markup=mdg_assignment_keyboard(order_id)
                     )
+                    logger.info("Assignment completed successfully")
                     
                 elif kind == "delivered":
+                    logger.info("Processing delivered callback")
+                    if len(data) < 2:
+                        logger.error(f"Delivered callback missing data: {data}")
+                        return
                     _, order_id = data
                     order = STATE.get(order_id)
                     if not order:
@@ -510,8 +536,13 @@ def telegram_webhook():
                         text=build_dispatch_text(order), 
                         reply_markup=mdg_assignment_keyboard(order_id)
                     )
+                    logger.info("Order marked as delivered")
                     
                 elif kind == "delayed":
+                    logger.info("Processing delayed callback")
+                    if len(data) < 2:
+                        logger.error(f"Delayed callback missing data: {data}")
+                        return
                     _, order_id = data
                     order = STATE.get(order_id)
                     if not order:
@@ -525,6 +556,7 @@ def telegram_webhook():
                         text=build_dispatch_text(order), 
                         reply_markup=mdg_assignment_keyboard(order_id)
                     )
+                    logger.info("Order marked as delayed")
                 
                 # NEW TIME REQUEST CALLBACKS
                 elif kind == "request_asap":
