@@ -433,7 +433,7 @@ def telegram_webhook():
                 return
             
             kind = data[0]
-            logger.info(f"Processing callback: {kind}")
+            logger.info(f"Processing callback: {kind} with data: {data}")
             
             try:
                 # EXISTING CALLBACKS
@@ -531,11 +531,16 @@ def telegram_webhook():
                     _, order_id = data
                     order = STATE.get(order_id)
                     if not order:
+                        logger.warning(f"Order {order_id} not found for request_asap")
                         return
+                    
+                    logger.info(f"Processing ASAP request for order {order_id}")
                     
                     # Send ASAP request to vendor
                     for vendor in order.get("vendors", []):
                         vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
+                        logger.info(f"Trying to send ASAP to vendor {vendor}, chat_id: {vendor_chat_id}")
+                        
                         if vendor_chat_id:
                             if order.get("order_type") == "shopify":
                                 request_msg = f"#{order['name'][-2:]} ASAP?"
@@ -544,7 +549,14 @@ def telegram_webhook():
                                 street_info = address_parts[0] if address_parts else "Unknown"
                                 request_msg = f"*{street_info}* ASAP?"
                             
-                            await safe_send_message(vendor_chat_id, request_msg)
+                            logger.info(f"Sending ASAP message: {request_msg}")
+                            try:
+                                await safe_send_message(vendor_chat_id, request_msg)
+                                logger.info(f"ASAP request sent successfully to {vendor}")
+                            except Exception as e:
+                                logger.error(f"Failed to send ASAP to {vendor}: {e}")
+                        else:
+                            logger.warning(f"No chat ID found for vendor: {vendor}")
                     
                     order["requested_time"] = "ASAP"
                     # Update MDG with assignment keyboard
@@ -714,7 +726,19 @@ def shopify_webhook():
         
         # Extract vendors from tags
         tags = payload.get("tags", "")
+        logger.info(f"Raw tags from Shopify: '{tags}'")
+        
         vendors = [v.strip() for v in tags.split(",") if v.strip()] if tags else []
+        logger.info(f"Parsed vendors: {vendors}")
+        logger.info(f"Available vendor mappings: {list(VENDOR_GROUP_MAP.keys())}")
+        
+        # Check if vendors match our mapping
+        for vendor in vendors:
+            if vendor in VENDOR_GROUP_MAP:
+                logger.info(f"✅ Vendor '{vendor}' found in mapping")
+            else:
+                logger.warning(f"❌ Vendor '{vendor}' NOT found in mapping")
+                logger.warning(f"Available: {list(VENDOR_GROUP_MAP.keys())}")
 
         # Build items text
         items_text = "\n".join([
@@ -756,18 +780,27 @@ def shopify_webhook():
                 )
                 order["dispatch_msg_id"] = mdg_msg.message_id
 
-                # Send vendor messages (ENHANCED)
+                # Send vendor messages (ENHANCED with better logging)
                 for vendor in vendors:
                     group_id = VENDOR_GROUP_MAP.get(vendor)
+                    logger.info(f"Processing vendor: {vendor}, group_id: {group_id}")
+                    logger.info(f"Available vendor mappings: {VENDOR_GROUP_MAP}")
+                    
                     if not group_id:
                         logger.warning(f"No group ID found for vendor: {vendor}")
+                        logger.warning(f"Available vendors: {list(VENDOR_GROUP_MAP.keys())}")
                         continue
                     
                     v_text = build_vendor_text(order, vendor, expanded=False)
                     keyboard = vendor_keyboard(order_id, vendor, expanded=False)
-                    v_msg = await safe_send_message(group_id, v_text, reply_markup=keyboard)
-                    order["vendor_msgs"][vendor] = v_msg.message_id
-                    order["vendor_expanded"][vendor] = False
+                    
+                    try:
+                        v_msg = await safe_send_message(group_id, v_text, reply_markup=keyboard)
+                        order["vendor_msgs"][vendor] = v_msg.message_id
+                        order["vendor_expanded"][vendor] = False
+                        logger.info(f"Vendor message sent successfully to {vendor}")
+                    except Exception as e:
+                        logger.error(f"Failed to send vendor message to {vendor}: {e}")
 
                 # Save to state and recent orders
                 STATE[order_id] = order
