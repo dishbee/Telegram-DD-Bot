@@ -314,10 +314,10 @@ def exact_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
         for hour in range(current_hour, 24):
             hour_buttons.append(InlineKeyboardButton(f"{hour:02d}:XX", callback_data=f"exact_hour|{order_id}|{hour}|{timestamp}"))
         
-        # Split hours into rows of 3
+        # Split hours into rows of 4
         rows = []
-        for i in range(0, len(hour_buttons), 3):
-            rows.append(hour_buttons[i:i+3])
+        for i in range(0, len(hour_buttons), 4):
+            rows.append(hour_buttons[i:i+4])
         
         rows.append([InlineKeyboardButton("← Back", callback_data=f"req_back|{order_id}|{timestamp}")])
         
@@ -340,11 +340,11 @@ def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
                 continue
             minutes.append(f"{hour:02d}:{minute:02d}")
         
-        # Create grid with 3 times per row
+        # Create grid with 4 times per row
         rows = []
-        for i in range(0, len(minutes), 3):
+        for i in range(0, len(minutes), 4):
             row = []
-            for j in range(3):
+            for j in range(4):
                 if i + j < len(minutes):
                     time_str = minutes[i + j]
                     row.append(InlineKeyboardButton(time_str, callback_data=f"exact_selected|{order_id}|{time_str}|{timestamp}"))
