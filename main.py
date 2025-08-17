@@ -174,21 +174,16 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
     try:
         order_type = order.get("order_type", "shopify")
         vendors = order.get("vendors", [])
-        order_id = str(order.get("id", ""))
-        
-        # Get group indicator per assignment requirements
-        group_indicator = get_group_indicator(order_id)
-        group_prefix = f"{group_indicator} " if group_indicator else ""
         
         # Title: "dishbee + Name of restaurant(s)" for Shopify
         if order_type == "shopify":
             if len(vendors) > 1:
-                title = f"{group_prefix}dishbee + {', '.join(vendors)}"
+                title = f"dishbee + {', '.join(vendors)}"
             else:
-                title = f"{group_prefix}dishbee + {vendors[0] if vendors else 'Unknown'}"
+                title = f"dishbee + {vendors[0] if vendors else 'Unknown'}"
         else:
             # For HubRise/Smoothr: only restaurant name
-            title = f"{group_prefix}{vendors[0] if vendors else 'Unknown'}"
+            title = vendors[0] if vendors else "Unknown"
         
         # Order number with last two digits (only for Shopify)
         order_number_line = ""
@@ -249,9 +244,6 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         # Customer name
         customer_name = order['customer']['name']
         
-        # Get grouped orders display per assignment requirements
-        grouped_display = get_grouped_orders_display(order_id)
-        
         # Build final message
         text = f"{title}\n"
         text += order_number_line
@@ -262,7 +254,6 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         text += payment_line
         text += f"{items_text}\n"
         text += f"{customer_name}"
-        text += grouped_display  # Add group indicator at bottom
         
         return text
     except Exception as e:
@@ -1262,7 +1253,6 @@ def shopify_webhook():
         
         # Build order object
         order = {
-            "id": order_id,  # FIXED: Add order ID for grouping functionality
             "name": order_name,
             "order_type": "shopify",
             "vendors": vendors,
@@ -1283,8 +1273,7 @@ def shopify_webhook():
             "vendor_expanded": {},
             "requested_time": None,
             "confirmed_time": None,
-            "status": "new",
-            "group_id": None  # FIXED: Add group tracking for order grouping
+            "status": "new"
         }
 
         async def process():
