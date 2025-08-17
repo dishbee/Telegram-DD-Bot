@@ -318,7 +318,7 @@ def exact_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
         for i in range(0, len(hour_buttons), 4):
             rows.append(hour_buttons[i:i+4])
         
-        rows.append([InlineKeyboardButton("← Back", callback_data=f"req_back|{order_id}|{timestamp}")])
+        rows.append([InlineKeyboardButton("← Back", callback_data=f"exact_hide|{order_id}|{timestamp}")])
         
         return InlineKeyboardMarkup(rows)
     except Exception as e:
@@ -349,7 +349,7 @@ def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
                     row.append(InlineKeyboardButton(time_str, callback_data=f"exact_selected|{order_id}|{time_str}|{timestamp}"))
             rows.append(row)
         
-        rows.append([InlineKeyboardButton("← Back to hours", callback_data=f"req_exact|{order_id}|{timestamp}")])
+        rows.append([InlineKeyboardButton("← Back to hours", callback_data=f"exact_back_hours|{order_id}|{timestamp}")])
         
         return InlineKeyboardMarkup(rows)
     except Exception as e:
