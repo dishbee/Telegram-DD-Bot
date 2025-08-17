@@ -921,23 +921,45 @@ def telegram_webhook():
                     except Exception as e:
                         await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"⚠️ Could not DM {driver_name}: {e}")
                 
-                # CTA BUTTON HANDLERS for assignment DMs
+                # CTA BUTTON HANDLERS for assignment DMs - FIXED phone integration
                 elif action == "call_customer":
                     order_id = data[1]
                     order = STATE.get(order_id)
                     if order:
                         phone = order['customer']['phone']
-                        await safe_send_message(cq["from"]["id"], f"Calling customer: {phone}\n\n*Note: This should open your phone app to call directly (not via Telegram)*")
+                        customer_name = order['customer']['name']
+                        
+                        # FIXED: Provide direct calling instructions per assignment
+                        call_text = f"📞 **Calling {customer_name}**\n\n"
+                        call_text += f"Phone: [{phone}](tel:{phone})\n\n"
+                        call_text += f"*Tap the phone number above to call directly (opens your phone app)*"
+                        
+                        await safe_send_message(
+                            cq["from"]["id"], 
+                            call_text,
+                            parse_mode=ParseMode.MARKDOWN
+                        )
                 
                 elif action == "navigate":
                     order_id = data[1]
                     order = STATE.get(order_id)
                     if order:
                         address = order['customer']['address']
-                        maps_link = f"https://maps.google.com/maps?q={address.replace(' ', '+')}"
+                        customer_name = order['customer']['name']
+                        
+                        # FIXED: Enhanced navigation with multiple options per assignment
+                        maps_google = f"https://maps.google.com/maps?q={address.replace(' ', '+')}"
+                        maps_apple = f"https://maps.apple.com/?q={address.replace(' ', '+')}"
+                        
+                        nav_text = f"🗺️ **Navigate to {customer_name}**\n\n"
+                        nav_text += f"📍 {address}\n\n"
+                        nav_text += f"🔗 [Google Maps]({maps_google})\n"
+                        nav_text += f"🔗 [Apple Maps]({maps_apple})\n\n"
+                        nav_text += f"*Tap the link above to open in your preferred maps app*"
+                        
                         await safe_send_message(
                             cq["from"]["id"], 
-                            f"Navigate to: [{address}]({maps_link})",
+                            nav_text,
                             parse_mode=ParseMode.MARKDOWN
                         )
                 
@@ -1011,8 +1033,43 @@ def telegram_webhook():
                     order = STATE.get(order_id)
                     if order:
                         vendors = order.get("vendors", [])
-                        vendor_text = ", ".join(vendors) if vendors else "restaurant"
-                        await safe_send_message(cq["from"]["id"], f"*Calling {vendor_text} via Telegram...*\n\n*Note: This should contact the restaurant through Telegram*")
+                        
+                        if len(vendors) == 1:
+                            vendor = vendors[0]
+                            vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
+                            
+                            if vendor_chat_id:
+                                # FIXED: Enhanced restaurant calling per assignment
+                                call_text = f"📱 **Calling {vendor}**\n\n"
+                                call_text += f"Restaurant: {vendor}\n"
+                                call_text += f"Telegram Group: [Contact {vendor}](tg://chat?id={abs(vendor_chat_id)})\n\n"
+                                call_text += f"*Tap the link above to contact the restaurant via Telegram*"
+                                
+                                await safe_send_message(
+                                    cq["from"]["id"], 
+                                    call_text,
+                                    parse_mode=ParseMode.MARKDOWN
+                                )
+                            else:
+                                await safe_send_message(cq["from"]["id"], f"⚠️ No Telegram contact found for {vendor}")
+                        else:
+                            # Multiple restaurants - show all contacts
+                            call_text = f"📱 **Calling Restaurants**\n\n"
+                            
+                            for vendor in vendors:
+                                vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
+                                if vendor_chat_id:
+                                    call_text += f"• [{vendor}](tg://chat?id={abs(vendor_chat_id)})\n"
+                                else:
+                                    call_text += f"• {vendor} (no contact)\n"
+                            
+                            call_text += f"\n*Tap restaurant names above to contact via Telegram*"
+                            
+                            await safe_send_message(
+                                cq["from"]["id"], 
+                                call_text,
+                                parse_mode=ParseMode.MARKDOWN
+                            )
                 
                 elif action == "complete":
                     order_id = data[1]
@@ -1074,27 +1131,41 @@ def build_assignment_dm(order: Dict[str, Any]) -> str:
         phone = order['customer']['phone']
         address = order['customer']['address']
         
-        # Clickable address for Google Maps navigation per assignment
-        # Format: *Street + building number* - clickable with redirecting to Google Maps
+        # FIXED: Enhanced clickable address for multiple map providers per assignment
         address_parts = address.split(',')
         street_building = address_parts[0].strip() if address_parts else address
-        maps_link = f"https://maps.google.com/maps?q={address.replace(' ', '+')}"
-        clickable_address = f"[{street_building}]({maps_link})"
         
-        # Clickable phone number for direct calling (NOT via Telegram) per assignment
-        clickable_phone = f"[{phone}](tel:{phone})"
+        # Multiple navigation options for better compatibility
+        maps_google = f"https://maps.google.com/maps?q={address.replace(' ', '+')}"
+        maps_apple = f"https://maps.apple.com/?q={address.replace(' ', '+')}"
+        
+        # Use primary Google Maps link but mention multiple options
+        clickable_address = f"[{street_building}]({maps_google})"
+        
+        # FIXED: Enhanced clickable phone with tel: protocol per assignment
+        clickable_phone = f"[{phone}](tel:{phone.replace(' ', '').replace('-', '')})"
         
         # Product count (amount of products - but not listing them) per assignment
         vendor_items = order.get("vendor_items", {})
         total_items = sum(len(items) for items in vendor_items.values())
         product_count = f"{total_items}x Products"
         
+        # Group indicator if order is grouped
+        group_indicator = get_group_indicator(order.get("id", ""))
+        group_prefix = f"{group_indicator} " if group_indicator else ""
+        
         # Build DM message per assignment format
-        dm_text = f"{order_info}\n\n"
+        dm_text = f"{group_prefix}{order_info}\n\n"
         dm_text += f"📍 {clickable_address}\n"
         dm_text += f"📞 {clickable_phone}\n"
         dm_text += f"📦 {product_count}\n"
         dm_text += f"👤 {customer_name}"
+        
+        # Add group information if applicable
+        if group_indicator:
+            grouped_display = get_grouped_orders_display(order.get("id", ""))
+            if grouped_display:
+                dm_text += grouped_display
         
         return dm_text
     except Exception as e:
