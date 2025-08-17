@@ -429,13 +429,13 @@ def exact_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([])
 
 def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
-    """Build minute picker for selected hour - ALL 60 minutes for true exact time"""
+    """Build minute picker for selected hour - ALL 60 minutes in scrollable single column format"""
     try:
         timestamp = int(datetime.now().timestamp())
         current_time = datetime.now()
         
-        # Create ALL minute options (0-59)
-        minute_buttons = []
+        # Create ALL minute options (0-59) as full time displays
+        time_buttons = []
         
         for minutes in range(0, 60):
             # Skip past times for current hour
@@ -443,12 +443,12 @@ def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
                 continue
                 
             time_str = f"{hour:02d}:{minutes:02d}"
-            minute_buttons.append(InlineKeyboardButton(f":{minutes:02d}", callback_data=f"exact_selected|{order_id}|{time_str}|{timestamp}"))
+            time_buttons.append(InlineKeyboardButton(time_str, callback_data=f"exact_selected|{order_id}|{time_str}|{timestamp}"))
         
-        # Split into rows of 6 minutes each (10 rows max)
+        # Split into rows of 3 times each (scrollable single column style)
         rows = []
-        for i in range(0, len(minute_buttons), 6):
-            rows.append(minute_buttons[i:i+6])
+        for i in range(0, len(time_buttons), 3):
+            rows.append(time_buttons[i:i+3])
         
         # Add back button
         rows.append([InlineKeyboardButton("← Back to hours", callback_data=f"req_exact|{order_id}|{timestamp}")])
