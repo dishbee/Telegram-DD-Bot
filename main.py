@@ -404,58 +404,99 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: str = None)
         return InlineKeyboardMarkup([])
 
 def exact_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
-    """Build exact time picker with hours + minutes up to end of current day per assignment"""
+    """Build exact time picker with hour/minute spinners (no grid)"""
     try:
         timestamp = int(datetime.now().timestamp())
         current_time = datetime.now()
         
-        # Get current hour and create hour options until end of day
-        current_hour = current_time.hour
-        rows = []
+        # Start with current hour and next 10-minute mark
+        start_hour = current_time.hour
+        start_minute = ((current_time.minute // 10) + 1) * 10
+        if start_minute >= 60:
+            start_hour += 1
+            start_minute = 0
         
-        # Create hour buttons (current hour to 23)
-        hour_buttons = []
-        for hour in range(current_hour, 24):
-            display_hour = f"{hour:02d}:XX"
-            hour_buttons.append(InlineKeyboardButton(display_hour, callback_data=f"exact_hour|{order_id}|{hour}|{timestamp}"))
-        
-        # Split hours into rows of 4
-        for i in range(0, len(hour_buttons), 4):
-            rows.append(hour_buttons[i:i+4])
-        
-        return InlineKeyboardMarkup(rows)
+        return exact_time_spinner_keyboard(order_id, start_hour, start_minute, timestamp)
     except Exception as e:
         logger.error(f"Error building exact time keyboard: {e}")
         return InlineKeyboardMarkup([])
 
-def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
-    """Build minute picker for selected hour - ALL 60 minutes in scrollable single column format"""
+def exact_time_spinner_keyboard(order_id: str, hour: int, minute: int, timestamp: int) -> InlineKeyboardMarkup:
+    """Build hour/minute spinner interface"""
     try:
-        timestamp = int(datetime.now().timestamp())
+        # Ensure hour is within valid range (current hour to 23)
         current_time = datetime.now()
+        if hour < current_time.hour:
+            hour = current_time.hour
+        if hour > 23:
+            hour = 23
+            
+        # Ensure minute is valid (0-59)
+        if minute < 0:
+            minute = 0
+        if minute > 59:
+            minute = 59
+            
+        # If it's current hour, ensure minute is in future
+        if hour == current_time.hour and minute <= current_time.minute:
+            minute = current_time.minute + 1
+            if minute > 59:
+                hour += 1
+                minute = 0
         
-        # Create ALL minute options (0-59) as full time displays
-        time_buttons = []
-        
-        for minutes in range(0, 60):
-            # Skip past times for current hour
-            if hour == current_time.hour and minutes <= current_time.minute:
-                continue
-                
-            time_str = f"{hour:02d}:{minutes:02d}"
-            time_buttons.append(InlineKeyboardButton(time_str, callback_data=f"exact_selected|{order_id}|{time_str}|{timestamp}"))
-        
-        # Split into rows of 3 times each (scrollable single column style)
         rows = []
-        for i in range(0, len(time_buttons), 3):
-            rows.append(time_buttons[i:i+3])
         
-        # Add back button
-        rows.append([InlineKeyboardButton("← Back to hours", callback_data=f"req_exact|{order_id}|{timestamp}")])
+        # Hour controls
+        rows.append([
+            InlineKeyboardButton("Hour:", callback_data=f"noop|{timestamp}"),
+            InlineKeyboardButton("▲", callback_data=f"hour_up|{order_id}|{hour}|{minute}|{timestamp}"),
+            InlineKeyboardButton("", callback_data=f"noop|{timestamp}")
+        ])
+        rows.append([
+            InlineKeyboardButton("", callback_data=f"noop|{timestamp}"),
+            InlineKeyboardButton(f"{hour:02d}", callback_data=f"noop|{timestamp}"),
+            InlineKeyboardButton("", callback_data=f"noop|{timestamp}")
+        ])
+        rows.append([
+            InlineKeyboardButton("", callback_data=f"noop|{timestamp}"),
+            InlineKeyboardButton("▼", callback_data=f"hour_down|{order_id}|{hour}|{minute}|{timestamp}"),
+            InlineKeyboardButton("", callback_data=f"noop|{timestamp}")
+        ])
+        
+        # Separator
+        rows.append([InlineKeyboardButton("", callback_data=f"noop|{timestamp}")])
+        
+        # Minute controls
+        rows.append([
+            InlineKeyboardButton("Minute:", callback_data=f"noop|{timestamp}"),
+            InlineKeyboardButton("▲", callback_data=f"minute_up|{order_id}|{hour}|{minute}|{timestamp}"),
+            InlineKeyboardButton("", callback_data=f"noop|{timestamp}")
+        ])
+        rows.append([
+            InlineKeyboardButton("", callback_data=f"noop|{timestamp}"),
+            InlineKeyboardButton(f"{minute:02d}", callback_data=f"noop|{timestamp}"),
+            InlineKeyboardButton("", callback_data=f"noop|{timestamp}")
+        ])
+        rows.append([
+            InlineKeyboardButton("", callback_data=f"noop|{timestamp}"),
+            InlineKeyboardButton("▼", callback_data=f"minute_down|{order_id}|{hour}|{minute}|{timestamp}"),
+            InlineKeyboardButton("", callback_data=f"noop|{timestamp}")
+        ])
+        
+        # Separator and confirm
+        rows.append([InlineKeyboardButton("", callback_data=f"noop|{timestamp}")])
+        
+        final_time = f"{hour:02d}:{minute:02d}"
+        rows.append([
+            InlineKeyboardButton(f"✓ Confirm {final_time}", callback_data=f"exact_selected|{order_id}|{final_time}|{timestamp}"),
+        ])
+        
+        # Back button
+        rows.append([InlineKeyboardButton("← Back", callback_data=f"req_exact_back|{order_id}|{timestamp}")])
         
         return InlineKeyboardMarkup(rows)
     except Exception as e:
-        logger.error(f"Error building exact hour keyboard: {e}")
+        logger.error(f"Error building exact time spinner: {e}")
         return InlineKeyboardMarkup([])
     """Build same time as selection keyboard"""
     try:
@@ -756,21 +797,95 @@ def telegram_webhook():
                 
                 elif action == "req_exact":
                     order_id = data[1]
-                    # Show exact time picker per assignment (hours + minutes up to end of current day)
+                    # Show exact time spinner per assignment (hours + minutes up to end of current day)
                     await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        "🕐 Select exact time to request:",
+                        "🕐 Set exact time to request:",
                         exact_time_keyboard(order_id)
                     )
                 
-                elif action == "exact_hour":
-                    order_id, selected_hour = data[1], int(data[2])
-                    # Show minute picker for selected hour
-                    await safe_send_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        f"🕐 Select minutes for {selected_hour:02d}:XX:",
-                        exact_hour_keyboard(order_id, selected_hour)
+                elif action == "hour_up":
+                    order_id, current_hour, current_minute = data[1], int(data[2]), int(data[3])
+                    new_hour = min(current_hour + 1, 23)
+                    timestamp = int(datetime.now().timestamp())
+                    
+                    # Update spinner display
+                    await safe_edit_message(
+                        cq["message"]["chat"]["id"],
+                        cq["message"]["message_id"],
+                        "🕐 Set exact time to request:",
+                        exact_time_spinner_keyboard(order_id, new_hour, current_minute, timestamp)
                     )
+                
+                elif action == "hour_down":
+                    order_id, current_hour, current_minute = data[1], int(data[2]), int(data[3])
+                    current_time = datetime.now()
+                    new_hour = max(current_hour - 1, current_time.hour)
+                    timestamp = int(datetime.now().timestamp())
+                    
+                    # Update spinner display
+                    await safe_edit_message(
+                        cq["message"]["chat"]["id"],
+                        cq["message"]["message_id"],
+                        "🕐 Set exact time to request:",
+                        exact_time_spinner_keyboard(order_id, new_hour, current_minute, timestamp)
+                    )
+                
+                elif action == "minute_up":
+                    order_id, current_hour, current_minute = data[1], int(data[2]), int(data[3])
+                    new_minute = current_minute + 1
+                    new_hour = current_hour
+                    
+                    if new_minute > 59:
+                        new_minute = 0
+                        new_hour = min(current_hour + 1, 23)
+                    
+                    timestamp = int(datetime.now().timestamp())
+                    
+                    # Update spinner display
+                    await safe_edit_message(
+                        cq["message"]["chat"]["id"],
+                        cq["message"]["message_id"],
+                        "🕐 Set exact time to request:",
+                        exact_time_spinner_keyboard(order_id, new_hour, new_minute, timestamp)
+                    )
+                
+                elif action == "minute_down":
+                    order_id, current_hour, current_minute = data[1], int(data[2]), int(data[3])
+                    new_minute = current_minute - 1
+                    new_hour = current_hour
+                    
+                    if new_minute < 0:
+                        new_minute = 59
+                        current_time = datetime.now()
+                        new_hour = max(current_hour - 1, current_time.hour)
+                    
+                    timestamp = int(datetime.now().timestamp())
+                    
+                    # Update spinner display
+                    await safe_edit_message(
+                        cq["message"]["chat"]["id"],
+                        cq["message"]["message_id"],
+                        "🕐 Set exact time to request:",
+                        exact_time_spinner_keyboard(order_id, new_hour, new_minute, timestamp)
+                    )
+                
+                elif action == "req_exact_back":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if order and "mdg_message_id" in order:
+                        # Go back to main time request buttons
+                        mdg_text = build_mdg_dispatch_text(order)
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text,
+                            mdg_time_request_keyboard(order_id)
+                        )
+                
+                elif action == "noop":
+                    # No operation - for spacing/display buttons
+                    pass
                 
                 elif action == "exact_selected":
                     order_id, selected_time = data[1], data[2]
