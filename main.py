@@ -146,6 +146,8 @@ def get_grouped_orders_display(order_id: str) -> str:
     except Exception as e:
         logger.error(f"Error getting grouped orders display: {e}")
         return ""
+
+def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
     """Get recent orders (last 1 hour) for 'same time as' functionality"""
     one_hour_ago = datetime.now() - timedelta(hours=1)
     recent = []
@@ -418,6 +420,84 @@ def same_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
         logger.error(f"Error building same time keyboard: {e}")
         return InlineKeyboardMarkup([])
 
+def build_assignment_dm(order: Dict[str, Any]) -> str:
+    """Build assignment DM text for drivers - FIXED per assignment requirements"""
+    try:
+        vendors = order.get("vendors", [])
+        order_type = order.get("order_type", "shopify")
+        
+        # Order number + restaurant name per assignment
+        if order_type == "shopify":
+            order_number = f"#{order['name'][-2:]}" if len(order['name']) >= 2 else f"#{order['name']}"
+            order_info = f"dishbee {order_number} and {', '.join(vendors)}"
+        else:
+            # For HubRise/Smoothr: only restaurant name
+            order_info = ', '.join(vendors) if vendors else "Unknown"
+        
+        # Customer details
+        customer_name = order['customer']['name']
+        phone = order['customer']['phone']
+        address = order['customer']['address']
+        
+        # FIXED: Enhanced clickable address for multiple map providers per assignment
+        address_parts = address.split(',')
+        street_building = address_parts[0].strip() if address_parts else address
+        
+        # Multiple navigation options for better compatibility
+        maps_google = f"https://maps.google.com/maps?q={address.replace(' ', '+')}"
+        maps_apple = f"https://maps.apple.com/?q={address.replace(' ', '+')}"
+        
+        # Use primary Google Maps link but mention multiple options
+        clickable_address = f"[{street_building}]({maps_google})"
+        
+        # FIXED: Enhanced clickable phone with tel: protocol per assignment
+        clickable_phone = f"[{phone}](tel:{phone.replace(' ', '').replace('-', '')})"
+        
+        # Product count (amount of products - but not listing them) per assignment
+        vendor_items = order.get("vendor_items", {})
+        total_items = sum(len(items) for items in vendor_items.values())
+        product_count = f"{total_items}x Products"
+        
+        # Build DM message per assignment format
+        dm_text = f"{order_info}\n\n"
+        dm_text += f"📍 {clickable_address}\n"
+        dm_text += f"📞 {clickable_phone}\n"
+        dm_text += f"📦 {product_count}\n"
+        dm_text += f"👤 {customer_name}"
+        
+        return dm_text
+    except Exception as e:
+        logger.error(f"Error building assignment DM: {e}")
+        return "Error building assignment details"
+
+def assignment_cta_keyboard(order_id: str, vendor_names: List[str]) -> InlineKeyboardMarkup:
+    """Build CTA buttons for assignment DM per assignment requirements"""
+    try:
+        rows = []
+        
+        # Row 1: Call customer + Navigate
+        rows.append([
+            InlineKeyboardButton("Call customer 📞", callback_data=f"call_customer|{order_id}"),
+            InlineKeyboardButton("Navigate 🗺️", callback_data=f"navigate|{order_id}")
+        ])
+        
+        # Row 2: Postpone + Call restaurant
+        restaurant_name = vendor_names[0] if vendor_names else "restaurant"
+        rows.append([
+            InlineKeyboardButton("Postpone ⏰", callback_data=f"postpone|{order_id}"),
+            InlineKeyboardButton(f"Call {restaurant_name} 📱", callback_data=f"call_restaurant|{order_id}")
+        ])
+        
+        # Row 3: Complete
+        rows.append([
+            InlineKeyboardButton("Complete ✅", callback_data=f"complete|{order_id}")
+        ])
+        
+        return InlineKeyboardMarkup(rows)
+    except Exception as e:
+        logger.error(f"Error building CTA keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
 async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN):
     """Send message with error handling"""
     max_retries = 3
@@ -579,26 +659,12 @@ def telegram_webhook():
                 
                 elif action == "req_same":
                     order_id = data[1]
-                    # Show recent orders list per assignment
-                    recent = get_recent_orders_for_same_time(order_id)
-                    
-                    if recent:
-                        same_buttons = []
-                        for order_info in recent:
-                            button_text = f"{order_info['display_name']} ({order_info['vendor']})"
-                            callback_data = f"same_selected|{order_id}|{order_info['order_id']}"
-                            same_buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
-                        
-                        await safe_send_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            "🔗 Select order to match timing:",
-                            InlineKeyboardMarkup(same_buttons)
-                        )
-                    else:
-                        await safe_send_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            "No recent orders found (last 1 hour)"
-                        )
+                    # Show recent orders list per assignment using existing function
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        "🔗 Select order to match timing:",
+                        same_time_keyboard(order_id)
+                    )
                 
                 # VENDOR RESPONSES - FIXED: Post NEW status messages to MDG
                 elif action == "toggle":
@@ -781,7 +847,7 @@ def telegram_webhook():
                     status_msg = f"■ {vendor}: We have a delay - new time {delay_time} ■"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                 
-                elif action == "same_selected":
+                elif action == "same_as":
                     order_id, reference_order_id = data[1], data[2]
                     order = STATE.get(order_id)
                     reference_order = STATE.get(reference_order_id)
@@ -1082,16 +1148,6 @@ def telegram_webhook():
                     
                     # Notify driver
                     await safe_send_message(cq["from"]["id"], "✅ Order marked as completed!")
-                
-                elif action == "delivered":
-                    order_id = data[1]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"Order {order_id} was delivered.")
-                
-                elif action == "delayed":
-                    order_id = data[1]
-                    order = STATE.get(order_id)
-                    if order:
-                        order["status"] = "delayed"
                     
             except Exception as e:
                 logger.error(f"Callback error: {e}")
@@ -1102,94 +1158,6 @@ def telegram_webhook():
     except Exception as e:
         logger.error(f"Telegram webhook error: {e}")
         return jsonify({"error": "Internal server error"}), 500
-
-def build_assignment_dm(order: Dict[str, Any]) -> str:
-    """Build assignment DM text for drivers - FIXED per assignment requirements"""
-    try:
-        vendors = order.get("vendors", [])
-        order_type = order.get("order_type", "shopify")
-        
-        # Order number + restaurant name per assignment
-        if order_type == "shopify":
-            order_number = f"#{order['name'][-2:]}" if len(order['name']) >= 2 else f"#{order['name']}"
-            order_info = f"dishbee {order_number} and {', '.join(vendors)}"
-        else:
-            # For HubRise/Smoothr: only restaurant name
-            order_info = ', '.join(vendors) if vendors else "Unknown"
-        
-        # Customer details
-        customer_name = order['customer']['name']
-        phone = order['customer']['phone']
-        address = order['customer']['address']
-        
-        # FIXED: Enhanced clickable address for multiple map providers per assignment
-        address_parts = address.split(',')
-        street_building = address_parts[0].strip() if address_parts else address
-        
-        # Multiple navigation options for better compatibility
-        maps_google = f"https://maps.google.com/maps?q={address.replace(' ', '+')}"
-        maps_apple = f"https://maps.apple.com/?q={address.replace(' ', '+')}"
-        
-        # Use primary Google Maps link but mention multiple options
-        clickable_address = f"[{street_building}]({maps_google})"
-        
-        # FIXED: Enhanced clickable phone with tel: protocol per assignment
-        clickable_phone = f"[{phone}](tel:{phone.replace(' ', '').replace('-', '')})"
-        
-        # Product count (amount of products - but not listing them) per assignment
-        vendor_items = order.get("vendor_items", {})
-        total_items = sum(len(items) for items in vendor_items.values())
-        product_count = f"{total_items}x Products"
-        
-        # Group indicator if order is grouped
-        group_indicator = get_group_indicator(order.get("id", ""))
-        group_prefix = f"{group_indicator} " if group_indicator else ""
-        
-        # Build DM message per assignment format
-        dm_text = f"{group_prefix}{order_info}\n\n"
-        dm_text += f"📍 {clickable_address}\n"
-        dm_text += f"📞 {clickable_phone}\n"
-        dm_text += f"📦 {product_count}\n"
-        dm_text += f"👤 {customer_name}"
-        
-        # Add group information if applicable
-        if group_indicator:
-            grouped_display = get_grouped_orders_display(order.get("id", ""))
-            if grouped_display:
-                dm_text += grouped_display
-        
-        return dm_text
-    except Exception as e:
-        logger.error(f"Error building assignment DM: {e}")
-        return "Error building assignment details"
-
-def assignment_cta_keyboard(order_id: str, vendor_names: List[str]) -> InlineKeyboardMarkup:
-    """Build CTA buttons for assignment DM per assignment requirements"""
-    try:
-        rows = []
-        
-        # Row 1: Call customer + Navigate
-        rows.append([
-            InlineKeyboardButton("Call customer 📞", callback_data=f"call_customer|{order_id}"),
-            InlineKeyboardButton("Navigate 🗺️", callback_data=f"navigate|{order_id}")
-        ])
-        
-        # Row 2: Postpone + Call restaurant
-        restaurant_name = vendor_names[0] if vendor_names else "restaurant"
-        rows.append([
-            InlineKeyboardButton("Postpone ⏰", callback_data=f"postpone|{order_id}"),
-            InlineKeyboardButton(f"Call {restaurant_name} 📱", callback_data=f"call_restaurant|{order_id}")
-        ])
-        
-        # Row 3: Complete
-        rows.append([
-            InlineKeyboardButton("Complete ✅", callback_data=f"complete|{order_id}")
-        ])
-        
-        return InlineKeyboardMarkup(rows)
-    except Exception as e:
-        logger.error(f"Error building CTA keyboard: {e}")
-        return InlineKeyboardMarkup([])
 
 # --- SHOPIFY WEBHOOK ---
 @app.route("/webhooks/shopify", methods=["POST"])
