@@ -266,7 +266,6 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{timestamp}")
             ],
             [
-                InlineKeyboardButton("Request EXACT TIME", callback_data=f"req_exact|{order_id}|{timestamp}"),
                 InlineKeyboardButton("Request SAME TIME AS", callback_data=f"req_same|{order_id}|{timestamp}")
             ]
         ])
@@ -526,18 +525,30 @@ def telegram_webhook():
                 elif action == "req_time":
                     order_id = data[1]
                     logger.info(f"Processing TIME request for order {order_id}")
-                    # Show 10-minute interval time picker per assignment
+                    # Show 4 quick time options + EXACT TIME submenu
                     current_time = datetime.now()
                     intervals = get_time_intervals(current_time, 4)  # Get 4 intervals
                     
-                    # Build time selection keyboard with actual times
+                    # Build combined time selection keyboard
                     timestamp = int(datetime.now().timestamp())
                     time_buttons = []
-                    for i in range(0, len(intervals), 2):
-                        row = [InlineKeyboardButton(intervals[i], callback_data=f"time_selected|{order_id}|{intervals[i]}|{timestamp}")]
-                        if i + 1 < len(intervals):
-                            row.append(InlineKeyboardButton(intervals[i + 1], callback_data=f"time_selected|{order_id}|{intervals[i + 1]}|{timestamp}"))
-                        time_buttons.append(row)
+                    
+                    # First row: 2 quick times
+                    time_buttons.append([
+                        InlineKeyboardButton(intervals[0], callback_data=f"time_selected|{order_id}|{intervals[0]}|{timestamp}"),
+                        InlineKeyboardButton(intervals[1], callback_data=f"time_selected|{order_id}|{intervals[1]}|{timestamp}")
+                    ])
+                    
+                    # Second row: 2 more quick times
+                    time_buttons.append([
+                        InlineKeyboardButton(intervals[2], callback_data=f"time_selected|{order_id}|{intervals[2]}|{timestamp}"),
+                        InlineKeyboardButton(intervals[3], callback_data=f"time_selected|{order_id}|{intervals[3]}|{timestamp}")
+                    ])
+                    
+                    # Third row: EXACT TIME submenu
+                    time_buttons.append([
+                        InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}|{timestamp}")
+                    ])
                     
                     await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
