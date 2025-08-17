@@ -377,6 +377,41 @@ def same_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
         logger.error(f"Error building same time keyboard: {e}")
         return InlineKeyboardMarkup([])
 
+def build_assignment_dm(order: Dict[str, Any]) -> str:
+    """Build assignment DM text for drivers - per assignment requirements"""
+    try:
+        vendors = order.get("vendors", [])
+        order_type = order.get("order_type", "shopify")
+        
+        # Order number + restaurant name
+        if order_type == "shopify":
+            title = f"dishbee #{order['name'][-2:]} - {', '.join(vendors)}"
+        else:
+            title = ', '.join(vendors)
+        
+        # Address - clickable for Google Maps
+        address = order['customer']['address']
+        
+        # Phone number - clickable to call directly
+        phone = order['customer']['phone']
+        
+        # Product count
+        items_count = len(order.get("items_text", "").split('\n'))
+        
+        # Customer name
+        customer_name = order['customer']['name']
+        
+        text = f"{title}\n\n"
+        text += f"📍 {address}\n"
+        text += f"📞 {phone}\n"
+        text += f"🛍️ {items_count} items\n"
+        text += f"👤 {customer_name}"
+        
+        return text
+    except Exception as e:
+        logger.error(f"Error building assignment DM: {e}")
+        return f"Assignment error for order {order.get('name', 'Unknown')}"
+
 async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN):
     """Send message with error handling"""
     max_retries = 3
@@ -656,6 +691,25 @@ def telegram_webhook():
                     # Show time picker for vendor response
                     await safe_send_message(
                         VENDOR_GROUP_MAP[vendor],
+                        f"Select time for {action}:",
+                        time_picker_keyboard(order_id, f"{action}_time", requested)
+                    )
+                
+                elif action == "wrong":
+                    order_id, vendor = data[1], data[2]
+                    logger.info(f"Vendor {vendor} reported something wrong for order {order_id}")
+                    # Show "Something is wrong" submenu per assignment
+                    timestamp = int(datetime.now().timestamp())
+                    wrong_buttons = [
+                        [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}|{timestamp}")],
+                        [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}|{timestamp}")],
+                        [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}|{timestamp}")],
+                        [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}|{timestamp}")],
+                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}|{timestamp}")]
+                    ]
+                    
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
                         "What's wrong?",
                         InlineKeyboardMarkup(wrong_buttons)
                     )
@@ -797,41 +851,6 @@ def telegram_webhook():
     except Exception as e:
         logger.error(f"Telegram webhook error: {e}")
         return jsonify({"error": "Internal server error"}), 500
-
-def build_assignment_dm(order: Dict[str, Any]) -> str:
-    """Build assignment DM text for drivers - per assignment requirements"""
-    try:
-        vendors = order.get("vendors", [])
-        order_type = order.get("order_type", "shopify")
-        
-        # Order number + restaurant name
-        if order_type == "shopify":
-            title = f"dishbee #{order['name'][-2:]} - {', '.join(vendors)}"
-        else:
-            title = ', '.join(vendors)
-        
-        # Address - clickable for Google Maps
-        address = order['customer']['address']
-        
-        # Phone number - clickable to call directly
-        phone = order['customer']['phone']
-        
-        # Product count
-        items_count = len(order.get("items_text", "").split('\n'))
-        
-        # Customer name
-        customer_name = order['customer']['name']
-        
-        text = f"{title}\n\n"
-        text += f"📍 {address}\n"
-        text += f"📞 {phone}\n"
-        text += f"🛍️ {items_count} items\n"
-        text += f"👤 {customer_name}"
-        
-        return text
-    except Exception as e:
-        logger.error(f"Error building assignment DM: {e}")
-        return f"Assignment error for order {order.get('name', 'Unknown')}"
 
 # --- SHOPIFY WEBHOOK ---
 @app.route("/webhooks/shopify", methods=["POST"])
@@ -983,23 +1002,5 @@ def shopify_webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting Complete Assignment Implementation on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=False)
-                        f"Select time for {action}:",
-                        time_picker_keyboard(order_id, f"{action}_time", requested)
-                    )
-                
-                elif action == "wrong":
-                    order_id, vendor = data[1], data[2]
-                    logger.info(f"Vendor {vendor} reported something wrong for order {order_id}")
-                    # Show "Something is wrong" submenu per assignment
-                    timestamp = int(datetime.now().timestamp())
-                    wrong_buttons = [
-                        [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}|{timestamp}")],
-                        [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}|{timestamp}")],
-                        [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}|{timestamp}")],
-                        [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}|{timestamp}")],
-                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}|{timestamp}")]
-                    ]
-                    
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor
+    app.run(host="0.0.0.0", port=port, debug=False)d"].get(vendor, False)
+                    order["vendor_expande
