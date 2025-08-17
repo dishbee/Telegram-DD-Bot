@@ -983,7 +983,7 @@ def shopify_webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting Complete Assignment Implementation on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=False)],
+    app.run(host="0.0.0.0", port=port, debug=False)
                         f"Select time for {action}:",
                         time_picker_keyboard(order_id, f"{action}_time", requested)
                     )
