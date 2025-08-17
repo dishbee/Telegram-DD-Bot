@@ -377,41 +377,6 @@ def same_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
         logger.error(f"Error building same time keyboard: {e}")
         return InlineKeyboardMarkup([])
 
-def build_assignment_dm(order: Dict[str, Any]) -> str:
-    """Build assignment DM text for drivers - per assignment requirements"""
-    try:
-        vendors = order.get("vendors", [])
-        order_type = order.get("order_type", "shopify")
-        
-        # Order number + restaurant name
-        if order_type == "shopify":
-            title = f"dishbee #{order['name'][-2:]} - {', '.join(vendors)}"
-        else:
-            title = ', '.join(vendors)
-        
-        # Address - clickable for Google Maps
-        address = order['customer']['address']
-        
-        # Phone number - clickable to call directly
-        phone = order['customer']['phone']
-        
-        # Product count
-        items_count = len(order.get("items_text", "").split('\n'))
-        
-        # Customer name
-        customer_name = order['customer']['name']
-        
-        text = f"{title}\n\n"
-        text += f"📍 {address}\n"
-        text += f"📞 {phone}\n"
-        text += f"🛍️ {items_count} items\n"
-        text += f"👤 {customer_name}"
-        
-        return text
-    except Exception as e:
-        logger.error(f"Error building assignment DM: {e}")
-        return f"Assignment error for order {order.get('name', 'Unknown')}"
-
 async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN):
     """Send message with error handling"""
     max_retries = 3
@@ -483,41 +448,6 @@ def telegram_webhook():
             
             action = data[0]
             logger.info(f"Processing callback: {action}")
-            
-            # Check for button expiration (15 minutes)
-            if len(data) >= 3:
-                try:
-                    button_timestamp = int(data[-1])
-                    current_time = int(datetime.now().timestamp())
-                    age_seconds = current_time - button_timestamp
-                    logger.info(f"Button age: {age_seconds} seconds")
-                    
-                    if age_seconds > 900:  # 15 minutes
-                        logger.info("Button expired - refreshing silently")
-                        # Button expired - refresh silently
-                        order_id = data[1] if len(data) > 1 else None
-                        if order_id and order_id in STATE:
-                            order = STATE[order_id]
-                            # Determine which keyboard to show based on order status
-                            if order.get("status") == "confirmed":
-                                keyboard = mdg_assignment_keyboard(order_id)
-                            else:
-                                keyboard = mdg_time_request_keyboard(order_id)
-                            
-                            # Silent refresh - edit message with fresh buttons
-                            await safe_edit_message(
-                                DISPATCH_MAIN_CHAT_ID,
-                                order.get("mdg_message_id"),
-                                build_mdg_dispatch_text(order),
-                                keyboard
-                            )
-                        return
-                    else:
-                        logger.info(f"Button is fresh ({age_seconds}s old)")
-                except (ValueError, IndexError) as e:
-                    # Handle old buttons without timestamps
-                    logger.info(f"Old button format or timestamp error: {e}")
-                    pass
             
             try:
                 # TIME REQUEST ACTIONS (MDG)
@@ -852,6 +782,41 @@ def telegram_webhook():
         logger.error(f"Telegram webhook error: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
+def build_assignment_dm(order: Dict[str, Any]) -> str:
+    """Build assignment DM text for drivers - per assignment requirements"""
+    try:
+        vendors = order.get("vendors", [])
+        order_type = order.get("order_type", "shopify")
+        
+        # Order number + restaurant name
+        if order_type == "shopify":
+            title = f"dishbee #{order['name'][-2:]} - {', '.join(vendors)}"
+        else:
+            title = ', '.join(vendors)
+        
+        # Address - clickable for Google Maps
+        address = order['customer']['address']
+        
+        # Phone number - clickable to call directly
+        phone = order['customer']['phone']
+        
+        # Product count
+        items_count = len(order.get("items_text", "").split('\n'))
+        
+        # Customer name
+        customer_name = order['customer']['name']
+        
+        text = f"{title}\n\n"
+        text += f"📍 {address}\n"
+        text += f"📞 {phone}\n"
+        text += f"🛍️ {items_count} items\n"
+        text += f"👤 {customer_name}"
+        
+        return text
+    except Exception as e:
+        logger.error(f"Error building assignment DM: {e}")
+        return f"Assignment error for order {order.get('name', 'Unknown')}"
+
 # --- SHOPIFY WEBHOOK ---
 @app.route("/webhooks/shopify", methods=["POST"])
 def shopify_webhook():
@@ -1002,5 +967,4 @@ def shopify_webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting Complete Assignment Implementation on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=False)d"].get(vendor, False)
-                    order["vendor_expande
+    app.run(host="0.0.0.0", port=port, debug=False)
