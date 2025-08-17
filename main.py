@@ -303,26 +303,58 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([])
 
 def exact_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
-    """Build exact time picker with hour/minute spinners (no grid)"""
+    """Build exact time picker with 3-minute intervals in grid format"""
     try:
         timestamp = int(datetime.now().timestamp())
         current_time = datetime.now()
         current_hour = current_time.hour
-        current_minute = current_time.minute
         
-        # Build spinner interface
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("Hour: ▲", callback_data=f"hour_up|{order_id}|{current_hour}|{timestamp}")],
-            [InlineKeyboardButton(f"{current_hour:02d}", callback_data=f"hour_display|{order_id}|{timestamp}")],
-            [InlineKeyboardButton("Hour: ▼", callback_data=f"hour_down|{order_id}|{current_hour}|{timestamp}")],
-            [InlineKeyboardButton("Minute: ▲", callback_data=f"minute_up|{order_id}|{current_minute}|{timestamp}")],
-            [InlineKeyboardButton(f"{current_minute:02d}", callback_data=f"minute_display|{order_id}|{timestamp}")],
-            [InlineKeyboardButton("Minute: ▼", callback_data=f"minute_down|{order_id}|{current_minute}|{timestamp}")],
-            [InlineKeyboardButton(f"✓ Confirm {current_hour:02d}:{current_minute:02d}", callback_data=f"exact_confirm|{order_id}|{current_hour:02d}:{current_minute:02d}|{timestamp}")],
-            [InlineKeyboardButton("← Back", callback_data=f"req_back|{order_id}|{timestamp}")]
-        ])
+        # Show hours from current hour to end of day (23:00)
+        hour_buttons = []
+        for hour in range(current_hour, 24):
+            hour_buttons.append(InlineKeyboardButton(f"{hour:02d}:XX", callback_data=f"exact_hour|{order_id}|{hour}|{timestamp}"))
+        
+        # Split hours into rows of 3
+        rows = []
+        for i in range(0, len(hour_buttons), 3):
+            rows.append(hour_buttons[i:i+3])
+        
+        rows.append([InlineKeyboardButton("← Back", callback_data=f"req_back|{order_id}|{timestamp}")])
+        
+        return InlineKeyboardMarkup(rows)
     except Exception as e:
         logger.error(f"Error building exact time keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
+    """Build minute picker for selected hour - 3-minute intervals in grid format"""
+    try:
+        timestamp = int(datetime.now().timestamp())
+        current_time = datetime.now()
+        
+        # Generate 3-minute intervals: 00, 03, 06, 09, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48, 51, 54, 57
+        minutes = []
+        for minute in range(0, 60, 3):
+            # Skip past times if it's the current hour
+            if hour == current_time.hour and minute <= current_time.minute:
+                continue
+            minutes.append(f"{hour:02d}:{minute:02d}")
+        
+        # Create grid with 3 times per row
+        rows = []
+        for i in range(0, len(minutes), 3):
+            row = []
+            for j in range(3):
+                if i + j < len(minutes):
+                    time_str = minutes[i + j]
+                    row.append(InlineKeyboardButton(time_str, callback_data=f"exact_selected|{order_id}|{time_str}|{timestamp}"))
+            rows.append(row)
+        
+        rows.append([InlineKeyboardButton("← Back to hours", callback_data=f"req_exact|{order_id}|{timestamp}")])
+        
+        return InlineKeyboardMarkup(rows)
+    except Exception as e:
+        logger.error(f"Error building exact hour keyboard: {e}")
         return InlineKeyboardMarkup([])
 
 def time_picker_keyboard(order_id: str, action: str, requested_time: str = None) -> InlineKeyboardMarkup:
@@ -542,6 +574,54 @@ def telegram_webhook():
                     logger.info(f"Time {selected_time} selected for order {order_id}")
                     
                     # Send time request to vendors WITH BUTTONS
+                    for vendor in order["vendors"]:
+                        vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_chat:
+                            if order["order_type"] == "shopify":
+                                msg = f"#{order['name'][-2:]} at {selected_time}?"
+                            else:
+                                addr = order['customer']['address'].split(',')[0]
+                                msg = f"*{addr}* at {selected_time}?"
+                            
+                            # Specific time request buttons: "Works 👍" + "Later at" + "Something is wrong"
+                            timestamp = int(datetime.now().timestamp())
+                            time_buttons = InlineKeyboardMarkup([
+                                [InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}|{timestamp}"),
+                                 InlineKeyboardButton("Later at", callback_data=f"later|{order_id}|{vendor}|{timestamp}")],
+                                [InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}|{timestamp}")]
+                            ])
+                            
+                            await safe_send_message(vendor_chat, msg, time_buttons)
+                    
+                    # Update MDG
+                    order["requested_time"] = selected_time
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {selected_time}"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_assignment_keyboard(order_id)
+                    )
+                
+                elif action == "exact_hour":
+                    order_id, hour = data[1], int(data[2])
+                    logger.info(f"Processing exact hour {hour} for order {order_id}")
+                    # Show minute picker for selected hour
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"🕒 Select minutes for {hour:02d}:XX:",
+                        exact_hour_keyboard(order_id, hour)
+                    )
+                
+                elif action == "exact_selected":
+                    order_id, selected_time = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    logger.info(f"Exact time {selected_time} selected for order {order_id}")
+                    
+                    # Send exact time request to vendors WITH BUTTONS (same as time_selected)
                     for vendor in order["vendors"]:
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
