@@ -323,14 +323,15 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
 def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build MDG time request buttons per assignment"""
     try:
+        timestamp = int(datetime.now().timestamp())
         return InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}"),
-                InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}")
+                InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{timestamp}"),
+                InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{timestamp}")
             ],
             [
-                InlineKeyboardButton("Request EXACT TIME", callback_data=f"req_exact|{order_id}"),
-                InlineKeyboardButton("Request SAME TIME AS", callback_data=f"req_same|{order_id}")
+                InlineKeyboardButton("Request EXACT TIME", callback_data=f"req_exact|{order_id}|{timestamp}"),
+                InlineKeyboardButton("Request SAME TIME AS", callback_data=f"req_same|{order_id}|{timestamp}")
             ]
         ])
     except Exception as e:
@@ -340,10 +341,11 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
 def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build MDG assignment buttons (shown after time confirmation) - FIXED per assignment"""
     try:
+        timestamp = int(datetime.now().timestamp())
         rows = []
         
         # "Assign to myself" button
-        rows.append([InlineKeyboardButton("Assign to myself", callback_data=f"assign_self|{order_id}")])
+        rows.append([InlineKeyboardButton("Assign to myself", callback_data=f"assign_self|{order_id}|{timestamp}")])
         
         # "Assign to..." buttons - prioritize Bee 1, Bee 2, Bee 3 first per assignment
         if DRIVERS:
@@ -351,7 +353,7 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
             other_buttons = []
             
             for name, uid in DRIVERS.items():
-                button = InlineKeyboardButton(f"Assign to {name}", callback_data=f"assign|{order_id}|{name}|{uid}")
+                button = InlineKeyboardButton(f"Assign to {name}", callback_data=f"assign|{order_id}|{name}|{uid}|{timestamp}")
                 if name.startswith("Bee "):
                     bee_buttons.append(button)
                 else:
@@ -566,6 +568,45 @@ def telegram_webhook():
             action = data[0]
             logger.info(f"Processing callback: {action}")
             
+            # Check if buttons are expired and refresh silently if needed
+            if len(data) >= 3:
+                try:
+                    button_timestamp = int(data[-1])  # Last element is always timestamp
+                    current_timestamp = int(datetime.now().timestamp())
+                    button_age_minutes = (current_timestamp - button_timestamp) / 60
+                    
+                    # If buttons are older than 15 minutes, refresh them silently
+                    if button_age_minutes > 15:
+                        order_id = data[1]
+                        order = STATE.get(order_id)
+                        
+                        if order and "mdg_message_id" in order:
+                            # Determine which keyboard to refresh based on order status
+                            if order.get("status") == "confirmed":
+                                fresh_keyboard = mdg_assignment_keyboard(order_id)
+                            else:
+                                fresh_keyboard = mdg_time_request_keyboard(order_id)
+                            
+                            # Silently refresh buttons by editing message
+                            mdg_text = build_mdg_dispatch_text(order)
+                            if order.get("requested_time"):
+                                mdg_text += f"\n\n⏰ Requested: {order['requested_time']}"
+                            if order.get("confirmed_time"):
+                                mdg_text += f"\n\n⏰ Confirmed: {order['confirmed_time']}"
+                            
+                            await safe_edit_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                order["mdg_message_id"],
+                                mdg_text,
+                                fresh_keyboard
+                            )
+                        
+                        return  # Stop processing expired callback
+                        
+                except (ValueError, IndexError):
+                    # Old callback format without timestamp, continue processing
+                    pass
+            
             try:
                 # TIME REQUEST ACTIONS (MDG)
                 if action == "req_asap":
@@ -585,9 +626,10 @@ def telegram_webhook():
                                 msg = f"*{addr}* ASAP?"
                             
                             # ASAP request buttons: "Will prepare at" + "Something is wrong"
+                            timestamp = int(datetime.now().timestamp())
                             asap_buttons = InlineKeyboardMarkup([
-                                [InlineKeyboardButton("Will prepare at", callback_data=f"prepare|{order_id}|{vendor}")],
-                                [InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}")]
+                                [InlineKeyboardButton("Will prepare at", callback_data=f"prepare|{order_id}|{vendor}|{timestamp}")],
+                                [InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}|{timestamp}")]
                             ])
                             
                             await safe_send_message(vendor_chat, msg, asap_buttons)
@@ -609,11 +651,12 @@ def telegram_webhook():
                     intervals = get_time_intervals(current_time, 4)  # Get 4 intervals
                     
                     # Build time selection keyboard with actual times
+                    timestamp = int(datetime.now().timestamp())
                     time_buttons = []
                     for i in range(0, len(intervals), 2):
-                        row = [InlineKeyboardButton(intervals[i], callback_data=f"time_selected|{order_id}|{intervals[i]}")]
+                        row = [InlineKeyboardButton(intervals[i], callback_data=f"time_selected|{order_id}|{intervals[i]}|{timestamp}")]
                         if i + 1 < len(intervals):
-                            row.append(InlineKeyboardButton(intervals[i + 1], callback_data=f"time_selected|{order_id}|{intervals[i + 1]}"))
+                            row.append(InlineKeyboardButton(intervals[i + 1], callback_data=f"time_selected|{order_id}|{intervals[i + 1]}|{timestamp}"))
                         time_buttons.append(row)
                     
                     await safe_send_message(
@@ -639,10 +682,11 @@ def telegram_webhook():
                                 msg = f"*{addr}* at {selected_time}?"
                             
                             # Specific time request buttons: "Works 👍" + "Later at" + "Something is wrong"
+                            timestamp = int(datetime.now().timestamp())
                             time_buttons = InlineKeyboardMarkup([
-                                [InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}"),
-                                 InlineKeyboardButton("Later at", callback_data=f"later|{order_id}|{vendor}")],
-                                [InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}")]
+                                [InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}|{timestamp}"),
+                                 InlineKeyboardButton("Later at", callback_data=f"later|{order_id}|{vendor}|{timestamp}")],
+                                [InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}|{timestamp}")]
                             ])
                             
                             await safe_send_message(vendor_chat, msg, time_buttons)
