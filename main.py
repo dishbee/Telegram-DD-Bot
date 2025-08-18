@@ -83,7 +83,69 @@ def get_time_intervals(base_time: datetime, count: int = 4) -> List[str]:
         intervals.append(time_option.strftime("%H:%M"))
     return intervals
 
-def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
+def get_last_confirmed_order_today() -> Dict[str, Any]:
+    """Get the most recent order from today where any restaurant confirmed a time"""
+    try:
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        confirmed_orders = []
+        
+        for order_id, order_data in STATE.items():
+            # Check if order is from today
+            if order_data.get("created_at") and order_data["created_at"] >= today:
+                # Check if order has confirmed time
+                confirmed_time = order_data.get("confirmed_time")
+                if confirmed_time:
+                    confirmed_orders.append({
+                        "order_id": order_id,
+                        "order_number": order_data.get("name", "")[-2:] if order_data.get("name") else "??",
+                        "confirmed_time": confirmed_time,
+                        "created_at": order_data["created_at"]
+                    })
+        
+        # Return the most recent one
+        if confirmed_orders:
+            return max(confirmed_orders, key=lambda x: x["created_at"])
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error getting last confirmed order: {e}")
+        return None
+
+def build_smart_time_suggestions(order_id: str) -> List[InlineKeyboardButton]:
+    """Build smart time suggestion buttons based on last confirmed order"""
+    try:
+        timestamp = int(datetime.now().timestamp())
+        last_order = get_last_confirmed_order_today()
+        
+        if not last_order:
+            # No confirmed orders today - show message
+            return [InlineKeyboardButton("There is no last order with the confirmed time", callback_data=f"no_confirmed|{order_id}|{timestamp}")]
+        
+        # Parse confirmed time
+        confirmed_time = last_order["confirmed_time"]
+        order_number = last_order["order_number"]
+        
+        try:
+            # Parse time (format: "HH:MM")
+            hour, minute = map(int, confirmed_time.split(':'))
+            base_time = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+            
+            # Create 4 buttons: +5, +10, +15, +20 minutes
+            suggestions = []
+            for offset in [5, 10, 15, 20]:
+                new_time = base_time + timedelta(minutes=offset)
+                time_str = new_time.strftime("%H:%M")
+                button_text = f"#{order_number} {confirmed_time} + {offset}min"
+                suggestions.append(InlineKeyboardButton(button_text, callback_data=f"smart_time|{order_id}|{time_str}|{timestamp}"))
+            
+            return suggestions
+        except:
+            # If time parsing fails, show fallback
+            return [InlineKeyboardButton("Error parsing last confirmed time", callback_data=f"no_confirmed|{order_id}|{timestamp}")]
+    
+    except Exception as e:
+        logger.error(f"Error building smart suggestions: {e}")
+        return [InlineKeyboardButton("Error loading suggestions", callback_data=f"no_confirmed|{order_id}|{timestamp}")]
     """Get recent orders (last 1 hour) for 'same time as' functionality"""
     one_hour_ago = datetime.now() - timedelta(hours=1)
     recent = []
@@ -525,36 +587,67 @@ def telegram_webhook():
                 elif action == "req_time":
                     order_id = data[1]
                     logger.info(f"Processing TIME request for order {order_id}")
-                    # Show 4 quick time options + EXACT TIME submenu
-                    current_time = datetime.now()
-                    intervals = get_time_intervals(current_time, 4)  # Get 4 intervals
                     
-                    # Build combined time selection keyboard
-                    timestamp = int(datetime.now().timestamp())
-                    time_buttons = []
+                    # Check if single vendor or multi-vendor order
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
                     
-                    # First row: 2 quick times
-                    time_buttons.append([
-                        InlineKeyboardButton(intervals[0], callback_data=f"time_selected|{order_id}|{intervals[0]}|{timestamp}"),
-                        InlineKeyboardButton(intervals[1], callback_data=f"time_selected|{order_id}|{intervals[1]}|{timestamp}")
-                    ])
+                    vendors = order.get("vendors", [])
                     
-                    # Second row: 2 more quick times
-                    time_buttons.append([
-                        InlineKeyboardButton(intervals[2], callback_data=f"time_selected|{order_id}|{intervals[2]}|{timestamp}"),
-                        InlineKeyboardButton(intervals[3], callback_data=f"time_selected|{order_id}|{intervals[3]}|{timestamp}")
-                    ])
-                    
-                    # Third row: EXACT TIME submenu
-                    time_buttons.append([
-                        InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}|{timestamp}")
-                    ])
-                    
-                    await safe_send_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        "🕒 Select time to request:",
-                        InlineKeyboardMarkup(time_buttons)
-                    )
+                    if len(vendors) == 1:
+                        # SINGLE VENDOR: Show smart suggestions + EXACT TIME
+                        timestamp = int(datetime.now().timestamp())
+                        
+                        # Get smart time suggestions
+                        smart_buttons = build_smart_time_suggestions(order_id)
+                        
+                        # Build keyboard with smart suggestions in rows of 2
+                        time_buttons = []
+                        for i in range(0, len(smart_buttons), 2):
+                            row = [smart_buttons[i]]
+                            if i + 1 < len(smart_buttons):
+                                row.append(smart_buttons[i + 1])
+                            time_buttons.append(row)
+                        
+                        # Add EXACT TIME submenu
+                        time_buttons.append([
+                            InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}|{timestamp}")
+                        ])
+                        
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "🕒 Select time to request:",
+                            InlineKeyboardMarkup(time_buttons)
+                        )
+                    else:
+                        # MULTI-VENDOR: Show restaurant selection (will implement in Task 3)
+                        # For now, show old behavior
+                        current_time = datetime.now()
+                        intervals = get_time_intervals(current_time, 4)
+                        
+                        timestamp = int(datetime.now().timestamp())
+                        time_buttons = []
+                        
+                        time_buttons.append([
+                            InlineKeyboardButton(intervals[0], callback_data=f"time_selected|{order_id}|{intervals[0]}|{timestamp}"),
+                            InlineKeyboardButton(intervals[1], callback_data=f"time_selected|{order_id}|{intervals[1]}|{timestamp}")
+                        ])
+                        
+                        time_buttons.append([
+                            InlineKeyboardButton(intervals[2], callback_data=f"time_selected|{order_id}|{intervals[2]}|{timestamp}"),
+                            InlineKeyboardButton(intervals[3], callback_data=f"time_selected|{order_id}|{intervals[3]}|{timestamp}")
+                        ])
+                        
+                        time_buttons.append([
+                            InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}|{timestamp}")
+                        ])
+                        
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "🕒 Select time to request:",
+                            InlineKeyboardMarkup(time_buttons)
+                        )
                 
                 elif action == "req_exact":
                     order_id = data[1]
@@ -716,7 +809,52 @@ def telegram_webhook():
                         mdg_time_request_keyboard(order_id)  # Keep same buttons
                     )
                 
-                # VENDOR RESPONSES
+                elif action == "smart_time":
+                    order_id, selected_time = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    logger.info(f"Smart time {selected_time} selected for order {order_id}")
+                    
+                    # Send time request to vendor (single vendor only)
+                    vendor = order["vendors"][0]  # Single vendor
+                    vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                    if vendor_chat:
+                        if order["order_type"] == "shopify":
+                            msg = f"#{order['name'][-2:]} at {selected_time}?"
+                        else:
+                            addr = order['customer']['address'].split(',')[0]
+                            msg = f"*{addr}* at {selected_time}?"
+                        
+                        # Specific time request buttons: "Works 👍" + "Later at" + "Something is wrong"
+                        timestamp = int(datetime.now().timestamp())
+                        time_buttons = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}|{timestamp}"),
+                             InlineKeyboardButton("Later at", callback_data=f"later|{order_id}|{vendor}|{timestamp}")],
+                            [InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}|{timestamp}")]
+                        ])
+                        
+                        await safe_send_message(vendor_chat, msg, time_buttons)
+                    
+                    # Update MDG - KEEP TIME REQUEST BUTTONS
+                    order["requested_time"] = selected_time
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {selected_time}"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_time_request_keyboard(order_id)
+                    )
+                
+                elif action == "no_confirmed":
+                    # User clicked on "no confirmed orders" message - just close it
+                    try:
+                        chat_id = cq["message"]["chat"]["id"]
+                        message_id = cq["message"]["message_id"]
+                        await bot.delete_message(chat_id, message_id)
+                    except:
+                        pass
                 elif action == "toggle":
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
@@ -751,7 +889,18 @@ def telegram_webhook():
                 
                 elif action == "works":
                     order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                        
                     logger.info(f"Vendor {vendor} replied Works for order {order_id}")
+                    
+                    # Track confirmed time
+                    requested_time = order.get("requested_time", "ASAP")
+                    if requested_time != "ASAP":
+                        order["confirmed_time"] = requested_time
+                        logger.info(f"Confirmed time {requested_time} for order {order_id}")
+                    
                     # Post to MDG with status line
                     msg = f"■ {vendor} replied: Works 👍 ■"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
@@ -836,7 +985,29 @@ def telegram_webhook():
                     except:
                         await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay ■")
                 
+                elif action in ["later_time", "prepare_time"]:
+                    order_id, vendor, selected_time = data[1], data[2], data[3]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                        
+                    logger.info(f"Vendor {vendor} selected time {selected_time} for {action}")
+                    
+                    # Track confirmed time
+                    order["confirmed_time"] = selected_time
+                    logger.info(f"Confirmed time {selected_time} for order {order_id}")
+                    
+                    # Post to MDG with status line
+                    if action == "later_time":
+                        msg = f"■ {vendor} replied: Later at {selected_time} ■"
+                    else:  # prepare_time
+                        msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
+                    
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
+                
                 elif action == "delay_time":
+                    order_id, vendor, delay_time = data[1], data[2], data[3]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
                     order_id, vendor, delay_time = data[1], data[2], data[3]
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
                 
