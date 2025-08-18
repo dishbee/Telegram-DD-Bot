@@ -330,6 +330,46 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
 def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build MDG time request buttons per assignment"""
     try:
+        # Check if single vendor or multi-vendor order
+        order = STATE.get(order_id)
+        if not order:
+            timestamp = int(datetime.now().timestamp())
+            return InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{timestamp}"),
+                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{timestamp}")
+                ],
+                [
+                    InlineKeyboardButton("Request SAME TIME AS", callback_data=f"req_same|{order_id}|{timestamp}")
+                ]
+            ])
+        
+        vendors = order.get("vendors", [])
+        timestamp = int(datetime.now().timestamp())
+        
+        if len(vendors) == 1:
+            # Single vendor: normal buttons
+            return InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{timestamp}"),
+                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{timestamp}")
+                ],
+                [
+                    InlineKeyboardButton("Request SAME TIME AS", callback_data=f"req_same|{order_id}|{timestamp}")
+                ]
+            ])
+        else:
+            # Multi-vendor: ONLY restaurant selection buttons
+            vendor_buttons = []
+            for vendor in vendors:
+                vendor_buttons.append([
+                    InlineKeyboardButton(f"Request {vendor}", callback_data=f"req_vendor|{order_id}|{vendor}|{timestamp}")
+                ])
+            
+            return InlineKeyboardMarkup(vendor_buttons)
+            
+    except Exception as e:
+        logger.error(f"Error building time request keyboard: {e}")
         timestamp = int(datetime.now().timestamp())
         return InlineKeyboardMarkup([
             [
@@ -340,9 +380,6 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("Request SAME TIME AS", callback_data=f"req_same|{order_id}|{timestamp}")
             ]
         ])
-    except Exception as e:
-        logger.error(f"Error building time request keyboard: {e}")
-        return InlineKeyboardMarkup([])
 
 def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build MDG assignment buttons (shown after time confirmation)"""
@@ -600,11 +637,14 @@ def telegram_webhook():
                     # Check if single vendor or multi-vendor order
                     order = STATE.get(order_id)
                     if not order:
+                        logger.error(f"Order {order_id} not found in STATE")
                         return
                     
                     vendors = order.get("vendors", [])
+                    logger.info(f"Order {order_id} has vendors: {vendors} (count: {len(vendors)})")
                     
                     if len(vendors) == 1:
+                        logger.info(f"SINGLE VENDOR detected: {vendors[0]}")
                         # SINGLE VENDOR: Show smart suggestions directly
                         timestamp = int(datetime.now().timestamp())
                         smart_buttons = build_smart_time_suggestions(order_id)
@@ -632,16 +672,19 @@ def telegram_webhook():
                             InlineKeyboardMarkup(time_buttons)
                         )
                     else:
+                        logger.info(f"MULTI-VENDOR detected: {vendors}")
                         # MULTI-VENDOR: Show restaurant selection IMMEDIATELY
                         timestamp = int(datetime.now().timestamp())
                         
                         # Build restaurant selection buttons
                         vendor_buttons = []
                         for vendor in vendors:
+                            logger.info(f"Adding button for vendor: {vendor}")
                             vendor_buttons.append([
                                 InlineKeyboardButton(f"Request {vendor}", callback_data=f"req_vendor|{order_id}|{vendor}|{timestamp}")
                             ])
                         
+                        logger.info(f"Sending restaurant selection with {len(vendor_buttons)} buttons")
                         await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             "🏪 Select restaurant to request time:",
@@ -850,12 +893,15 @@ def telegram_webhook():
                     order_id, selected_vendor = data[1], data[2]
                     logger.info(f"Selected vendor {selected_vendor} for order {order_id}")
                     
-                    # Show ASAP + TIME buttons for this specific vendor
+                    # Show ASAP + TIME + SAME TIME AS buttons for this specific vendor
                     timestamp = int(datetime.now().timestamp())
                     vendor_time_buttons = InlineKeyboardMarkup([
                         [
                             InlineKeyboardButton("Request ASAP", callback_data=f"vendor_asap|{order_id}|{selected_vendor}|{timestamp}"),
                             InlineKeyboardButton("Request TIME", callback_data=f"vendor_time|{order_id}|{selected_vendor}|{timestamp}")
+                        ],
+                        [
+                            InlineKeyboardButton("Request SAME TIME AS", callback_data=f"vendor_same|{order_id}|{selected_vendor}|{timestamp}")
                         ]
                     ])
                     
