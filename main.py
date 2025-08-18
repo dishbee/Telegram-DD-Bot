@@ -630,6 +630,40 @@ def telegram_webhook():
                     )
                     logger.info(f"Updated MDG for order {order_id}")
                 
+                elif action == "vendor_exact":
+                    logger.info(f"VENDOR_EXACT: Starting handler with data: {data}")
+                    order_id, vendor = data[1], data[2]
+                    logger.info(f"VENDOR_EXACT: Extracted order_id={order_id}, vendor={vendor}")
+                    logger.info(f"Processing EXACT TIME request for vendor {vendor} in order {order_id}")
+                    try:
+                        # Show exact time picker
+                        logger.info(f"About to send exact time picker for {vendor}")
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            f"🕒 Set exact time for {vendor}:",
+                            exact_time_keyboard(order_id)
+                        )
+                        logger.info(f"Successfully sent exact time picker for {vendor}")
+                    except Exception as e:
+                        logger.error(f"Error in vendor_exact: {e}")
+                
+                elif action == "vendor_same":
+                    logger.info(f"VENDOR_SAME: Starting handler with data: {data}")
+                    order_id, vendor = data[1], data[2]
+                    logger.info(f"VENDOR_SAME: Extracted order_id={order_id}, vendor={vendor}")
+                    logger.info(f"Processing SAME TIME AS request for vendor {vendor} in order {order_id}")
+                    try:
+                        # Show same time as selection
+                        logger.info(f"About to send same time selection for {vendor}")
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            f"🔗 Select order to match timing for {vendor}:",
+                            same_time_keyboard(order_id)
+                        )
+                        logger.info(f"Successfully sent same time selection for {vendor}")
+                    except Exception as e:
+                        logger.error(f"Error in vendor_same: {e}")
+                
                 elif action == "req_time":
                     order_id = data[1]
                     logger.info(f"Processing TIME request for order {order_id}")
