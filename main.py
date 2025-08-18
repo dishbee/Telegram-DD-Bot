@@ -605,24 +605,26 @@ def telegram_webhook():
                     vendors = order.get("vendors", [])
                     
                     if len(vendors) == 1:
-                        # SINGLE VENDOR: Show smart suggestions + EXACT TIME
+                        # SINGLE VENDOR: Show smart suggestions directly
                         timestamp = int(datetime.now().timestamp())
-                        
-                        # Get smart time suggestions
                         smart_buttons = build_smart_time_suggestions(order_id)
                         
-                        # Build keyboard with smart suggestions in rows of 2
-                        time_buttons = []
-                        for i in range(0, len(smart_buttons), 2):
-                            row = [smart_buttons[i]]
-                            if i + 1 < len(smart_buttons):
-                                row.append(smart_buttons[i + 1])
-                            time_buttons.append(row)
-                        
-                        # Add EXACT TIME submenu
-                        time_buttons.append([
-                            InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}|{timestamp}")
-                        ])
+                        # If no confirmed orders, show only EXACT TIME
+                        if len(smart_buttons) == 1 and "no last order" in smart_buttons[0].text.lower():
+                            time_buttons = [[InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}|{timestamp}")]]
+                        else:
+                            # Build keyboard with smart suggestions in rows of 2
+                            time_buttons = []
+                            for i in range(0, len(smart_buttons), 2):
+                                row = [smart_buttons[i]]
+                                if i + 1 < len(smart_buttons):
+                                    row.append(smart_buttons[i + 1])
+                                time_buttons.append(row)
+                            
+                            # Add EXACT TIME submenu
+                            time_buttons.append([
+                                InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}|{timestamp}")
+                            ])
                         
                         await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
@@ -630,7 +632,7 @@ def telegram_webhook():
                             InlineKeyboardMarkup(time_buttons)
                         )
                     else:
-                        # MULTI-VENDOR: Show restaurant selection
+                        # MULTI-VENDOR: Show restaurant selection IMMEDIATELY
                         timestamp = int(datetime.now().timestamp())
                         
                         # Build restaurant selection buttons
@@ -897,22 +899,26 @@ def telegram_webhook():
                     order_id, vendor = data[1], data[2]
                     logger.info(f"Processing TIME request for vendor {vendor} in order {order_id}")
                     
-                    # Show smart suggestions for this specific vendor
+                    # Check for smart suggestions
                     timestamp = int(datetime.now().timestamp())
-                    smart_buttons = build_smart_time_suggestions(order_id, vendor)  # Pass vendor
+                    smart_buttons = build_smart_time_suggestions(order_id, vendor)
                     
-                    # Build keyboard with smart suggestions
-                    time_buttons = []
-                    for i in range(0, len(smart_buttons), 2):
-                        row = [smart_buttons[i]]
-                        if i + 1 < len(smart_buttons):
-                            row.append(smart_buttons[i + 1])
-                        time_buttons.append(row)
-                    
-                    # Add EXACT TIME submenu
-                    time_buttons.append([
-                        InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"vendor_exact|{order_id}|{vendor}|{timestamp}")
-                    ])
+                    # If no confirmed orders, show only EXACT TIME
+                    if len(smart_buttons) == 1 and "no last order" in smart_buttons[0].text.lower():
+                        time_buttons = [[InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"vendor_exact|{order_id}|{vendor}|{timestamp}")]]
+                    else:
+                        # Build keyboard with smart suggestions
+                        time_buttons = []
+                        for i in range(0, len(smart_buttons), 2):
+                            row = [smart_buttons[i]]
+                            if i + 1 < len(smart_buttons):
+                                row.append(smart_buttons[i + 1])
+                            time_buttons.append(row)
+                        
+                        # Add EXACT TIME submenu
+                        time_buttons.append([
+                            InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"vendor_exact|{order_id}|{vendor}|{timestamp}")
+                        ])
                     
                     await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
