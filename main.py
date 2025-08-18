@@ -511,14 +511,14 @@ def telegram_webhook():
                             await safe_send_message(vendor_chat, msg, asap_buttons)
                             logger.info(f"Sent ASAP request to {vendor}")
                     
-                    # Update MDG to assignment mode
+                    # Update MDG - KEEP TIME REQUEST BUTTONS (don't change to assignment mode)
                     order["requested_time"] = "ASAP"
                     mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: ASAP"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        mdg_assignment_keyboard(order_id)
+                        mdg_time_request_keyboard(order_id)  # Keep same buttons
                     )
                     logger.info(f"Updated MDG for order {order_id}")
                 
@@ -604,14 +604,14 @@ def telegram_webhook():
                             
                             await safe_send_message(vendor_chat, msg, time_buttons)
                     
-                    # Update MDG
+                    # Update MDG - KEEP TIME REQUEST BUTTONS (don't change to assignment mode)
                     order["requested_time"] = selected_time
                     mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {selected_time}"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        mdg_assignment_keyboard(order_id)
+                        mdg_time_request_keyboard(order_id)  # Keep same buttons
                     )
                 
                 elif action == "exact_back_hours":
@@ -706,14 +706,14 @@ def telegram_webhook():
                             
                             await safe_send_message(vendor_chat, msg, time_buttons)
                     
-                    # Update MDG
+                    # Update MDG - KEEP TIME REQUEST BUTTONS (don't change to assignment mode)
                     order["requested_time"] = selected_time
                     mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {selected_time}"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        mdg_assignment_keyboard(order_id)
+                        mdg_time_request_keyboard(order_id)  # Keep same buttons
                     )
                 
                 # VENDOR RESPONSES
