@@ -614,15 +614,69 @@ def telegram_webhook():
                         mdg_assignment_keyboard(order_id)
                     )
                 
+                elif action == "exact_back_hours":
+                    order_id = data[1]
+                    logger.info(f"Going back to hours for order {order_id}")
+                    # Edit current message to show hours again (fold minutes)
+                    try:
+                        chat_id = cq["message"]["chat"]["id"]
+                        message_id = cq["message"]["message_id"]
+                        logger.info(f"Editing message {message_id} in chat {chat_id} back to hours")
+                        
+                        await bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            text="🕒 Select hour:",
+                            reply_markup=exact_time_keyboard(order_id)
+                        )
+                        logger.info(f"Successfully edited message back to hours")
+                    except Exception as e:
+                        logger.error(f"Error going back to hours: {e}")
+                        logger.error(f"Chat ID: {chat_id}, Message ID: {message_id}")
+                
+                elif action == "exact_hide":
+                    order_id = data[1]
+                    logger.info(f"Hiding exact time picker for order {order_id}")
+                    # Delete the exact time picker message
+                    try:
+                        chat_id = cq["message"]["chat"]["id"]
+                        message_id = cq["message"]["message_id"]
+                        logger.info(f"Deleting message {message_id} in chat {chat_id}")
+                        
+                        await bot.delete_message(chat_id, message_id)
+                        logger.info(f"Successfully deleted message")
+                    except Exception as e:
+                        logger.error(f"Could not delete message: {e}")
+                        logger.error(f"Chat ID: {chat_id}, Message ID: {message_id}")
+                        # If delete fails, try to edit to a minimal message
+                        try:
+                            await bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=message_id,
+                                text="🕒 Time picker closed"
+                            )
+                            logger.info(f"Fallback: edited message to closed state")
+                        except Exception as e2:
+                            logger.error(f"Fallback edit also failed: {e2}")
+                
                 elif action == "exact_hour":
                     order_id, hour = data[1], int(data[2])
                     logger.info(f"Processing exact hour {hour} for order {order_id}")
-                    # Show minute picker for selected hour
-                    await safe_send_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        f"🕒 Select minutes for {hour:02d}:XX:",
-                        exact_hour_keyboard(order_id, hour)
-                    )
+                    # Edit current message to show minute picker (don't send new message)
+                    try:
+                        chat_id = cq["message"]["chat"]["id"]
+                        message_id = cq["message"]["message_id"]
+                        logger.info(f"Editing message {message_id} to show minutes for hour {hour}")
+                        
+                        await bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            text=f"🕒 Select minutes for {hour:02d}:XX:",
+                            reply_markup=exact_hour_keyboard(order_id, hour)
+                        )
+                        logger.info(f"Successfully edited message for hour {hour}")
+                    except Exception as e:
+                        logger.error(f"Error showing exact hour {hour}: {e}")
                 
                 elif action == "exact_selected":
                     order_id, selected_time = data[1], data[2]
