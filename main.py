@@ -111,7 +111,7 @@ def get_last_confirmed_order_today() -> Dict[str, Any]:
         logger.error(f"Error getting last confirmed order: {e}")
         return None
 
-def build_smart_time_suggestions(order_id: str) -> List[InlineKeyboardButton]:
+def build_smart_time_suggestions(order_id: str, target_vendor: str = None) -> List[InlineKeyboardButton]:
     """Build smart time suggestion buttons based on last confirmed order"""
     try:
         timestamp = int(datetime.now().timestamp())
@@ -136,7 +136,16 @@ def build_smart_time_suggestions(order_id: str) -> List[InlineKeyboardButton]:
                 new_time = base_time + timedelta(minutes=offset)
                 time_str = new_time.strftime("%H:%M")
                 button_text = f"#{order_number} {confirmed_time} + {offset}min"
-                suggestions.append(InlineKeyboardButton(button_text, callback_data=f"smart_time|{order_id}|{time_str}|{timestamp}"))
+                
+                # Different callback data for single vs multi-vendor
+                if target_vendor:
+                    # Multi-vendor: include vendor in callback
+                    callback_data = f"smart_time|{order_id}|{target_vendor}|{time_str}|{timestamp}"
+                else:
+                    # Single vendor: old format
+                    callback_data = f"smart_time|{order_id}|{time_str}|{timestamp}"
+                
+                suggestions.append(InlineKeyboardButton(button_text, callback_data=callback_data))
             
             return suggestions
         except:
@@ -621,32 +630,20 @@ def telegram_webhook():
                             InlineKeyboardMarkup(time_buttons)
                         )
                     else:
-                        # MULTI-VENDOR: Show restaurant selection (will implement in Task 3)
-                        # For now, show old behavior
-                        current_time = datetime.now()
-                        intervals = get_time_intervals(current_time, 4)
-                        
+                        # MULTI-VENDOR: Show restaurant selection
                         timestamp = int(datetime.now().timestamp())
-                        time_buttons = []
                         
-                        time_buttons.append([
-                            InlineKeyboardButton(intervals[0], callback_data=f"time_selected|{order_id}|{intervals[0]}|{timestamp}"),
-                            InlineKeyboardButton(intervals[1], callback_data=f"time_selected|{order_id}|{intervals[1]}|{timestamp}")
-                        ])
-                        
-                        time_buttons.append([
-                            InlineKeyboardButton(intervals[2], callback_data=f"time_selected|{order_id}|{intervals[2]}|{timestamp}"),
-                            InlineKeyboardButton(intervals[3], callback_data=f"time_selected|{order_id}|{intervals[3]}|{timestamp}")
-                        ])
-                        
-                        time_buttons.append([
-                            InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}|{timestamp}")
-                        ])
+                        # Build restaurant selection buttons
+                        vendor_buttons = []
+                        for vendor in vendors:
+                            vendor_buttons.append([
+                                InlineKeyboardButton(f"Request {vendor}", callback_data=f"req_vendor|{order_id}|{vendor}|{timestamp}")
+                            ])
                         
                         await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
-                            "🕒 Select time to request:",
-                            InlineKeyboardMarkup(time_buttons)
+                            "🏪 Select restaurant to request time:",
+                            InlineKeyboardMarkup(vendor_buttons)
                         )
                 
                 elif action == "req_exact":
@@ -847,7 +844,81 @@ def telegram_webhook():
                         mdg_time_request_keyboard(order_id)
                     )
                 
-                elif action == "no_confirmed":
+                elif action == "req_vendor":
+                    order_id, selected_vendor = data[1], data[2]
+                    logger.info(f"Selected vendor {selected_vendor} for order {order_id}")
+                    
+                    # Show ASAP + TIME buttons for this specific vendor
+                    timestamp = int(datetime.now().timestamp())
+                    vendor_time_buttons = InlineKeyboardMarkup([
+                        [
+                            InlineKeyboardButton("Request ASAP", callback_data=f"vendor_asap|{order_id}|{selected_vendor}|{timestamp}"),
+                            InlineKeyboardButton("Request TIME", callback_data=f"vendor_time|{order_id}|{selected_vendor}|{timestamp}")
+                        ]
+                    ])
+                    
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"🕒 Request time from {selected_vendor}:",
+                        vendor_time_buttons
+                    )
+                
+                elif action == "vendor_asap":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    logger.info(f"Processing ASAP request for vendor {vendor} in order {order_id}")
+                    
+                    # Send ASAP request to ONLY this vendor
+                    vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                    if vendor_chat:
+                        if order["order_type"] == "shopify":
+                            msg = f"#{order['name'][-2:]} ASAP?"
+                        else:
+                            addr = order['customer']['address'].split(',')[0]
+                            msg = f"*{addr}* ASAP?"
+                        
+                        # ASAP request buttons
+                        timestamp = int(datetime.now().timestamp())
+                        asap_buttons = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("Will prepare at", callback_data=f"prepare|{order_id}|{vendor}|{timestamp}")],
+                            [InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}|{timestamp}")]
+                        ])
+                        
+                        await safe_send_message(vendor_chat, msg, asap_buttons)
+                        logger.info(f"Sent ASAP request to {vendor}")
+                    
+                    # Post status to MDG and go back to restaurant selection
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"📤 ASAP request sent to {vendor}")
+                
+                elif action == "vendor_time":
+                    order_id, vendor = data[1], data[2]
+                    logger.info(f"Processing TIME request for vendor {vendor} in order {order_id}")
+                    
+                    # Show smart suggestions for this specific vendor
+                    timestamp = int(datetime.now().timestamp())
+                    smart_buttons = build_smart_time_suggestions(order_id, vendor)  # Pass vendor
+                    
+                    # Build keyboard with smart suggestions
+                    time_buttons = []
+                    for i in range(0, len(smart_buttons), 2):
+                        row = [smart_buttons[i]]
+                        if i + 1 < len(smart_buttons):
+                            row.append(smart_buttons[i + 1])
+                        time_buttons.append(row)
+                    
+                    # Add EXACT TIME submenu
+                    time_buttons.append([
+                        InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"vendor_exact|{order_id}|{vendor}|{timestamp}")
+                    ])
+                    
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"🕒 Select time for {vendor}:",
+                        InlineKeyboardMarkup(time_buttons)
+                    )
                     # User clicked on "no confirmed orders" message - just close it
                     try:
                         chat_id = cq["message"]["chat"]["id"]
