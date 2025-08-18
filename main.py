@@ -1352,10 +1352,13 @@ def shopify_webhook():
                     pickup_message = f"\nPlease call the customer and arrange the pickup time on this number: {phone}"
                     mdg_text = pickup_header + mdg_text + pickup_message
                 
+                # Save order FIRST before building keyboard
+                STATE[order_id] = order
+                
                 mdg_msg = await safe_send_message(
                     DISPATCH_MAIN_CHAT_ID,
                     mdg_text,
-                    mdg_time_request_keyboard(order_id)
+                    mdg_time_request_keyboard(order_id)  # Now order is in STATE
                 )
                 order["mdg_message_id"] = mdg_msg.message_id
                 
@@ -1378,7 +1381,6 @@ def shopify_webhook():
                         order["vendor_expanded"][vendor] = False
                 
                 # Save order
-                STATE[order_id] = order
                 RECENT_ORDERS.append({
                     "order_id": order_id,
                     "created_at": datetime.now(),
