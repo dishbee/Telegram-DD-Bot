@@ -572,6 +572,7 @@ def telegram_webhook():
             return "OK"
 
         async def handle():
+            start_time = datetime.now()
             try:
                 await bot.answer_callback_query(cq["id"])
             except Exception as e:
@@ -587,6 +588,13 @@ def telegram_webhook():
             
             action = data[0]
             logger.info(f"Processing callback: {action}")
+            
+            # Quick processing - no heavy operations
+            processing_time = (datetime.now() - start_time).total_seconds()
+            if processing_time > 1.0:
+                logger.warning(f"Slow callback processing: {processing_time:.2f}s")
+                
+            # Continue with existing callback logic...
             
             try:
                 # TIME REQUEST ACTIONS (MDG)
