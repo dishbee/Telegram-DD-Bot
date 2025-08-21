@@ -17,9 +17,9 @@ import httpx
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Environment variables
-BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-WEBHOOK_SECRET = os.getenv('SHOPIFY_WEBHOOK_SECRET')  # Fixed: was WEBHOOK_SECRET
+# Environment variables - EXACT NAMES FROM PROJECT DOCS
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+WEBHOOK_SECRET = os.getenv('SHOPIFY_WEBHOOK_SECRET')
 DISPATCH_MAIN_CHAT_ID = int(os.getenv('DISPATCH_MAIN_CHAT_ID'))
 
 # Restaurant group IDs - safe handling for missing env vars
