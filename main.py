@@ -25,9 +25,6 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Load persistent state on startup
-load_state()
-
 # --- ENV ---
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
@@ -1184,6 +1181,9 @@ def shopify_webhook():
 
 # --- APP ENTRY ---
 if __name__ == "__main__":
+    # Load persistent state on startup
+    load_state()
+    
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting Complete Assignment Implementation on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
