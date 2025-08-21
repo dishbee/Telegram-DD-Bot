@@ -20,12 +20,16 @@ logger = logging.getLogger(__name__)
 # Environment variables
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')
-DISPATCH_MAIN_CHAT_ID = int(os.getenv('DISPATCH_MAIN_CHAT_ID'))
-RESTAURANT_GROUP_IDS = {
-    'Leckerolls': int(os.getenv('LECKEROLLS_GROUP_ID')),
-    'Julis Spätzlerei': int(os.getenv('JULIS_GROUP_ID')),
-    'Zweite Heimat': int(os.getenv('ZWEITE_HEIMAT_GROUP_ID'))
-}
+DISPATCH_MAIN_CHAT_ID = int(os.getenv('DISPATCH_MAIN_CHAT_ID', '0'))
+
+# Restaurant group IDs with safe conversion
+RESTAURANT_GROUP_IDS = {}
+if os.getenv('LECKEROLLS_GROUP_ID'):
+    RESTAURANT_GROUP_IDS['Leckerolls'] = int(os.getenv('LECKEROLLS_GROUP_ID'))
+if os.getenv('JULIS_GROUP_ID'):
+    RESTAURANT_GROUP_IDS['Julis Spätzlerei'] = int(os.getenv('JULIS_GROUP_ID'))
+if os.getenv('ZWEITE_HEIMAT_GROUP_ID'):
+    RESTAURANT_GROUP_IDS['Zweite Heimat'] = int(os.getenv('ZWEITE_HEIMAT_GROUP_ID'))
 
 print(f"Starting Complete Assignment Implementation on port {os.getenv('PORT', 10000)}")
 
