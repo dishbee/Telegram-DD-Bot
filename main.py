@@ -9,6 +9,7 @@ import base64
 import asyncio
 import logging
 import threading
+import requests  # Add this for synchronous HTTP calls
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from flask import Flask, request, jsonify
@@ -53,13 +54,7 @@ asyncio.set_event_loop(loop)
 
 def run_async(coro):
     """Run async function in background thread"""
-    def _run():
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(coro)
-    
-    thread = threading.Thread(target=_run)
-    thread.daemon = True
-    thread.start()
+    asyncio.run_coroutine_threadsafe(coro, loop)
 
 # --- HELPERS ---
 def verify_webhook(raw: bytes, hmac_header: str) -> bool:
