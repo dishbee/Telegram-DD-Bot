@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Load persistent state on startup
+load_state()
+
 # --- ENV ---
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
@@ -45,6 +48,45 @@ bot = Bot(token=BOT_TOKEN, request=request_cfg)
 # --- STATE ---
 STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
+STATE_FILE = "/tmp/bot_state.json"
+
+def save_state():
+    """Save STATE to file for persistence"""
+    try:
+        # Convert datetime objects to strings for JSON serialization
+        state_to_save = {}
+        for order_id, order_data in STATE.items():
+            order_copy = order_data.copy()
+            if order_copy.get("created_at"):
+                order_copy["created_at"] = order_copy["created_at"].isoformat()
+            state_to_save[order_id] = order_copy
+        
+        with open(STATE_FILE, 'w') as f:
+            json.dump(state_to_save, f)
+        logger.info(f"Saved state with {len(STATE)} orders")
+    except Exception as e:
+        logger.error(f"Error saving state: {e}")
+
+def load_state():
+    """Load STATE from file on startup"""
+    global STATE
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, 'r') as f:
+                loaded_state = json.load(f)
+            
+            # Convert datetime strings back to datetime objects
+            for order_id, order_data in loaded_state.items():
+                if order_data.get("created_at"):
+                    order_data["created_at"] = datetime.fromisoformat(order_data["created_at"])
+                STATE[order_id] = order_data
+            
+            logger.info(f"Loaded state with {len(STATE)} orders")
+        else:
+            logger.info("No existing state file found, starting fresh")
+    except Exception as e:
+        logger.error(f"Error loading state: {e}")
+        STATE = {}
 
 # --- HELPERS ---
 def verify_webhook(raw: bytes, hmac_header: str) -> bool:
@@ -591,6 +633,7 @@ def telegram_webhook():
                     
                     # Update MDG status
                     order["requested_time"] = "ASAP"
+                    save_state()  # Save state after modification
                     mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: ASAP"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
@@ -732,6 +775,7 @@ def telegram_webhook():
                         
                         # Update MDG status
                         order["requested_time"] = time_str
+                        save_state()  # Save state after modification
                         mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {time_str}"
                         await safe_edit_message(
                             DISPATCH_MAIN_CHAT_ID,
@@ -794,6 +838,7 @@ def telegram_webhook():
                     
                     # Update MDG status
                     order["requested_time"] = time_str
+                    save_state()  # Save state after modification
                     mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {time_str}"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
@@ -895,6 +940,7 @@ def telegram_webhook():
                     if "vendor_expanded" not in order:
                         order["vendor_expanded"] = {}
                     order["vendor_expanded"][vendor] = expanded
+                    save_state()  # Save state after modification
                     
                     # Update vendor message
                     if expanded:
@@ -916,6 +962,7 @@ def telegram_webhook():
                     order = STATE.get(order_id)
                     if order and order.get("requested_time"):
                         order["confirmed_time"] = order["requested_time"]
+                        save_state()  # Save state after modification
                     
                     # Post status line to MDG
                     msg = f"■ {vendor} replied: Works 👍 ■"
@@ -1079,6 +1126,9 @@ def shopify_webhook():
                 # Save order to STATE FIRST
                 STATE[order_id] = order
                 
+                # Save state to persist through restarts
+                save_state()
+                
                 # Send to MDG with time request buttons
                 mdg_text = build_mdg_dispatch_text(order)
                 
@@ -1094,6 +1144,7 @@ def shopify_webhook():
                     mdg_time_request_keyboard(order_id)
                 )
                 order["mdg_message_id"] = mdg_msg.message_id
+                save_state()  # Save state after modification
                 
                 # Send to each vendor group (summary by default) - NO BUTTONS on order messages
                 for vendor in vendors:
@@ -1111,6 +1162,8 @@ def shopify_webhook():
                         )
                         order["vendor_messages"][vendor] = vendor_msg.message_id
                         order["vendor_expanded"][vendor] = False
+                
+                save_state()  # Save state with vendor message IDs
                 
                 # Keep only recent orders
                 if len(RECENT_ORDERS) > 50:
