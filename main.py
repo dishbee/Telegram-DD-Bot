@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Environment variables
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')
+WEBHOOK_SECRET = os.getenv('SHOPIFY_WEBHOOK_SECRET')  # Fixed: was WEBHOOK_SECRET
 DISPATCH_MAIN_CHAT_ID = int(os.getenv('DISPATCH_MAIN_CHAT_ID'))
 
 # Restaurant group IDs - safe handling for missing env vars
