@@ -17,7 +17,7 @@ import httpx
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Environment variables - EXACT NAMES FROM PROJECT DOCS
+# Environment variables
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 WEBHOOK_SECRET = os.getenv('SHOPIFY_WEBHOOK_SECRET')
 DISPATCH_MAIN_CHAT_ID = int(os.getenv('DISPATCH_MAIN_CHAT_ID'))
@@ -487,43 +487,7 @@ async def handle_callback_query(callback_query, action, data):
         chat_id = callback_query['message']['chat']['id']
         message_id = callback_query['message']['message_id']
         
-        if action == "expand":
-            # Expand vendor order details
-            order_id = data[1]
-            vendor = data[2]
-            
-            order_data = STATE.get(f"order_{order_id}")
-            if order_data:
-                expanded_message = format_vendor_message(order_data, vendor, collapsed=False)
-                
-                # Change button to Hide
-                hide_buttons = {
-                    "inline_keyboard": [
-                        [{"text": "◂ Hide", "callback_data": f"collapse|{order_id}|{vendor}|{data[3]}"}]
-                    ]
-                }
-                
-                await edit_message_text(chat_id, message_id, expanded_message, hide_buttons)
-        
-        elif action == "collapse":
-            # Collapse vendor order details
-            order_id = data[1]
-            vendor = data[2]
-            
-            order_data = STATE.get(f"order_{order_id}")
-            if order_data:
-                collapsed_message = format_vendor_message(order_data, vendor, collapsed=True)
-                
-                # Change button back to Details
-                expand_buttons = {
-                    "inline_keyboard": [
-                        [{"text": "Details ▸", "callback_data": f"expand|{order_id}|{vendor}|{data[3]}"}]
-                    ]
-                }
-                
-                await edit_message_text(chat_id, message_id, collapsed_message, expand_buttons)
-        
-        elif action == "req_asap":
+        if action == "req_asap":
             # Request ASAP from MDG
             order_id = data[1]
             logger.info(f"Processing ASAP request for order {order_id}")
@@ -596,6 +560,36 @@ async def handle_callback_query(callback_query, action, data):
                     vendor_message = f"Select vendor for time request (Order #{str(order_id)[-2:]}):"
                     await send_message(chat_id, vendor_message, {"inline_keyboard": keyboard})
         
+        elif action == "vendor_exact":
+            # Handle vendor selection for exact time request  
+            order_id = data[1]
+            vendor = data[2]
+            logger.info(f"VENDOR_EXACT: Starting handler with data: {data}")
+            logger.info(f"Processing EXACT TIME request for vendor {vendor} in order {order_id}")
+            
+            timestamp = data[3]
+            hour_keyboard = generate_hours_keyboard(order_id, timestamp)
+            
+            exact_message = f"Select hour for {vendor} (Order #{str(order_id)[-2:]}):"
+            await send_message(chat_id, exact_message, hour_keyboard)
+            logger.info(f"Successfully sent exact time picker for {vendor}")
+        
+        elif action == "vendor_same":
+            # Handle vendor selection for same time request
+            order_id = data[1]
+            vendor = data[2]
+            logger.info(f"VENDOR_SAME: Starting handler with data: {data}")
+            logger.info(f"Processing SAME TIME AS request for vendor {vendor} in order {order_id}")
+            
+            try:
+                keyboard = same_time_keyboard(order_id)
+                same_message = f"Select order to use same time for {vendor} (Order #{str(order_id)[-2:]}):"
+                await send_message(chat_id, same_message, keyboard)
+                logger.info(f"Successfully sent same time selection for {vendor}")
+            except Exception as e:
+                logger.error(f"Error building same time keyboard: {e}")
+                await send_message(chat_id, f"No recent orders available for {vendor}.")
+        
         elif action == "vendor_time":
             # Handle vendor selection for time request
             order_id = data[1]
@@ -658,11 +652,27 @@ async def handle_callback_query(callback_query, action, data):
             order_id = data[1]
             logger.info(f"Processing EXACT TIME request for order {order_id}")
             
-            timestamp = data[2]
-            hour_keyboard = generate_hours_keyboard(order_id, timestamp)
-            
-            exact_message = f"Select hour for order #{str(order_id)[-2:]}:"
-            await send_message(chat_id, exact_message, hour_keyboard)
+            order_data = STATE.get(f"order_{order_id}")
+            if order_data:
+                vendors = get_vendors_from_order(order_data)
+                
+                if len(vendors) == 1:
+                    # Single vendor - show time picker directly
+                    vendor = vendors[0]
+                    timestamp = data[2]
+                    hour_keyboard = generate_hours_keyboard(order_id, timestamp)
+                    
+                    exact_message = f"Select hour for order #{str(order_id)[-2:]}:"
+                    await send_message(chat_id, exact_message, hour_keyboard)
+                else:
+                    # Multi vendor - show vendor selection first
+                    keyboard = []
+                    for vendor in vendors:
+                        callback_data = f"vendor_exact|{order_id}|{vendor}|{data[2]}"
+                        keyboard.append([{"text": vendor, "callback_data": callback_data}])
+                    
+                    vendor_message = f"Select vendor for exact time (Order #{str(order_id)[-2:]}):"
+                    await send_message(chat_id, vendor_message, {"inline_keyboard": keyboard})
         
         elif action == "exact_hour":
             # Handle hour selection in exact time picker
@@ -702,302 +712,4 @@ async def handle_callback_query(callback_query, action, data):
                             "inline_keyboard": [
                                 [
                                     {"text": "Works 👍", "callback_data": f"works|{order_id}|{vendor}|{data[3]}"},
-                                    {"text": "Later at", "callback_data": f"later|{order_id}|{vendor}|{data[3]}"}
-                                ],
-                                [{"text": "Something is wrong", "callback_data": f"wrong|{order_id}|{vendor}|{data[3]}"}]
-                            ]
-                        }
-                        
-                        await send_message(RESTAURANT_GROUP_IDS[vendor], time_message, time_buttons)
-                    
-                    # Update MDG with exact time
-                    original_message = callback_query['message']['text'].split('\n\nRequested:')[0]
-                    updated_message = f"{original_message}\n\nRequested: {selected_time}"
-                    await edit_message_text(DISPATCH_MAIN_CHAT_ID, message_id, updated_message)
-                else:
-                    # Multi vendor - show vendor selection
-                    keyboard = []
-                    for vendor in vendors:
-                        callback_data = f"vendor_exact_selected|{order_id}|{selected_time}|{vendor}|{data[3]}"
-                        keyboard.append([{"text": vendor, "callback_data": callback_data}])
-                    
-                    vendor_message = f"Select vendor for exact time {selected_time} (Order #{order_number}):"
-                    await send_message(chat_id, vendor_message, {"inline_keyboard": keyboard})
-                    
-                    # Delete the time picker message
-                    await delete_message(chat_id, message_id)
-        
-        elif action == "vendor_exact":
-            # Handle vendor selection for exact time request
-            order_id = data[1]
-            vendor = data[2]
-            logger.info(f"VENDOR_EXACT: Starting handler with data: {data}")
-            logger.info(f"VENDOR_EXACT: Extracted order_id={order_id}, vendor={vendor}")
-            
-            logger.info(f"Processing EXACT TIME request for vendor {vendor} in order {order_id}")
-            logger.info(f"About to send exact time picker for {vendor}")
-            
-            timestamp = data[3]
-            hour_keyboard = generate_hours_keyboard(order_id, timestamp)
-            
-            exact_message = f"Select hour for {vendor} (Order #{str(order_id)[-2:]}):"
-            await send_message(chat_id, exact_message, hour_keyboard)
-            logger.info(f"Successfully sent exact time picker for {vendor}")
-        
-        elif action == "vendor_same":
-            # Handle vendor selection for same time request
-            order_id = data[1]
-            vendor = data[2]
-            logger.info(f"VENDOR_SAME: Starting handler with data: {data}")
-            logger.info(f"VENDOR_SAME: Extracted order_id={order_id}, vendor={vendor}")
-            
-            logger.info(f"Processing SAME TIME AS request for vendor {vendor} in order {order_id}")
-            logger.info(f"About to send same time selection for {vendor}")
-            
-            try:
-                keyboard = same_time_keyboard(order_id)
-                same_message = f"Select order to use same time for {vendor} (Order #{str(order_id)[-2:]}):"
-                await send_message(chat_id, same_message, keyboard)
-                logger.info(f"Successfully sent same time selection for {vendor}")
-            except Exception as e:
-                logger.error(f"Error building same time keyboard: {e}")
-                # Fallback message
-                await send_message(chat_id, f"No recent orders available for {vendor}.")
-        
-        elif action == "vendor_asap":
-            # Handle vendor ASAP request
-            order_id = data[1]
-            vendor = data[2]
-            order_number = str(order_id)[-2:]
-            
-            # Send ASAP request to specific vendor
-            if vendor in RESTAURANT_GROUP_IDS:
-                asap_message = f"#{order_number} ASAP?"
-                
-                asap_buttons = {
-                    "inline_keyboard": [
-                        [{"text": "Will prepare at", "callback_data": f"prepare_at|{order_id}|{vendor}|{data[3]}"}],
-                        [{"text": "Something is wrong", "callback_data": f"wrong|{order_id}|{vendor}|{data[3]}"}]
-                    ]
-                }
-                
-                await send_message(RESTAURANT_GROUP_IDS[vendor], asap_message, asap_buttons)
-        
-        elif action == "req_same":
-            # Request same time as another order
-            order_id = data[1]
-            logger.info(f"Processing SAME TIME AS request for order {order_id}")
-            
-            try:
-                keyboard = same_time_keyboard(order_id)
-                same_message = f"Select order to use same time for #{str(order_id)[-2:]}:"
-                await send_message(chat_id, same_message, keyboard)
-            except Exception as e:
-                logger.error(f"Error building same time keyboard: {e}")
-                # Fallback message
-                await send_message(chat_id, "No recent orders available for same time selection.")
-        
-        elif action == "vendor_same":
-            # Handle vendor selection for same time request
-            order_id = data[1]
-            vendor = data[2]
-            logger.info(f"VENDOR_SAME: Starting handler with data: {data}")
-            logger.info(f"VENDOR_SAME: Extracted order_id={order_id}, vendor={vendor}")
-            
-            logger.info(f"Processing SAME TIME AS request for vendor {vendor} in order {order_id}")
-            logger.info(f"About to send same time selection for {vendor}")
-            
-            try:
-                keyboard = same_time_keyboard(order_id)
-                same_message = f"Select order to use same time for {vendor} (Order #{str(order_id)[-2:]}):"
-                await send_message(chat_id, same_message, keyboard)
-                logger.info(f"Successfully sent same time selection for {vendor}")
-            except Exception as e:
-                logger.error(f"Error building same time keyboard: {e}")
-                # Fallback message
-                await send_message(chat_id, f"No recent orders available for {vendor}.")
-        
-        elif action == "vendor_exact":
-            # Handle vendor selection for exact time request
-            order_id = data[1]
-            vendor = data[2]
-            logger.info(f"VENDOR_EXACT: Starting handler with data: {data}")
-            logger.info(f"VENDOR_EXACT: Extracted order_id={order_id}, vendor={vendor}")
-            
-            logger.info(f"Processing EXACT TIME request for vendor {vendor} in order {order_id}")
-            logger.info(f"About to send exact time picker for {vendor}")
-            
-            timestamp = data[3]
-            hour_keyboard = generate_hours_keyboard(order_id, timestamp)
-            
-            exact_message = f"Select hour for {vendor} (Order #{str(order_id)[-2:]}):"
-            await send_message(chat_id, exact_message, hour_keyboard)
-            logger.info(f"Successfully sent exact time picker for {vendor}")
-        
-        elif action == "vendor_asap":
-            # Handle vendor ASAP request
-            order_id = data[1]
-            vendor = data[2]
-            order_number = str(order_id)[-2:]
-            
-            # Send ASAP request to specific vendor
-            if vendor in RESTAURANT_GROUP_IDS:
-                asap_message = f"#{order_number} ASAP?"
-                
-                asap_buttons = {
-                    "inline_keyboard": [
-                        [{"text": "Will prepare at", "callback_data": f"prepare_at|{order_id}|{vendor}|{data[3]}"}],
-                        [{"text": "Something is wrong", "callback_data": f"wrong|{order_id}|{vendor}|{data[3]}"}]
-                    ]
-                }
-                
-                await send_message(RESTAURANT_GROUP_IDS[vendor], asap_message, asap_buttons)
-        
-                elif action == "req_same":
-            # Request same time as another order
-            order_id = data[1]
-            logger.info(f"Processing SAME TIME AS request for order {order_id}")
-            
-            try:
-                keyboard = same_time_keyboard(order_id)
-                same_message = f"Select order to use same time for #{str(order_id)[-2:]}:"
-                await send_message(chat_id, same_message, keyboard)
-            except Exception as e:
-                logger.error(f"Error building same time keyboard: {e}")
-                # Fallback message
-                await send_message(chat_id, "No recent orders available for same time selection.")
-        
-        elif action == "vendor_exact":
-            # Handle vendor selection for exact time request
-            order_id = data[1]
-            vendor = data[2]
-            logger.info(f"VENDOR_EXACT: Starting handler with data: {data}")
-            logger.info(f"Processing EXACT TIME request for vendor {vendor} in order {order_id}")
-            
-            timestamp = data[3]
-            hour_keyboard = generate_hours_keyboard(order_id, timestamp)
-            
-            exact_message = f"Select hour for {vendor} (Order #{str(order_id)[-2:]}):"
-            await send_message(chat_id, exact_message, hour_keyboard)
-        
-        elif action == "works":
-            # Vendor confirms time works
-            order_id = data[1]
-            vendor = data[2]
-            order_number = str(order_id)[-2:]
-            
-            logger.info(f"Vendor {vendor} replied Works for order {order_id}")
-            
-            # Get the requested time from MDG message or state
-            requested_time = None
-            if f"order_{order_id}" in STATE:
-                requested_time = STATE[f"order_{order_id}"].get('requested_time')
-            
-            if not requested_time:
-                # Try to extract from message context or use current time
-                requested_time = datetime.now().strftime("%H:%M")
-            
-            # Store confirmed time
-            if f"order_{order_id}" not in STATE:
-                STATE[f"order_{order_id}"] = {}
-            STATE[f"order_{order_id}"]['confirmed_time'] = int(time.time())
-            
-            logger.info(f"Confirmed time {requested_time} for order {order_id}")
-            
-            # Send status update to MDG
-            status_message = f"■ {vendor} replied: Works 👍 ■"
-            await send_message(DISPATCH_MAIN_CHAT_ID, status_message)
-        
-        elif action == "later":
-            # Vendor requests later time
-            order_id = data[1]
-            vendor = data[2]
-            order_number = str(order_id)[-2:]
-            
-            logger.info(f"Vendor {vendor} requested later for order {order_id}")
-            
-            # Generate time options (15-30 minutes later)
-            now = datetime.now()
-            later_times = []
-            for minutes in [15, 20, 25, 30]:
-                later_time = now + timedelta(minutes=minutes)
-                later_times.append(later_time.strftime("%H:%M"))
-            
-            keyboard = []
-            for time_str in later_times:
-                callback_data = f"later_time|{order_id}|{time_str}|{data[3]}"
-                keyboard.append([{"text": time_str, "callback_data": callback_data}])
-            
-            later_message = f"Select later time for order #{order_number}:"
-            await send_message(chat_id, later_message, {"inline_keyboard": keyboard})
-        
-        elif action == "later_time":
-            # Handle later time selection
-            order_id = data[1]
-            selected_time = data[2]
-            vendor = data[1]  # This might need adjustment based on callback data structure
-            
-            logger.info(f"Vendor {vendor} selected time {selected_time} for later_time")
-            
-            # Store confirmed time
-            if f"order_{order_id}" not in STATE:
-                STATE[f"order_{order_id}"] = {}
-            STATE[f"order_{order_id}"]['confirmed_time'] = int(data[3])
-            
-            logger.info(f"Confirmed time {data[3]} for order {order_id}")
-            
-            # Send status update to MDG
-            status_message = f"■ {vendor} replied: Later at {selected_time} ■"
-            await send_message(DISPATCH_MAIN_CHAT_ID, status_message)
-        
-        elif action == "prepare_at":
-            # Vendor will prepare at specific time (for ASAP requests)
-            order_id = data[1]
-            vendor = data[2]
-            order_number = str(order_id)[-2:]
-            
-            # Generate time options
-            now = datetime.now()
-            prep_times = []
-            for minutes in [10, 15, 20, 25, 30]:
-                prep_time = now + timedelta(minutes=minutes)
-                prep_times.append(prep_time.strftime("%H:%M"))
-            
-            keyboard = []
-            for time_str in prep_times:
-                callback_data = f"prep_time|{order_id}|{time_str}|{vendor}|{data[3]}"
-                keyboard.append([{"text": time_str, "callback_data": callback_data}])
-            
-            prep_message = f"When will you prepare order #{order_number}?"
-            await send_message(chat_id, prep_message, {"inline_keyboard": keyboard})
-        
-        elif action == "prep_time":
-            # Handle preparation time selection
-            order_id = data[1]
-            selected_time = data[2]
-            vendor = data[3]
-            
-            # Store confirmed time
-            if f"order_{order_id}" not in STATE:
-                STATE[f"order_{order_id}"] = {}
-            STATE[f"order_{order_id}"]['confirmed_time'] = int(time.time())
-            
-            # Send status update to MDG
-            status_message = f"■ {vendor} replied: Will prepare at {selected_time} ■"
-            await send_message(DISPATCH_MAIN_CHAT_ID, status_message)
-        
-        elif action == "wrong":
-            # Something is wrong with the order
-            order_id = data[1]
-            vendor = data[2]
-            
-            # Send status update to MDG
-            status_message = f"■ {vendor} replied: Something is wrong ■"
-            await send_message(DISPATCH_MAIN_CHAT_ID, status_message)
-    
-    except Exception as e:
-        logger.error(f"Error handling callback {action}: {e}")
-
-if __name__ == '__main__':
-    port = int(os.getenv('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+                                    {"
