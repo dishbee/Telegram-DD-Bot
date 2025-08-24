@@ -1296,26 +1296,51 @@ def shopify_webhook():
         vendor_items = {}
         items_text = ""
         
-        for item in line_items:
+        logger.info(f"=== TAG DETECTION DEBUG for order {order_id} ===")
+        logger.info(f"Total line items: {len(line_items)}")
+        
+        for idx, item in enumerate(line_items):
+            # Debug: Log raw item data
+            logger.info(f"Item {idx}: {item.get('name', 'Unknown')}")
+            logger.info(f"Item {idx} raw tags: {item.get('tags', 'NO TAGS FIELD')}")
+            
             # Get tags from the product
             product_tags = item.get('tags', '').split(',')
+            logger.info(f"Item {idx} parsed tags: {product_tags}")
+            
             vendor = None  # FIX: Initialize vendor to None
             
             # Find restaurant tag in product tags
             for tag in product_tags:
-                tag = tag.strip().upper()
-                if tag in TAG_TO_RESTAURANT:
-                    vendor = TAG_TO_RESTAURANT[tag]
+                tag_stripped = tag.strip()
+                tag_upper = tag_stripped.upper()
+                logger.info(f"Checking tag: '{tag}' -> stripped: '{tag_stripped}' -> upper: '{tag_upper}'")
+                
+                if tag_upper in TAG_TO_RESTAURANT:
+                    vendor = TAG_TO_RESTAURANT[tag_upper]
+                    logger.info(f"MATCH! Tag '{tag_upper}' -> Vendor '{vendor}'")
                     break
+                else:
+                    logger.info(f"No match for tag '{tag_upper}' in {list(TAG_TO_RESTAURANT.keys())}")
             
             # If vendor found and in our mapping
-            if vendor and vendor in VENDOR_GROUP_MAP:
-                if vendor not in vendors:
-                    vendors.append(vendor)
-                    vendor_items[vendor] = []
-                
-                item_line = f"- {item.get('quantity', 1)} x {item.get('name', 'Item')}"
-                vendor_items[vendor].append(item_line)
+            if vendor:
+                logger.info(f"Vendor '{vendor}' found, checking if in VENDOR_GROUP_MAP...")
+                if vendor in VENDOR_GROUP_MAP:
+                    logger.info(f"SUCCESS! Vendor '{vendor}' is in VENDOR_GROUP_MAP")
+                    if vendor not in vendors:
+                        vendors.append(vendor)
+                        vendor_items[vendor] = []
+                    
+                    item_line = f"- {item.get('quantity', 1)} x {item.get('name', 'Item')}"
+                    vendor_items[vendor].append(item_line)
+                else:
+                    logger.warning(f"Vendor '{vendor}' NOT in VENDOR_GROUP_MAP: {list(VENDOR_GROUP_MAP.keys())}")
+            else:
+                logger.warning(f"No vendor found for item {idx}")
+        
+        logger.info(f"=== FINAL VENDORS: {vendors} ===")
+        logger.info(f"=== VENDOR ITEMS: {vendor_items} ===")
         
         # Build items text
         if len(vendors) > 1:
