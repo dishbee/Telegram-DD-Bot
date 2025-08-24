@@ -34,6 +34,21 @@ DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
 VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
 
+# Restaurant tag mapping
+TAG_TO_RESTAURANT = {
+    "JS": "Julis Spätzlerei",
+    "ZH": "Zweite Heimat", 
+    "KA": "Kahaani",
+    "SA": "i Sapori della Toscana",
+    "LR": "Leckerolls",
+    "DD": "dean & david",
+    "PF": "Pommes Freunde",
+    "AP": "Wittelsbacher Apotheke"
+}
+
+# Reverse mapping for getting shortcuts from restaurant names
+RESTAURANT_TO_TAG = {v: k for k, v in TAG_TO_RESTAURANT.items()}
+
 # Configure request with larger pool to prevent pool timeout
 request_cfg = HTTPXRequest(
     connection_pool_size=32,
@@ -149,43 +164,88 @@ def build_smart_time_suggestions(order_id: str, vendor: Optional[str] = None) ->
     """Build smart time suggestions based on last confirmed order"""
     last_order = get_last_confirmed_order(vendor)
     
-    if not last_order:
-        # No confirmed orders today - show only EXACT TIME button
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"vendor_exact|{order_id}|{vendor or 'all'}")]
-        ])
+    buttons = []
     
-    # Build smart suggestions based on last confirmed order
-    last_time_str = last_order["confirmed_time"]
-    last_order_num = last_order["name"][-2:] if len(last_order["name"]) >= 2 else last_order["name"]
-    
-    try:
-        # Parse the confirmed time
-        hour, minute = map(int, last_time_str.split(':'))
-        base_time = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if last_order:
+        # Get last order details
+        last_time_str = last_order["confirmed_time"]
+        last_order_num = last_order["name"][-2:] if len(last_order["name"]) >= 2 else last_order["name"]
         
-        # Generate smart suggestions
-        buttons = []
-        for i, minutes_to_add in enumerate([5, 10, 15, 20]):
-            suggested_time = base_time + timedelta(minutes=minutes_to_add)
-            button_text = f"#{last_order_num} {last_time_str} + {minutes_to_add}min"
-            callback_data = f"smart_time|{order_id}|{vendor or 'all'}|{suggested_time.strftime('%H:%M')}"
+        # Get address (street + building number only)
+        last_address = last_order['customer']['address'].split(',')[0].strip()
+        
+        # Get restaurant shortcut
+        last_vendor = last_order.get("vendors", [""])[0]
+        last_shortcut = RESTAURANT_TO_TAG.get(last_vendor, last_vendor[:2].upper() if last_vendor else "??")
+        
+        # Build title text (not clickable)
+        title_text = f"{last_address} ({last_shortcut}, #{last_order_num}, {last_time_str}) +"
+        
+        try:
+            # Parse the confirmed time
+            hour, minute = map(int, last_time_str.split(':'))
+            base_time = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
             
-            if i % 2 == 0:
-                buttons.append([])
-            buttons[-1].append(InlineKeyboardButton(button_text, callback_data=callback_data))
+            # Create +5, +10, +15, +20 buttons
+            time_buttons = []
+            for minutes_to_add in [5, 10, 15, 20]:
+                suggested_time = base_time + timedelta(minutes=minutes_to_add)
+                button_text = f"+{minutes_to_add}"
+                callback_data = f"smart_time|{order_id}|{vendor or 'all'}|{suggested_time.strftime('%H:%M')}"
+                time_buttons.append(InlineKeyboardButton(button_text, callback_data=callback_data))
+            
+            # Add time buttons in one row
+            buttons.append(time_buttons)
+            
+        except Exception as e:
+            logger.error(f"Error building smart suggestions: {e}")
+    
+    # Get confirmed but not delivered orders for "Same as"
+    same_as_orders = []
+    today = datetime.now().date()
+    
+    for oid, order_data in STATE.items():
+        if oid == order_id:
+            continue
+        # Check if order is from today
+        created_at = order_data.get("created_at")
+        if not created_at or created_at.date() != today:
+            continue
+        # Check if order has confirmed time and is not delivered
+        if order_data.get("confirmed_time") and not order_data.get("delivered", False):
+            # If vendor specified, filter by vendor
+            if vendor and vendor not in order_data.get("vendors", []):
+                continue
+            same_as_orders.append(order_data)
+    
+    # Sort by created_at and get last 5
+    if same_as_orders:
+        same_as_orders.sort(key=lambda x: x["created_at"], reverse=True)
+        same_as_orders = same_as_orders[:5]
         
-        # Add EXACT TIME button as 5th option
-        buttons.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"vendor_exact|{order_id}|{vendor or 'all'}")])
-        
-        return InlineKeyboardMarkup(buttons)
-        
-    except Exception as e:
-        logger.error(f"Error building smart suggestions: {e}")
-        # Fallback to just EXACT TIME button
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"vendor_exact|{order_id}|{vendor or 'all'}")]
-        ])
+        # Add "Same as" buttons
+        for order_data in same_as_orders:
+            order_num = order_data["name"][-2:] if len(order_data["name"]) >= 2 else order_data["name"]
+            order_address = order_data['customer']['address'].split(',')[0].strip()
+            order_vendor = order_data.get("vendors", [""])[0]
+            order_shortcut = RESTAURANT_TO_TAG.get(order_vendor, order_vendor[:2].upper() if order_vendor else "??")
+            order_time = order_data.get("confirmed_time", "??:??")
+            
+            button_text = f"{order_address} ({order_shortcut}, #{order_num}, {order_time})"
+            # Find the actual order_id from our iteration
+            actual_order_id = None
+            for oid, od in STATE.items():
+                if od == order_data:
+                    actual_order_id = oid
+                    break
+            callback_data = f"same_selected|{order_id}|{actual_order_id or order_num}"
+            buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+    
+    # Add EXACT TIME button with updated text
+    exact_text = "Request exact time:" if vendor else "Set exact time for all:"
+    buttons.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"vendor_exact|{order_id}|{vendor or 'all'}")])
+    
+    return InlineKeyboardMarkup(buttons)
 
 def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
     """Build MDG dispatch message per assignment requirements"""
@@ -355,28 +415,27 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
         vendors = order.get("vendors", [])
         logger.info(f"Order {order_id} has vendors: {vendors} (count: {len(vendors)})")
         
-        # Multi-vendor: show restaurant selection buttons
+        # Multi-vendor: show ONLY restaurant selection buttons with shortcuts
         if len(vendors) > 1:
             logger.info(f"MULTI-VENDOR detected: {vendors}")
             buttons = []
             for vendor in vendors:
-                logger.info(f"Adding button for vendor: {vendor}")
+                # Use shortcut for button text
+                shortcut = RESTAURANT_TO_TAG.get(vendor, vendor[:2].upper())
+                logger.info(f"Adding button for vendor: {vendor} with shortcut: {shortcut}")
                 buttons.append([InlineKeyboardButton(
-                    f"Request {vendor}", 
+                    f"Request {shortcut}", 
                     callback_data=f"req_vendor|{order_id}|{vendor}|{int(datetime.now().timestamp())}"
                 )])
             logger.info(f"Sending restaurant selection with {len(buttons)} buttons")
             return InlineKeyboardMarkup(buttons)
         
-        # Single vendor: show standard buttons
+        # Single vendor: show standard buttons (NO SAME TIME AS)
         logger.info(f"SINGLE VENDOR detected: {vendors}")
         return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(datetime.now().timestamp())}"),
                 InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(datetime.now().timestamp())}")
-            ],
-            [
-                InlineKeyboardButton("Request SAME TIME AS", callback_data=f"req_same|{order_id}|{int(datetime.now().timestamp())}")
             ]
         ])
         
@@ -702,11 +761,26 @@ def telegram_webhook():
                         logger.warning(f"Order {order_id} not found in state")
                         return
                     
+                    # Get last confirmed order for title
+                    last_order = get_last_confirmed_order(vendor)
+                    
+                    if last_order:
+                        # Build title with last order details
+                        last_time_str = last_order["confirmed_time"]
+                        last_order_num = last_order["name"][-2:] if len(last_order["name"]) >= 2 else last_order["name"]
+                        last_address = last_order['customer']['address'].split(',')[0].strip()
+                        last_vendor = last_order.get("vendors", [""])[0]
+                        last_shortcut = RESTAURANT_TO_TAG.get(last_vendor, last_vendor[:2].upper() if last_vendor else "??")
+                        
+                        message_text = f"🕒 Select time for {vendor}:\n\n{last_address} ({last_shortcut}, #{last_order_num}, {last_time_str}) +\n\nSame as:"
+                    else:
+                        message_text = f"🕒 Select time for {vendor}:\n\nSame as:"
+                    
                     # Show smart time suggestions for this vendor
                     keyboard = build_smart_time_suggestions(order_id, vendor)
                     await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"🕒 Select time for {vendor}:",
+                        message_text,
                         keyboard
                     )
                 
@@ -733,10 +807,16 @@ def telegram_webhook():
                     order_id, vendor = data[1], data[2]
                     logger.info(f"VENDOR_EXACT: Processing for order {order_id}, vendor {vendor}")
                     
+                    # Update message text based on whether it's single or multi-vendor
+                    if vendor == "all":
+                        message_text = "🕒 Set exact time for all:"
+                    else:
+                        message_text = f"🕒 Request exact time:"
+                    
                     # Show exact time picker
                     await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"🕒 Set exact time for {vendor}:",
+                        message_text,
                         exact_time_keyboard(order_id)
                     )
                 
@@ -844,10 +924,26 @@ def telegram_webhook():
                     # For single vendor, show smart suggestions directly
                     if len(vendors) <= 1:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
+                        
+                        # Get last confirmed order for title
+                        last_order = get_last_confirmed_order(None)
+                        
+                        if last_order:
+                            # Build title with last order details
+                            last_time_str = last_order["confirmed_time"]
+                            last_order_num = last_order["name"][-2:] if len(last_order["name"]) >= 2 else last_order["name"]
+                            last_address = last_order['customer']['address'].split(',')[0].strip()
+                            last_vendor = last_order.get("vendors", [""])[0]
+                            last_shortcut = RESTAURANT_TO_TAG.get(last_vendor, last_vendor[:2].upper() if last_vendor else "??")
+                            
+                            message_text = f"🕒 Select time to request:\n\n{last_address} ({last_shortcut}, #{last_order_num}, {last_time_str}) +\n\nSame as:"
+                        else:
+                            message_text = "🕒 Select time to request:\n\nSame as:"
+                        
                         keyboard = build_smart_time_suggestions(order_id, None)
                         await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
-                            "🕒 Select time to request:",
+                            message_text,
                             keyboard
                         )
                     else:
@@ -1029,7 +1125,7 @@ def telegram_webhook():
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
                     if order:
-                        # Track confirmed time
+                        # Track confirmed time and vendor
                         order["confirmed_time"] = order.get("requested_time", "ASAP")
                         order["confirmed_by"] = vendor
                     
@@ -1059,6 +1155,7 @@ def telegram_webhook():
                         # Find which vendor this is from
                         for vendor in order["vendors"]:
                             if vendor in order.get("vendor_messages", {}):
+                                order["confirmed_by"] = vendor
                                 status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
                                 await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                                 break
@@ -1083,6 +1180,7 @@ def telegram_webhook():
                         # Find which vendor this is from
                         for vendor in order["vendors"]:
                             if vendor in order.get("vendor_messages", {}):
+                                order["confirmed_by"] = vendor
                                 status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
                                 await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                                 break
@@ -1192,14 +1290,26 @@ def shopify_webhook():
         phone = customer.get("phone") or payload.get("phone") or "N/A"
         address = fmt_address(payload.get("shipping_address") or {})
         
-        # Extract vendors from line items
+        # Extract vendors from product tags
         line_items = payload.get("line_items", [])
         vendors = []
         vendor_items = {}
         items_text = ""
         
         for item in line_items:
-            vendor = item.get('vendor')
+            # Get tags from the product
+            product_tags = item.get('tags', '').split(',')
+            vendor_tag = None
+            
+            # Find restaurant tag in product tags
+            for tag in product_tags:
+                tag = tag.strip().upper()
+                if tag in TAG_TO_RESTAURANT:
+                    vendor_tag = tag
+                    vendor = TAG_TO_RESTAURANT[tag]
+                    break
+            
+            # If vendor found and in our mapping
             if vendor and vendor in VENDOR_GROUP_MAP:
                 if vendor not in vendors:
                     vendors.append(vendor)
@@ -1251,6 +1361,8 @@ def shopify_webhook():
             "vendor_expanded": {},
             "requested_time": None,
             "confirmed_time": None,
+            "confirmed_by": None,
+            "delivered": False,  # Track delivery status
             "status": "new"
         }
         
