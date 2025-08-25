@@ -167,26 +167,15 @@ def build_smart_time_suggestions(order_id: str, vendor: Optional[str] = None) ->
     buttons = []
     
     if last_order:
-        # Get last order details
+        # Get last order details for the +5/+10/+15/+20 buttons
         last_time_str = last_order["confirmed_time"]
-        last_order_num = last_order["name"][-2:] if len(last_order["name"]) >= 2 else last_order["name"]
-        
-        # Get address (street + building number only)
-        last_address = last_order['customer']['address'].split(',')[0].strip()
-        
-        # Get restaurant shortcut
-        last_vendor = last_order.get("vendors", [""])[0]
-        last_shortcut = RESTAURANT_TO_TAG.get(last_vendor, last_vendor[:2].upper() if last_vendor else "??")
-        
-        # Build title text (not clickable)
-        title_text = f"{last_address} ({last_shortcut}, #{last_order_num}, {last_time_str}) +"
         
         try:
             # Parse the confirmed time
             hour, minute = map(int, last_time_str.split(':'))
             base_time = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
             
-            # Create +5, +10, +15, +20 buttons
+            # Create +5, +10, +15, +20 buttons IN ONE ROW
             time_buttons = []
             for minutes_to_add in [5, 10, 15, 20]:
                 suggested_time = base_time + timedelta(minutes=minutes_to_add)
@@ -194,13 +183,13 @@ def build_smart_time_suggestions(order_id: str, vendor: Optional[str] = None) ->
                 callback_data = f"smart_time|{order_id}|{vendor or 'all'}|{suggested_time.strftime('%H:%M')}"
                 time_buttons.append(InlineKeyboardButton(button_text, callback_data=callback_data))
             
-            # Add time buttons in one row
+            # Add all 4 time buttons in ONE row
             buttons.append(time_buttons)
             
         except Exception as e:
             logger.error(f"Error building smart suggestions: {e}")
     
-    # Get confirmed but not delivered orders for "Same as"
+    # Get confirmed but not delivered orders for "Same as" section
     same_as_orders = []
     today = datetime.now().date()
     
@@ -223,7 +212,7 @@ def build_smart_time_suggestions(order_id: str, vendor: Optional[str] = None) ->
         same_as_orders.sort(key=lambda x: x["created_at"], reverse=True)
         same_as_orders = same_as_orders[:5]
         
-        # Add "Same as" buttons
+        # Add "Same as" order buttons (each in its own row)
         for order_data in same_as_orders:
             order_num = order_data["name"][-2:] if len(order_data["name"]) >= 2 else order_data["name"]
             order_address = order_data['customer']['address'].split(',')[0].strip()
@@ -241,8 +230,7 @@ def build_smart_time_suggestions(order_id: str, vendor: Optional[str] = None) ->
             callback_data = f"same_selected|{order_id}|{actual_order_id or order_num}"
             buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
     
-    # Add EXACT TIME button with updated text
-    exact_text = "Request exact time:" if vendor else "Set exact time for all:"
+    # Add EXACT TIME button at the bottom
     buttons.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"vendor_exact|{order_id}|{vendor or 'all'}")])
     
     return InlineKeyboardMarkup(buttons)
@@ -761,7 +749,7 @@ def telegram_webhook():
                         logger.warning(f"Order {order_id} not found in state")
                         return
                     
-                    # Get last confirmed order for title
+                    # Build message with title and "Same as:" label
                     last_order = get_last_confirmed_order(vendor)
                     
                     if last_order:
@@ -774,7 +762,7 @@ def telegram_webhook():
                         
                         message_text = f"🕒 Select time for {vendor}:\n\n{last_address} ({last_shortcut}, #{last_order_num}, {last_time_str}) +\n\nSame as:"
                     else:
-                        message_text = f"🕒 Select time for {vendor}:\n\nSame as:"
+                        message_text = f"🕒 Select time for {vendor}:"
                     
                     # Show smart time suggestions for this vendor
                     keyboard = build_smart_time_suggestions(order_id, vendor)
@@ -925,7 +913,7 @@ def telegram_webhook():
                     if len(vendors) <= 1:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
                         
-                        # Get last confirmed order for title
+                        # Build message with title and "Same as:" label
                         last_order = get_last_confirmed_order(None)
                         
                         if last_order:
@@ -938,7 +926,7 @@ def telegram_webhook():
                             
                             message_text = f"🕒 Select time to request:\n\n{last_address} ({last_shortcut}, #{last_order_num}, {last_time_str}) +\n\nSame as:"
                         else:
-                            message_text = "🕒 Select time to request:\n\nSame as:"
+                            message_text = "🕒 Select time to request:"
                         
                         keyboard = build_smart_time_suggestions(order_id, None)
                         await safe_send_message(
