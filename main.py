@@ -968,4 +968,37 @@ def telegram_webhook():
                    
                     # Update MDG
                     order["requested_time"] = selected_time
-                    mdg_text = build_m
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {selected_time}"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_time_request_keyboard(order_id)
+                    )
+                   
+                    # Delete the time picker message
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                    await safe_delete_message(chat_id, message_id)
+               
+                elif action == "exact_back_hours":
+                    order_id = data[1]
+                    logger.info(f"Going back to hours for order {order_id}")
+                   
+                    # Edit current message back to hour picker
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                   
+                    await safe_edit_message(
+                        chat_id,
+                        message_id,
+                        "🕒 Select hour:",
+                        exact_time_keyboard(order_id)
+                    )
+               
+                elif action == "exact_hide":
+                    order_id = data[1]
+                    logger.info(f"Hiding exact time picker for order {order_id}")
+                   
+                    # Delete the exact time picker message
+                   
