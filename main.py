@@ -896,4 +896,76 @@ def telegram_webhook():
                             # Check if same restaurant as reference order
                             if vendor in reference_order.get("vendors", []):
                                 # Same restaurant - special message
-                                if order
+                                if order["order_type"] == "shopify":
+                                    current_display = f"#{order['name'][-2:]}"
+                                    ref_display = f"#{reference_order['name'][-2:]}"
+                                    msg = f"Can you prepare {current_display} together with {ref_display} at the same time {reference_time}?"
+                                else:
+                                    current_addr = order['customer']['address'].split(',')[0]
+                                    ref_addr = reference_order['customer']['address'].split(',')[0]
+                                    msg = f"Can you prepare *{current_addr}* together with *{ref_addr}* at the same time {reference_time}?"
+                            else:
+                                # Different restaurant - standard message
+                                if order["order_type"] == "shopify":
+                                    msg = f"#{order['name'][-2:]} at {reference_time}?"
+                                else:
+                                    addr = order['customer']['address'].split(',')[0]
+                                    msg = f"*{addr}* at {reference_time}?"
+                           
+                            await safe_send_message(
+                                vendor_chat,
+                                msg,
+                                restaurant_response_keyboard(reference_time, order_id, vendor)
+                            )
+                   
+                    # Update MDG
+                    order["requested_time"] = reference_time
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {reference_time} (same as {reference_order.get('name', 'other order')})"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_time_request_keyboard(order_id)
+                    )
+               
+                # EXACT TIME ACTIONS
+                elif action == "exact_hour":
+                    order_id, hour = data[1], data[2]
+                    logger.info(f"Processing exact hour {hour} for order {order_id}")
+                   
+                    # Edit the current message to show minute picker
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                   
+                    await safe_edit_message(
+                        chat_id,
+                        message_id,
+                        f"🕒 Select exact time (hour {hour}):",
+                        exact_hour_keyboard(order_id, int(hour))
+                    )
+               
+                elif action == "exact_selected":
+                    order_id, selected_time = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                   
+                    # Send time request to vendors
+                    for vendor in order["vendors"]:
+                        vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_chat:
+                            if order["order_type"] == "shopify":
+                                msg = f"#{order['name'][-2:]} at {selected_time}?"
+                            else:
+                                addr = order['customer']['address'].split(',')[0]
+                                msg = f"*{addr}* at {selected_time}?"
+                           
+                            await safe_send_message(
+                                vendor_chat,
+                                msg,
+                                restaurant_response_keyboard(selected_time, order_id, vendor)
+                            )
+                   
+                    # Update MDG
+                    order["requested_time"] = selected_time
+                    mdg_text = build_m
