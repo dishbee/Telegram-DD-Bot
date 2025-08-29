@@ -365,7 +365,7 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
             logger.info(f"Sending restaurant selection with {len(buttons)} buttons")
             return InlineKeyboardMarkup(buttons)
         
-        # Single vendor: show standard buttons (CHANGE #1: Remove SAME TIME AS)
+        # Single vendor: show standard buttons (SAME TIME AS removed as per user instruction)
         logger.info(f"SINGLE VENDOR detected: {vendors}")
         return InlineKeyboardMarkup([
             [
