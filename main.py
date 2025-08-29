@@ -34,6 +34,20 @@ DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
 VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
 
+# --- MAPPINGS ---
+TAG_TO_RESTAURANT: Dict[str, str] = {
+    "JS": "Julis Spätzlerei",
+    "ZH": "Zweite Heimat",
+    "KA": "Kahaani",
+    "SA": "i Sapori della Toscana",
+    "LR": "Leckerrolls",
+    "AP": "Wittelsbacher Apotheke",
+    # Future additions
+    "DD": "dean & david",
+    "PF": "Pommes Freunde",
+}
+RESTAURANT_TO_TAG: Dict[str, str] = {v: k for k, v in TAG_TO_RESTAURANT.items()}
+
 # Configure request with larger pool to prevent pool timeout
 request_cfg = HTTPXRequest(
     connection_pool_size=32,
@@ -360,6 +374,49 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
                 logger.info(f"Adding button for vendor: {vendor}")
                 buttons.append([InlineKeyboardButton(
                     f"Request {vendor}", 
+                    callback_data=f"req_vendor|{order_id}|{vendor}|{int(datetime.now().timestamp())}"
+                )])
+            logger.info(f"Sending restaurant selection with {len(buttons)} buttons")
+            return InlineKeyboardMarkup(buttons)
+        
+        # Single vendor: show standard buttons (SAME TIME AS removed as per user instruction)
+        logger.info(f"SINGLE VENDOR detected: {vendors}")
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(datetime.now().timestamp())}"),
+                InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(datetime.now().timestamp())}")
+            ]
+        ])
+        
+    except Exception as e:
+        logger.error(f"Error building time request keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build MDG time request buttons per assignment - now vendor-specific for multi-vendor"""
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            # Fallback to standard buttons if order not found
+            return InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(datetime.now().timestamp())}"),
+                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(datetime.now().timestamp())}")
+                ]
+            ])
+        
+        vendors = order.get("vendors", [])
+        logger.info(f"Order {order_id} has vendors: {vendors} (count: {len(vendors)})")
+        
+        # Multi-vendor: show restaurant selection buttons with shortcuts
+        if len(vendors) > 1:
+            logger.info(f"MULTI-VENDOR detected: {vendors}")
+            buttons = []
+            for vendor in vendors:
+                shortcut = RESTAURANT_TO_TAG.get(vendor, vendor) # Use shortcut if available
+                logger.info(f"Adding button for vendor: {vendor} with shortcut: {shortcut}")
+                buttons.append([InlineKeyboardButton(
+                    f"Request {shortcut}", 
                     callback_data=f"req_vendor|{order_id}|{vendor}|{int(datetime.now().timestamp())}"
                 )])
             logger.info(f"Sending restaurant selection with {len(buttons)} buttons")
