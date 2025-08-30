@@ -106,31 +106,36 @@ def get_time_intervals(base_time: datetime, count: int = 4) -> List[str]:
     return intervals
 
 def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
-    """Get recent CONFIRMED orders (last 1 hour) for 'same time as' functionality"""
-    one_hour_ago = datetime.now() - timedelta(hours=1)
+    """Get ALL confirmed orders from TODAY for 'same time as' functionality"""
+    today = datetime.now().date()
     recent = []
     
     for order_id, order_data in STATE.items():
         if order_id == current_order_id:
             continue
-        # Only include orders with confirmed_time
+        # Only include orders with confirmed_time from today
         if not order_data.get("confirmed_time"):
             continue
-        if order_data.get("created_at") and order_data["created_at"] > one_hour_ago:
-            if order_data.get("order_type") == "shopify":
-                display_name = f"#{order_data['name'][-2:]}"
-            else:
-                address_parts = order_data['customer']['address'].split(',')  
-                street_info = address_parts[0] if address_parts else "Unknown"
-                display_name = f"*{street_info}*"
+        created_at = order_data.get("created_at")
+        if not created_at or created_at.date() != today:
+            continue
             
-            recent.append({
-                "order_id": order_id,
-                "display_name": display_name,
-                "vendor": order_data.get("vendors", ["Unknown"])[0]
-            })
+        # Build display name in required format: "Address (Shortcut, #OrderNum, Time)"
+        address = order_data['customer']['address'].split(',')[0].strip()
+        vendor = order_data.get("vendors", ["Unknown"])[0]
+        shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+        order_num = order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
+        confirmed_time = order_data.get("confirmed_time", "Unknown")
+        
+        display_name = f"{address} ({shortcut}, #{order_num}, {confirmed_time})"
+        
+        recent.append({
+            "order_id": order_id,
+            "display_name": display_name,
+            "vendor": vendor
+        })
     
-    return recent[-10:]
+    return recent[-10:]  # Return last 10 confirmed orders from today
 
 def get_last_confirmed_order(vendor: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Get the most recent order with confirmed time from today"""
@@ -372,9 +377,10 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
             logger.info(f"MULTI-VENDOR detected: {vendors}")
             buttons = []
             for vendor in vendors:
-                # Use manual shortcut mapping
-                shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-                logger.info(f"Adding button for vendor: {vendor} (shortcut: {shortcut})")
+                # Clean vendor name and use manual shortcut mapping
+                clean_vendor = vendor.strip()
+                shortcut = RESTAURANT_SHORTCUTS.get(clean_vendor, clean_vendor[:2].upper())
+                logger.info(f"Adding button for vendor: '{clean_vendor}' (shortcut: {shortcut})")
                 buttons.append([InlineKeyboardButton(
                     f"Request {shortcut}",
                     callback_data=f"req_vendor|{order_id}|{vendor}|{int(datetime.now().timestamp())}"
@@ -405,9 +411,11 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
         # Get order details for title
         address = order['customer']['address'].split(',')[0]  # Street only
         if vendor:
-            vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+            clean_vendor = vendor.strip()
+            vendor_shortcut = RESTAURANT_SHORTCUTS.get(clean_vendor, clean_vendor[:2].upper())
         else:
-            vendor_shortcut = RESTAURANT_SHORTCUTS.get(order['vendors'][0], order['vendors'][0][:2].upper())
+            clean_vendor = order['vendors'][0].strip()
+            vendor_shortcut = RESTAURANT_SHORTCUTS.get(clean_vendor, clean_vendor[:2].upper())
         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
         current_time = datetime.now().strftime("%H:%M")
 
@@ -424,16 +432,27 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
             ]
         ]
 
-        # Check if there are confirmed orders for "Same as" button
-        confirmed_orders = get_recent_orders_for_same_time(order_id)
-        has_confirmed = any(order_data.get("confirmed_time") for order_data in STATE.values() 
-                           if order_data.get("confirmed_time"))
-
-        if has_confirmed:
-            buttons.append([InlineKeyboardButton("Same as", callback_data=f"req_same|{order_id}")])
-        else:
-            # Show "Same as" as text when no confirmed orders exist
-            buttons.append([InlineKeyboardButton("Same as (no recent orders)", callback_data="no_recent")])
+        # Check if there are confirmed orders from today
+        today = datetime.now().date()
+        confirmed_today = []
+        
+        for oid, odata in STATE.items():
+            if oid == order_id:
+                continue
+            created_at = odata.get("created_at")
+            if not created_at or created_at.date() != today:
+                continue
+            if odata.get("confirmed_time"):
+                confirmed_today.append(odata)
+        
+        # If confirmed orders exist, add the actual order buttons
+        if confirmed_today:
+            recent = get_recent_orders_for_same_time(order_id)
+            for order_info in recent:
+                buttons.append([InlineKeyboardButton(
+                    order_info['display_name'], 
+                    callback_data=f"same_selected|{order_id}|{order_info['order_id']}"
+                )])
 
         buttons.append([InlineKeyboardButton("Request exact time:", callback_data=f"req_exact|{order_id}")])
 
@@ -449,9 +468,6 @@ def vendor_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("Request ASAP", callback_data=f"vendor_asap|{order_id}|{vendor}"),
             InlineKeyboardButton("Request TIME", callback_data=f"vendor_time|{order_id}|{vendor}")
-        ],
-        [
-            InlineKeyboardButton("Request SAME TIME AS", callback_data=f"vendor_same|{order_id}|{vendor}")
         ]
     ])
 
@@ -501,7 +517,7 @@ def same_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
         rows = []
         
         for order_info in recent:
-            text = f"{order_info['display_name']} ({order_info['vendor']})"
+            text = order_info['display_name']
             callback = f"same_selected|{order_id}|{order_info['order_id']}"
             rows.append([InlineKeyboardButton(text, callback_data=callback)])
         
@@ -763,7 +779,24 @@ def telegram_webhook():
                     
                     # Show TIME submenu for this vendor (same as single-vendor)
                     keyboard = mdg_time_submenu_keyboard(order_id, vendor)
-                    title_text = f"Lederergasse 15 ({RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +"
+                    
+                    # Check if there are confirmed orders from today for message text
+                    today = datetime.now().date()
+                    confirmed_today = []
+                    for oid, odata in STATE.items():
+                        if oid == order_id:
+                            continue
+                        created_at = odata.get("created_at")
+                        if not created_at or created_at.date() != today:
+                            continue
+                        if odata.get("confirmed_time"):
+                            confirmed_today.append(odata)
+                    
+                    # Build message text
+                    title_text = f"Lederergasse 15 ({RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +\n\n"
+                    if confirmed_today:
+                        title_text += "Same as\n\n"
+                    
                     await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         title_text,
@@ -905,7 +938,24 @@ def telegram_webhook():
                     if len(vendors) <= 1:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
                         keyboard = mdg_time_submenu_keyboard(order_id)
-                        title_text = f"{order['customer']['address'].split(',')[0]} ({RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +"
+                        
+                        # Check if there are confirmed orders from today for message text
+                        today = datetime.now().date()
+                        confirmed_today = []
+                        for oid, odata in STATE.items():
+                            if oid == order_id:
+                                continue
+                            created_at = odata.get("created_at")
+                            if not created_at or created_at.date() != today:
+                                continue
+                            if odata.get("confirmed_time"):
+                                confirmed_today.append(odata)
+                        
+                        # Build message text
+                        title_text = f"{order['customer']['address'].split(',')[0]} ({RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +\n\n"
+                        if confirmed_today:
+                            title_text += "Same as\n\n"
+                        
                         await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             title_text,
