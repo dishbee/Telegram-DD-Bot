@@ -357,8 +357,12 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
             logger.info(f"MULTI-VENDOR detected: {vendors}")
             buttons = []
             for vendor in vendors:
-                # Create shortcut name (first 2 letters, uppercase)
-                shortcut = ''.join(word[0] for word in vendor.split() if word).upper()[:2]
+                # Create shortcut name (first letter of first two words, uppercase)
+                words = vendor.split()
+                if len(words) >= 2:
+                    shortcut = (words[0][0] + words[1][0]).upper()
+                else:
+                    shortcut = words[0][:2].upper() if words else "XX"
                 logger.info(f"Adding button for vendor: {vendor} (shortcut: {shortcut})")
                 buttons.append([InlineKeyboardButton(
                     f"Request {shortcut}",
@@ -389,7 +393,11 @@ def mdg_time_submenu_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
         # Get order details for title
         address = order['customer']['address'].split(',')[0]  # Street only
-        vendor_shortcut = ''.join(word[0] for word in order['vendors'][0].split() if word).upper()[:2]
+        words = order['vendors'][0].split()
+        if len(words) >= 2:
+            vendor_shortcut = (words[0][0] + words[1][0]).upper()
+        else:
+            vendor_shortcut = words[0][:2].upper() if words else "XX"
         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
         current_time = datetime.now().strftime("%H:%M")
 
@@ -957,22 +965,6 @@ def telegram_webhook():
                 elif action == "title_click":
                     # Title button in TIME submenu - do nothing
                     pass
-                    order_id = data[1]
-                    logger.info(f"Processing SAME TIME AS request for order {order_id}")
-                    
-                    recent = get_recent_orders_for_same_time(order_id)
-                    if recent:
-                        keyboard = same_time_keyboard(order_id)
-                        await safe_send_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            "🔗 Select order to match timing:",
-                            keyboard
-                        )
-                    else:
-                        await safe_send_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            "No recent orders found (last 1 hour)"
-                        )
                 
                 elif action == "same_selected":
                     order_id, reference_order_id = data[1], data[2]
