@@ -337,7 +337,7 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
         return f"Error formatting details for {vendor}"
 
 def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
-    """Build MDG time request buttons per assignment - now vendor-specific for multi-vendor"""
+    """Build MDG time request buttons per assignment requirements"""
     try:
         order = STATE.get(order_id)
         if not order:
@@ -348,24 +348,26 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
                     InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(datetime.now().timestamp())}")
                 ]
             ])
-        
+
         vendors = order.get("vendors", [])
         logger.info(f"Order {order_id} has vendors: {vendors} (count: {len(vendors)})")
-        
-        # Multi-vendor: show restaurant selection buttons
+
+        # Multi-vendor: show individual restaurant buttons (REMOVE Request SAME TIME AS)
         if len(vendors) > 1:
             logger.info(f"MULTI-VENDOR detected: {vendors}")
             buttons = []
             for vendor in vendors:
-                logger.info(f"Adding button for vendor: {vendor}")
+                # Create shortcut name (first 2 letters, uppercase)
+                shortcut = ''.join(word[0] for word in vendor.split() if word).upper()[:2]
+                logger.info(f"Adding button for vendor: {vendor} (shortcut: {shortcut})")
                 buttons.append([InlineKeyboardButton(
-                    f"Request {vendor}", 
+                    f"Request {shortcut}",
                     callback_data=f"req_vendor|{order_id}|{vendor}|{int(datetime.now().timestamp())}"
                 )])
             logger.info(f"Sending restaurant selection with {len(buttons)} buttons")
             return InlineKeyboardMarkup(buttons)
-        
-        # Single vendor: show standard buttons (CHANGE #1: Remove SAME TIME AS)
+
+        # Single vendor: show Request ASAP and Request TIME
         logger.info(f"SINGLE VENDOR detected: {vendors}")
         return InlineKeyboardMarkup([
             [
@@ -373,9 +375,46 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(datetime.now().timestamp())}")
             ]
         ])
-        
+
     except Exception as e:
         logger.error(f"Error building time request keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+def mdg_time_submenu_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build TIME submenu per assignment: title + 4 buttons + Same as + Exact time"""
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            return InlineKeyboardMarkup([])
+
+        # Get order details for title
+        address = order['customer']['address'].split(',')[0]  # Street only
+        vendor_shortcut = ''.join(word[0] for word in order['vendors'][0].split() if word).upper()[:2]
+        order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
+        current_time = datetime.now().strftime("%H:%M")
+
+        # Title line (not clickable)
+        title_text = f"{address} ({vendor_shortcut}, #{order_num}, {current_time}) +"
+
+        # Create buttons
+        buttons = [
+            [InlineKeyboardButton(title_text, callback_data="title_click")],  # Non-functional title
+            [
+                InlineKeyboardButton("+5 mins", callback_data=f"time_plus|{order_id}|5"),
+                InlineKeyboardButton("+10 mins", callback_data=f"time_plus|{order_id}|10")
+            ],
+            [
+                InlineKeyboardButton("+15 mins", callback_data=f"time_plus|{order_id}|15"),
+                InlineKeyboardButton("+20 mins", callback_data=f"time_plus|{order_id}|20")
+            ],
+            [InlineKeyboardButton("Same as", callback_data=f"req_same|{order_id}")],
+            [InlineKeyboardButton("Request exact time:", callback_data=f"req_exact|{order_id}")]
+        ]
+
+        return InlineKeyboardMarkup(buttons)
+
+    except Exception as e:
+        logger.error(f"Error building TIME submenu keyboard: {e}")
         return InlineKeyboardMarkup([])
 
 def vendor_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
@@ -835,20 +874,89 @@ def telegram_webhook():
                     vendors = order.get("vendors", [])
                     logger.info(f"Order {order_id} has vendors: {vendors} (count: {len(vendors)})")
                     
-                    # For single vendor, show smart suggestions directly
+                    # For single vendor, show TIME submenu per assignment
                     if len(vendors) <= 1:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
-                        keyboard = build_smart_time_suggestions(order_id, None)
+                        keyboard = mdg_time_submenu_keyboard(order_id)
                         await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
-                            "🕒 Select time to request:",
+                            "🕒 Select time option:",
                             keyboard
                         )
                     else:
                         # For multi-vendor, this shouldn't happen as they have vendor buttons
                         logger.warning(f"Unexpected req_time for multi-vendor order {order_id}")
                 
+                elif action == "time_plus":
+                    order_id, minutes = data[1], int(data[2])
+                    logger.info(f"Processing +{minutes} minutes for order {order_id}")
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    # Calculate new time
+                    current_time = datetime.now()
+                    new_time = current_time + timedelta(minutes=minutes)
+                    requested_time = new_time.strftime("%H:%M")
+                    
+                    # Send time request to vendors
+                    for vendor in order["vendors"]:
+                        vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_chat:
+                            if order["order_type"] == "shopify":
+                                msg = f"#{order['name'][-2:]} at {requested_time}?"
+                            else:
+                                addr = order['customer']['address'].split(',')[0]
+                                msg = f"*{addr}* at {requested_time}?"
+                            
+                            await safe_send_message(
+                                vendor_chat,
+                                msg,
+                                restaurant_response_keyboard(requested_time, order_id, vendor)
+                            )
+                    
+                    # Update MDG
+                    order["requested_time"] = requested_time
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {requested_time}"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_time_request_keyboard(order_id)
+                    )
+                
                 elif action == "req_same":
+                    order_id = data[1]
+                    logger.info(f"Processing SAME TIME AS request for order {order_id}")
+                    
+                    recent = get_recent_orders_for_same_time(order_id)
+                    if recent:
+                        keyboard = same_time_keyboard(order_id)
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "🔗 Select order to match timing:",
+                            keyboard
+                        )
+                    else:
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "No recent orders found (last 1 hour)"
+                        )
+                
+                elif action == "req_exact":
+                    order_id = data[1]
+                    logger.info(f"Processing REQUEST EXACT TIME for order {order_id}")
+                    
+                    # Show hour picker for exact time
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        "🕒 Select hour:",
+                        exact_time_keyboard(order_id)
+                    )
+                
+                elif action == "title_click":
+                    # Title button in TIME submenu - do nothing
+                    pass
                     order_id = data[1]
                     logger.info(f"Processing SAME TIME AS request for order {order_id}")
                     
