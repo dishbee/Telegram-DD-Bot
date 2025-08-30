@@ -34,11 +34,16 @@ DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
 VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
 
-# Restaurant shortcut mapping (manual mapping per assignment)
+# Restaurant shortcut mapping (per assignment in Doc)
 RESTAURANT_SHORTCUTS = {
-    "i Sapori della Toscana": "SA",
     "Julis Spätzlerei": "JS",
-    # Add more mappings as needed
+    "Zweite Heimat": "ZH", 
+    "Kahaani": "KA",
+    "i Sapori Della Toscana": "SA",
+    "Leckerrolls": "LR",
+    "dean & david": "DD",
+    "Pommes Freunde": "PF",
+    "Wittelsbacher Apotheke": "AP"
 }
 
 # Configure request with larger pool to prevent pool timeout
@@ -407,14 +412,15 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
         current_time = datetime.now().strftime("%H:%M")
 
         # Create buttons (no title button - title is in message text)
+        vendor_param = f"|{vendor}" if vendor else ""
         buttons = [
             [
-                InlineKeyboardButton("+5 mins", callback_data=f"time_plus|{order_id}|5"),
-                InlineKeyboardButton("+10 mins", callback_data=f"time_plus|{order_id}|10")
+                InlineKeyboardButton("+5 mins", callback_data=f"time_plus|{order_id}|5{vendor_param}"),
+                InlineKeyboardButton("+10 mins", callback_data=f"time_plus|{order_id}|10{vendor_param}")
             ],
             [
-                InlineKeyboardButton("+15 mins", callback_data=f"time_plus|{order_id}|15"),
-                InlineKeyboardButton("+20 mins", callback_data=f"time_plus|{order_id}|20")
+                InlineKeyboardButton("+15 mins", callback_data=f"time_plus|{order_id}|15{vendor_param}"),
+                InlineKeyboardButton("+20 mins", callback_data=f"time_plus|{order_id}|20{vendor_param}")
             ]
         ]
 
@@ -425,6 +431,9 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
 
         if has_confirmed:
             buttons.append([InlineKeyboardButton("Same as", callback_data=f"req_same|{order_id}")])
+        else:
+            # Show "Same as" as text when no confirmed orders exist
+            buttons.append([InlineKeyboardButton("Same as (no recent orders)", callback_data="no_recent")])
 
         buttons.append([InlineKeyboardButton("Request exact time:", callback_data=f"req_exact|{order_id}")])
 
@@ -753,7 +762,7 @@ def telegram_webhook():
                         return
                     
                     # Show TIME submenu for this vendor (same as single-vendor)
-                    keyboard = mdg_time_submenu_keyboard(order_id)
+                    keyboard = mdg_time_submenu_keyboard(order_id, vendor)
                     title_text = f"Lederergasse 15 ({RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +"
                     await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
@@ -908,7 +917,8 @@ def telegram_webhook():
                 
                 elif action == "time_plus":
                     order_id, minutes = data[1], int(data[2])
-                    logger.info(f"Processing +{minutes} minutes for order {order_id}")
+                    vendor = data[3] if len(data) > 3 else None
+                    logger.info(f"Processing +{minutes} minutes for order {order_id}" + (f" (vendor: {vendor})" if vendor else ""))
                     order = STATE.get(order_id)
                     if not order:
                         return
@@ -919,7 +929,8 @@ def telegram_webhook():
                     requested_time = new_time.strftime("%H:%M")
                     
                     # Send time request to vendors
-                    for vendor in order["vendors"]:
+                    if vendor:
+                        # Multi-vendor: send to specific vendor only
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
                             if order["order_type"] == "shopify":
@@ -933,6 +944,22 @@ def telegram_webhook():
                                 msg,
                                 restaurant_response_keyboard(requested_time, order_id, vendor)
                             )
+                    else:
+                        # Single vendor: send to all vendors
+                        for vendor in order["vendors"]:
+                            vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                            if vendor_chat:
+                                if order["order_type"] == "shopify":
+                                    msg = f"#{order['name'][-2:]} at {requested_time}?"
+                                else:
+                                    addr = order['customer']['address'].split(',')[0]
+                                    msg = f"*{addr}* at {requested_time}?"
+                                
+                                await safe_send_message(
+                                    vendor_chat,
+                                    msg,
+                                    restaurant_response_keyboard(requested_time, order_id, vendor)
+                                )
                     
                     # Update MDG
                     order["requested_time"] = requested_time
@@ -961,6 +988,13 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             "No recent orders found (last 1 hour)"
                         )
+                
+                elif action == "no_recent":
+                    # Handle click on disabled "Same as" button
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        "No recent confirmed orders available to match timing with"
+                    )
                 
                 elif action == "req_exact":
                     order_id = data[1]
