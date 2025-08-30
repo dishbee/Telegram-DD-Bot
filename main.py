@@ -34,6 +34,13 @@ DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
 VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
 
+# Restaurant shortcut mapping (manual mapping per assignment)
+RESTAURANT_SHORTCUTS = {
+    "i Sapori della Toscana": "SA",
+    "Julis Spätzlerei": "JS",
+    # Add more mappings as needed
+}
+
 # Configure request with larger pool to prevent pool timeout
 request_cfg = HTTPXRequest(
     connection_pool_size=32,
@@ -94,18 +101,21 @@ def get_time_intervals(base_time: datetime, count: int = 4) -> List[str]:
     return intervals
 
 def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
-    """Get recent orders (last 1 hour) for 'same time as' functionality"""
+    """Get recent CONFIRMED orders (last 1 hour) for 'same time as' functionality"""
     one_hour_ago = datetime.now() - timedelta(hours=1)
     recent = []
     
     for order_id, order_data in STATE.items():
         if order_id == current_order_id:
             continue
+        # Only include orders with confirmed_time
+        if not order_data.get("confirmed_time"):
+            continue
         if order_data.get("created_at") and order_data["created_at"] > one_hour_ago:
             if order_data.get("order_type") == "shopify":
                 display_name = f"#{order_data['name'][-2:]}"
             else:
-                address_parts = order_data['customer']['address'].split(',')
+                address_parts = order_data['customer']['address'].split(',')  
                 street_info = address_parts[0] if address_parts else "Unknown"
                 display_name = f"*{street_info}*"
             
@@ -357,12 +367,8 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
             logger.info(f"MULTI-VENDOR detected: {vendors}")
             buttons = []
             for vendor in vendors:
-                # Create shortcut name (first letter of first two words, uppercase)
-                words = vendor.split()
-                if len(words) >= 2:
-                    shortcut = (words[0][0] + words[1][0]).upper()
-                else:
-                    shortcut = words[0][:2].upper() if words else "XX"
+                # Use manual shortcut mapping
+                shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
                 logger.info(f"Adding button for vendor: {vendor} (shortcut: {shortcut})")
                 buttons.append([InlineKeyboardButton(
                     f"Request {shortcut}",
@@ -384,7 +390,7 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
         logger.error(f"Error building time request keyboard: {e}")
         return InlineKeyboardMarkup([])
 
-def mdg_time_submenu_keyboard(order_id: str) -> InlineKeyboardMarkup:
+def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
     """Build TIME submenu per assignment: title + 4 buttons + Same as + Exact time"""
     try:
         order = STATE.get(order_id)
@@ -393,20 +399,15 @@ def mdg_time_submenu_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
         # Get order details for title
         address = order['customer']['address'].split(',')[0]  # Street only
-        words = order['vendors'][0].split()
-        if len(words) >= 2:
-            vendor_shortcut = (words[0][0] + words[1][0]).upper()
+        if vendor:
+            vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
         else:
-            vendor_shortcut = words[0][:2].upper() if words else "XX"
+            vendor_shortcut = RESTAURANT_SHORTCUTS.get(order['vendors'][0], order['vendors'][0][:2].upper())
         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
         current_time = datetime.now().strftime("%H:%M")
 
-        # Title line (not clickable)
-        title_text = f"{address} ({vendor_shortcut}, #{order_num}, {current_time}) +"
-
-        # Create buttons
+        # Create buttons (no title button - title is in message text)
         buttons = [
-            [InlineKeyboardButton(title_text, callback_data="title_click")],  # Non-functional title
             [
                 InlineKeyboardButton("+5 mins", callback_data=f"time_plus|{order_id}|5"),
                 InlineKeyboardButton("+10 mins", callback_data=f"time_plus|{order_id}|10")
@@ -414,10 +415,18 @@ def mdg_time_submenu_keyboard(order_id: str) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton("+15 mins", callback_data=f"time_plus|{order_id}|15"),
                 InlineKeyboardButton("+20 mins", callback_data=f"time_plus|{order_id}|20")
-            ],
-            [InlineKeyboardButton("Same as", callback_data=f"req_same|{order_id}")],
-            [InlineKeyboardButton("Request exact time:", callback_data=f"req_exact|{order_id}")]
+            ]
         ]
+
+        # Check if there are confirmed orders for "Same as" button
+        confirmed_orders = get_recent_orders_for_same_time(order_id)
+        has_confirmed = any(order_data.get("confirmed_time") for order_data in STATE.values() 
+                           if order_data.get("confirmed_time"))
+
+        if has_confirmed:
+            buttons.append([InlineKeyboardButton("Same as", callback_data=f"req_same|{order_id}")])
+
+        buttons.append([InlineKeyboardButton("Request exact time:", callback_data=f"req_exact|{order_id}")])
 
         return InlineKeyboardMarkup(buttons)
 
@@ -743,11 +752,12 @@ def telegram_webhook():
                         logger.warning(f"Order {order_id} not found in state")
                         return
                     
-                    # Show smart time suggestions for this vendor
-                    keyboard = build_smart_time_suggestions(order_id, vendor)
+                    # Show TIME submenu for this vendor (same as single-vendor)
+                    keyboard = mdg_time_submenu_keyboard(order_id)
+                    title_text = f"Lederergasse 15 ({RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +"
                     await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"🕒 Select time for {vendor}:",
+                        title_text,
                         keyboard
                     )
                 
@@ -886,9 +896,10 @@ def telegram_webhook():
                     if len(vendors) <= 1:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
                         keyboard = mdg_time_submenu_keyboard(order_id)
+                        title_text = f"{order['customer']['address'].split(',')[0]} ({RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +"
                         await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
-                            "🕒 Select time option:",
+                            title_text,
                             keyboard
                         )
                     else:
@@ -961,10 +972,6 @@ def telegram_webhook():
                         "🕒 Select hour:",
                         exact_time_keyboard(order_id)
                     )
-                
-                elif action == "title_click":
-                    # Title button in TIME submenu - do nothing
-                    pass
                 
                 elif action == "same_selected":
                     order_id, reference_order_id = data[1], data[2]
