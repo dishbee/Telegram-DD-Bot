@@ -86,10 +86,10 @@ def fmt_address(addr: Dict[str, Any]) -> str:
         return "Address formatting error"
 
 def get_time_intervals(base_time: datetime, count: int = 4) -> List[str]:
-    """Generate 10-minute intervals for time picker"""
+    """Generate 5-minute intervals for time picker"""
     intervals = []
     for i in range(count):
-        time_option = base_time + timedelta(minutes=(i + 1) * 10)
+        time_option = base_time + timedelta(minutes=(i + 1) * 5)
         intervals.append(time_option.strftime("%H:%M"))
     return intervals
 
