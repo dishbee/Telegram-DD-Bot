@@ -76,13 +76,28 @@ bot = Bot(token=BOT_TOKEN, request=request_cfg)
 STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
 
-# Create event loop for async operations
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
+# Create event loop for async operations (simplified)
+# loop = asyncio.new_event_loop()
+# asyncio.set_event_loop(loop)
 
 def run_async(coro):
-    """Run async function in background thread"""
-    asyncio.run_coroutine_threadsafe(coro, loop)
+    """Run async function in background thread using asyncio.create_task"""
+    try:
+        # Create a new event loop if one doesn't exist
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        if loop.is_running():
+            # If loop is already running, use create_task
+            asyncio.create_task(coro)
+        else:
+            # If loop is not running, run the coroutine
+            loop.run_until_complete(coro)
+    except Exception as e:
+        logger.error(f"Error running async function: {e}")
 
 # --- HELPERS ---
 def verify_webhook(raw: bytes, hmac_header: str) -> bool:
@@ -1572,14 +1587,6 @@ def shopify_webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     logger.info(f"Starting Complete Assignment Implementation on port {port}")
-    
-    # Start the event loop in a separate thread
-    def run_event_loop():
-        asyncio.set_event_loop(loop)
-        loop.run_forever()
-    
-    loop_thread = threading.Thread(target=run_event_loop)
-    loop_thread.daemon = True
-    loop_thread.start()
-    
+
+    # Simplified async setup for production deployment
     app.run(host="0.0.0.0", port=port, debug=False)
