@@ -34,6 +34,22 @@ DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
 VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
 
+def get_restaurant_shortcut(vendor_name: str) -> str:
+    """Get restaurant shortcut with proper normalization"""
+    if not vendor_name:
+        return ""
+    
+    # Normalize vendor name
+    normalized = vendor_name.strip().lower()
+    
+    # Check for exact matches first (case-insensitive)
+    for key in RESTAURANT_SHORTCUTS:
+        if key.lower() == normalized:
+            return RESTAURANT_SHORTCUTS[key]
+    
+    # Fallback to first two letters
+    return vendor_name.strip()[:2].upper()
+
 # Restaurant shortcut mapping (per assignment in Doc)
 RESTAURANT_SHORTCUTS = {
     "Julis Spätzlerei": "JS",
@@ -123,7 +139,7 @@ def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str
         # Build display name in required format: "Address (Shortcut, #OrderNum, Time)"
         address = order_data['customer']['address'].split(',')[0].strip()
         vendor = order_data.get("vendors", ["Unknown"])[0]
-        shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+        shortcut = get_restaurant_shortcut(vendor)
         order_num = order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
         confirmed_time = order_data.get("confirmed_time", "Unknown")
         
@@ -379,7 +395,7 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
             for vendor in vendors:
                 # Clean vendor name and use manual shortcut mapping
                 clean_vendor = vendor.strip()
-                shortcut = RESTAURANT_SHORTCUTS.get(clean_vendor, clean_vendor[:2].upper())
+                shortcut = get_restaurant_shortcut(clean_vendor)
                 logger.info(f"Adding button for vendor: '{clean_vendor}' (shortcut: {shortcut})")
                 buttons.append([InlineKeyboardButton(
                     f"Request {shortcut}",
@@ -412,10 +428,10 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
         address = order['customer']['address'].split(',')[0]  # Street only
         if vendor:
             clean_vendor = vendor.strip()
-            vendor_shortcut = RESTAURANT_SHORTCUTS.get(clean_vendor, clean_vendor[:2].upper())
+            vendor_shortcut = get_restaurant_shortcut(clean_vendor)
         else:
             clean_vendor = order['vendors'][0].strip()
-            vendor_shortcut = RESTAURANT_SHORTCUTS.get(clean_vendor, clean_vendor[:2].upper())
+            vendor_shortcut = get_restaurant_shortcut(clean_vendor)
         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
         current_time = datetime.now().strftime("%H:%M")
 
@@ -792,14 +808,37 @@ def telegram_webhook():
                         if odata.get("confirmed_time"):
                             confirmed_today.append(odata)
                     
-                    # Build message text
-                    title_text = f"Lederergasse 15 ({RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +\n\n"
-                    if confirmed_today:
-                        title_text += "Same as\n\n"
+                    # Get last confirmed order for title (FIX: show last confirmed, not current)
+                    last_order = get_last_confirmed_order(vendor)
+                    if last_order:
+                        address = last_order['customer']['address'].split(',')[0]
+                        vendor_shortcut = get_restaurant_shortcut(last_order['vendors'][0])
+                        order_num = last_order['name'][-2:] if len(last_order['name']) >= 2 else last_order['name']
+                        confirmed_time = last_order.get('confirmed_time', datetime.now().strftime('%H:%M'))
+                        title_text = f"{address} ({vendor_shortcut}, #{order_num}, {confirmed_time}) +\n\n"
+                    else:
+                        # Fallback if no confirmed orders
+                        title_text = "No previous orders today\n\n"
                     
+                    # Send title message first
                     await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         title_text,
+                        None
+                    )
+                    
+                    # Send "Same as" section if confirmed orders exist
+                    if confirmed_today:
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "Same as",
+                            None
+                        )
+                    
+                    # Send the keyboard with confirmed orders as buttons
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        "",
                         keyboard
                     )
                 
@@ -951,14 +990,37 @@ def telegram_webhook():
                             if odata.get("confirmed_time"):
                                 confirmed_today.append(odata)
                         
-                        # Build message text
-                        title_text = f"{order['customer']['address'].split(',')[0]} ({RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +\n\n"
-                        if confirmed_today:
-                            title_text += "Same as\n\n"
+                        # Get last confirmed order for title (FIX: show last confirmed, not current)
+                        last_order = get_last_confirmed_order(vendors[0] if vendors else None)
+                        if last_order:
+                            address = last_order['customer']['address'].split(',')[0]
+                            vendor_shortcut = get_restaurant_shortcut(last_order['vendors'][0])
+                            order_num = last_order['name'][-2:] if len(last_order['name']) >= 2 else last_order['name']
+                            confirmed_time = last_order.get('confirmed_time', datetime.now().strftime('%H:%M'))
+                            title_text = f"{address} ({vendor_shortcut}, #{order_num}, {confirmed_time}) +\n\n"
+                        else:
+                            # Fallback if no confirmed orders
+                            title_text = "No previous orders today\n\n"
                         
+                        # Send title message first
                         await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             title_text,
+                            None
+                        )
+                        
+                        # Send "Same as" section if confirmed orders exist
+                        if confirmed_today:
+                            await safe_send_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                "Same as",
+                                None
+                            )
+                        
+                        # Send the keyboard with confirmed orders as buttons
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "",
                             keyboard
                         )
                     else:
@@ -1384,7 +1446,7 @@ def shopify_webhook():
         items_text = ""
         
         for item in line_items:
-            vendor = item.get('vendor')
+            vendor = item.get('vendor', '').strip()
             if vendor and vendor in VENDOR_GROUP_MAP:
                 if vendor not in vendors:
                     vendors.append(vendor)
