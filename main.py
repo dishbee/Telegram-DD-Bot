@@ -76,28 +76,14 @@ bot = Bot(token=BOT_TOKEN, request=request_cfg)
 STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
 
-# Create event loop for async operations (simplified)
-# loop = asyncio.new_event_loop()
-# asyncio.set_event_loop(loop)
-
 def run_async(coro):
-    """Run async function in background thread using asyncio.create_task"""
+    """Run async function using Flask's async context"""
     try:
-        # Create a new event loop if one doesn't exist
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        if loop.is_running():
-            # If loop is already running, use create_task
-            asyncio.create_task(coro)
-        else:
-            # If loop is not running, run the coroutine
-            loop.run_until_complete(coro)
-    except Exception as e:
-        logger.error(f"Error running async function: {e}")
+        # Use asyncio.create_task for background execution
+        asyncio.create_task(coro)
+    except RuntimeError:
+        # If no event loop, run synchronously
+        asyncio.run(coro)
 
 # --- HELPERS ---
 def verify_webhook(raw: bytes, hmac_header: str) -> bool:
@@ -835,27 +821,20 @@ def telegram_webhook():
                         # Fallback if no confirmed orders
                         title_text = "No previous orders today\n\n"
                     
-                    # Send title message first
-                    await safe_send_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        title_text,
-                        None
-                    )
-                    
-                    # Send "Same as" section if confirmed orders exist
+                    # Send "Same as" section with keyboard if confirmed orders exist
                     if confirmed_today:
                         await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             "Same as",
-                            None
+                            keyboard
                         )
-                    
-                    # Send the keyboard with confirmed orders as buttons
-                    await safe_send_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        "",
-                        keyboard
-                    )
+                    else:
+                        # No confirmed orders - just send keyboard with time options
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "Select time:",
+                            keyboard
+                        )
                 
                 elif action == "vendor_same":
                     logger.info("VENDOR_SAME: Starting handler")
@@ -1017,27 +996,20 @@ def telegram_webhook():
                             # Fallback if no confirmed orders
                             title_text = "No previous orders today\n\n"
                         
-                        # Send title message first
-                        await safe_send_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            title_text,
-                            None
-                        )
-                        
-                        # Send "Same as" section if confirmed orders exist
+                        # Send "Same as" section with keyboard if confirmed orders exist
                         if confirmed_today:
                             await safe_send_message(
                                 DISPATCH_MAIN_CHAT_ID,
                                 "Same as",
-                                None
+                                keyboard
                             )
-                        
-                        # Send the keyboard with confirmed orders as buttons
-                        await safe_send_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            "",
-                            keyboard
-                        )
+                        else:
+                            # No confirmed orders - just send keyboard with time options
+                            await safe_send_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                "Select time:",
+                                keyboard
+                            )
                     else:
                         # For multi-vendor, this shouldn't happen as they have vendor buttons
                         logger.warning(f"Unexpected req_time for multi-vendor order {order_id}")
