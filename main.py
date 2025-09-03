@@ -34,22 +34,6 @@ DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
 VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
 
-def get_restaurant_shortcut(vendor_name: str) -> str:
-    """Get restaurant shortcut with proper normalization"""
-    if not vendor_name:
-        return ""
-    
-    # Normalize vendor name
-    normalized = vendor_name.strip().lower()
-    
-    # Check for exact matches first (case-insensitive)
-    for key in RESTAURANT_SHORTCUTS:
-        if key.lower() == normalized:
-            return RESTAURANT_SHORTCUTS[key]
-    
-    # Fallback to first two letters
-    return vendor_name.strip()[:2].upper()
-
 # Restaurant shortcut mapping (per assignment in Doc)
 RESTAURANT_SHORTCUTS = {
     "Julis Spätzlerei": "JS",
@@ -76,14 +60,13 @@ bot = Bot(token=BOT_TOKEN, request=request_cfg)
 STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
 
+# Create event loop for async operations
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
 def run_async(coro):
-    """Run async function using Flask's async context"""
-    try:
-        # Use asyncio.create_task for background execution
-        asyncio.create_task(coro)
-    except RuntimeError:
-        # If no event loop, run synchronously
-        asyncio.run(coro)
+    """Run async function in background thread"""
+    asyncio.run_coroutine_threadsafe(coro, loop)
 
 # --- HELPERS ---
 def verify_webhook(raw: bytes, hmac_header: str) -> bool:
@@ -123,36 +106,31 @@ def get_time_intervals(base_time: datetime, count: int = 4) -> List[str]:
     return intervals
 
 def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
-    """Get ALL confirmed orders from TODAY for 'same time as' functionality"""
-    today = datetime.now().date()
+    """Get recent CONFIRMED orders (last 1 hour) for 'same time as' functionality"""
+    one_hour_ago = datetime.now() - timedelta(hours=1)
     recent = []
     
     for order_id, order_data in STATE.items():
         if order_id == current_order_id:
             continue
-        # Only include orders with confirmed_time from today
+        # Only include orders with confirmed_time
         if not order_data.get("confirmed_time"):
             continue
-        created_at = order_data.get("created_at")
-        if not created_at or created_at.date() != today:
-            continue
+        if order_data.get("created_at") and order_data["created_at"] > one_hour_ago:
+            if order_data.get("order_type") == "shopify":
+                display_name = f"#{order_data['name'][-2:]}"
+            else:
+                address_parts = order_data['customer']['address'].split(',')  
+                street_info = address_parts[0] if address_parts else "Unknown"
+                display_name = f"*{street_info}*"
             
-        # Build display name in required format: "Address (Shortcut, #OrderNum, Time)"
-        address = order_data['customer']['address'].split(',')[0].strip()
-        vendor = order_data.get("vendors", ["Unknown"])[0]
-        shortcut = get_restaurant_shortcut(vendor)
-        order_num = order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
-        confirmed_time = order_data.get("confirmed_time", "Unknown")
-        
-        display_name = f"{address} ({shortcut}, #{order_num}, {confirmed_time})"
-        
-        recent.append({
-            "order_id": order_id,
-            "display_name": display_name,
-            "vendor": vendor
-        })
+            recent.append({
+                "order_id": order_id,
+                "display_name": display_name,
+                "vendor": order_data.get("vendors", ["Unknown"])[0]
+            })
     
-    return recent[-10:]  # Return last 10 confirmed orders from today
+    return recent[-10:]
 
 def get_last_confirmed_order(vendor: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Get the most recent order with confirmed time from today"""
@@ -394,10 +372,9 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
             logger.info(f"MULTI-VENDOR detected: {vendors}")
             buttons = []
             for vendor in vendors:
-                # Clean vendor name and use manual shortcut mapping
-                clean_vendor = vendor.strip()
-                shortcut = get_restaurant_shortcut(clean_vendor)
-                logger.info(f"Adding button for vendor: '{clean_vendor}' (shortcut: {shortcut})")
+                # Use manual shortcut mapping
+                shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                logger.info(f"Adding button for vendor: {vendor} (shortcut: {shortcut})")
                 buttons.append([InlineKeyboardButton(
                     f"Request {shortcut}",
                     callback_data=f"req_vendor|{order_id}|{vendor}|{int(datetime.now().timestamp())}"
@@ -428,11 +405,9 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
         # Get order details for title
         address = order['customer']['address'].split(',')[0]  # Street only
         if vendor:
-            clean_vendor = vendor.strip()
-            vendor_shortcut = get_restaurant_shortcut(clean_vendor)
+            vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
         else:
-            clean_vendor = order['vendors'][0].strip()
-            vendor_shortcut = get_restaurant_shortcut(clean_vendor)
+            vendor_shortcut = RESTAURANT_SHORTCUTS.get(order['vendors'][0], order['vendors'][0][:2].upper())
         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
         current_time = datetime.now().strftime("%H:%M")
 
@@ -449,27 +424,16 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
             ]
         ]
 
-        # Check if there are confirmed orders from today
-        today = datetime.now().date()
-        confirmed_today = []
-        
-        for oid, odata in STATE.items():
-            if oid == order_id:
-                continue
-            created_at = odata.get("created_at")
-            if not created_at or created_at.date() != today:
-                continue
-            if odata.get("confirmed_time"):
-                confirmed_today.append(odata)
-        
-        # If confirmed orders exist, add the actual order buttons
-        if confirmed_today:
-            recent = get_recent_orders_for_same_time(order_id)
-            for order_info in recent:
-                buttons.append([InlineKeyboardButton(
-                    order_info['display_name'], 
-                    callback_data=f"same_selected|{order_id}|{order_info['order_id']}"
-                )])
+        # Check if there are confirmed orders for "Same as" button
+        confirmed_orders = get_recent_orders_for_same_time(order_id)
+        has_confirmed = any(order_data.get("confirmed_time") for order_data in STATE.values() 
+                           if order_data.get("confirmed_time"))
+
+        if has_confirmed:
+            buttons.append([InlineKeyboardButton("Same as", callback_data=f"req_same|{order_id}")])
+        else:
+            # Show "Same as" as text when no confirmed orders exist
+            buttons.append([InlineKeyboardButton("Same as (no recent orders)", callback_data="no_recent")])
 
         buttons.append([InlineKeyboardButton("Request exact time:", callback_data=f"req_exact|{order_id}")])
 
@@ -534,7 +498,7 @@ def same_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
         rows = []
         
         for order_info in recent:
-            text = order_info['display_name']
+            text = f"{order_info['display_name']} ({order_info['vendor']})"
             callback = f"same_selected|{order_id}|{order_info['order_id']}"
             rows.append([InlineKeyboardButton(text, callback_data=callback)])
         
@@ -796,45 +760,12 @@ def telegram_webhook():
                     
                     # Show TIME submenu for this vendor (same as single-vendor)
                     keyboard = mdg_time_submenu_keyboard(order_id, vendor)
-                    
-                    # Check if there are confirmed orders from today for message text
-                    today = datetime.now().date()
-                    confirmed_today = []
-                    for oid, odata in STATE.items():
-                        if oid == order_id:
-                            continue
-                        created_at = odata.get("created_at")
-                        if not created_at or created_at.date() != today:
-                            continue
-                        if odata.get("confirmed_time"):
-                            confirmed_today.append(odata)
-                    
-                    # Get last confirmed order for title (FIX: show last confirmed, not current)
-                    last_order = get_last_confirmed_order(vendor)
-                    if last_order:
-                        address = last_order['customer']['address'].split(',')[0]
-                        vendor_shortcut = get_restaurant_shortcut(last_order['vendors'][0])
-                        order_num = last_order['name'][-2:] if len(last_order['name']) >= 2 else last_order['name']
-                        confirmed_time = last_order.get('confirmed_time', datetime.now().strftime('%H:%M'))
-                        title_text = f"{address} ({vendor_shortcut}, #{order_num}, {confirmed_time}) +\n\n"
-                    else:
-                        # Fallback if no confirmed orders
-                        title_text = "No previous orders today\n\n"
-                    
-                    # Send "Same as" section with keyboard if confirmed orders exist
-                    if confirmed_today:
-                        await safe_send_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            "Same as",
-                            keyboard
-                        )
-                    else:
-                        # No confirmed orders - just send keyboard with time options
-                        await safe_send_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            "Select time:",
-                            keyboard
-                        )
+                    title_text = f"Lederergasse 15 ({RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +"
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        title_text,
+                        keyboard
+                    )
                 
                 elif action == "vendor_same":
                     logger.info("VENDOR_SAME: Starting handler")
@@ -971,45 +902,12 @@ def telegram_webhook():
                     if len(vendors) <= 1:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
                         keyboard = mdg_time_submenu_keyboard(order_id)
-                        
-                        # Check if there are confirmed orders from today for message text
-                        today = datetime.now().date()
-                        confirmed_today = []
-                        for oid, odata in STATE.items():
-                            if oid == order_id:
-                                continue
-                            created_at = odata.get("created_at")
-                            if not created_at or created_at.date() != today:
-                                continue
-                            if odata.get("confirmed_time"):
-                                confirmed_today.append(odata)
-                        
-                        # Get last confirmed order for title (FIX: show last confirmed, not current)
-                        last_order = get_last_confirmed_order(vendors[0] if vendors else None)
-                        if last_order:
-                            address = last_order['customer']['address'].split(',')[0]
-                            vendor_shortcut = get_restaurant_shortcut(last_order['vendors'][0])
-                            order_num = last_order['name'][-2:] if len(last_order['name']) >= 2 else last_order['name']
-                            confirmed_time = last_order.get('confirmed_time', datetime.now().strftime('%H:%M'))
-                            title_text = f"{address} ({vendor_shortcut}, #{order_num}, {confirmed_time}) +\n\n"
-                        else:
-                            # Fallback if no confirmed orders
-                            title_text = "No previous orders today\n\n"
-                        
-                        # Send "Same as" section with keyboard if confirmed orders exist
-                        if confirmed_today:
-                            await safe_send_message(
-                                DISPATCH_MAIN_CHAT_ID,
-                                "Same as",
-                                keyboard
-                            )
-                        else:
-                            # No confirmed orders - just send keyboard with time options
-                            await safe_send_message(
-                                DISPATCH_MAIN_CHAT_ID,
-                                "Select time:",
-                                keyboard
-                            )
+                        title_text = f"{order['customer']['address'].split(',')[0]} ({RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +"
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            title_text,
+                            keyboard
+                        )
                     else:
                         # For multi-vendor, this shouldn't happen as they have vendor buttons
                         logger.warning(f"Unexpected req_time for multi-vendor order {order_id}")
@@ -1433,7 +1331,7 @@ def shopify_webhook():
         items_text = ""
         
         for item in line_items:
-            vendor = item.get('vendor', '').strip()
+            vendor = item.get('vendor')
             if vendor and vendor in VENDOR_GROUP_MAP:
                 if vendor not in vendors:
                     vendors.append(vendor)
@@ -1559,6 +1457,14 @@ def shopify_webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     logger.info(f"Starting Complete Assignment Implementation on port {port}")
-
-    # Simplified async setup for production deployment
+    
+    # Start the event loop in a separate thread
+    def run_event_loop():
+        asyncio.set_event_loop(loop)
+        loop.run_forever()
+    
+    loop_thread = threading.Thread(target=run_event_loop)
+    loop_thread.daemon = True
+    loop_thread.start()
+    
     app.run(host="0.0.0.0", port=port, debug=False)
