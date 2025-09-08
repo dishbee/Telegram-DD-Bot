@@ -25,27 +25,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# --- FLASK APP SETUP ---
 app = Flask(__name__)
 
-# --- ENV ---
+# --- ENVIRONMENT VARIABLES ---
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
 DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
 VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
 
+# --- CONSTANTS AND MAPPINGS ---
 # Restaurant shortcut mapping (per assignment in Doc)
 RESTAURANT_SHORTCUTS = {
     "Julis Spätzlerei": "JS",
     "Zweite Heimat": "ZH", 
     "Kahaani": "KA",
-    "i Sapori Della Toscana": "SA",
-    "Leckerrolls": "LR",
+    "i Sapori della Toscana": "SA",
+    "Leckerolls": "LR",
     "dean & david": "DD",
     "Pommes Freunde": "PF",
     "Wittelsbacher Apotheke": "AP"
 }
 
+# --- TELEGRAM BOT CONFIGURATION ---
 # Configure request with larger pool to prevent pool timeout
 request_cfg = HTTPXRequest(
     connection_pool_size=32,
@@ -56,7 +59,7 @@ request_cfg = HTTPXRequest(
 )
 bot = Bot(token=BOT_TOKEN, request=request_cfg)
 
-# --- STATE ---
+# --- GLOBAL STATE ---
 STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
 
@@ -68,7 +71,7 @@ def run_async(coro):
     """Run async function in background thread"""
     asyncio.run_coroutine_threadsafe(coro, loop)
 
-# --- HELPERS ---
+# --- HELPER FUNCTIONS ---
 def verify_webhook(raw: bytes, hmac_header: str) -> bool:
     """Verify Shopify webhook HMAC"""
     try:
@@ -351,7 +354,7 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
         logger.error(f"Error building vendor details: {e}")
         return f"Error formatting details for {vendor}"
 
-def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
+# --- KEYBOARD FUNCTIONS ---
     """Build MDG time request buttons per assignment requirements"""
     try:
         order = STATE.get(order_id)
@@ -616,7 +619,7 @@ def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
         logger.error(f"Error building exact hour keyboard: {e}")
         return InlineKeyboardMarkup([])
 
-async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN):
+# --- ASYNC UTILITY FUNCTIONS ---
     """Send message with error handling and retry logic"""
     max_retries = 3
     for attempt in range(max_retries):
@@ -658,7 +661,7 @@ async def safe_delete_message(chat_id: int, message_id: int):
     except Exception as e:
         logger.error(f"Error deleting message {message_id}: {e}")
 
-# --- HEALTH CHECK ---
+# --- WEBHOOK ENDPOINTS ---
 @app.route("/", methods=["GET"])
 def health_check():
     """Health check endpoint for monitoring"""
@@ -684,8 +687,6 @@ def telegram_webhook():
 
         # Answer callback query immediately (synchronously)
         try:
-            # Use requests library for synchronous call
-            import requests
             response = requests.post(
                 f"https://api.telegram.org/bot{BOT_TOKEN}/answerCallbackQuery",
                 json={"callback_query_id": cq["id"]},
@@ -1453,7 +1454,7 @@ def shopify_webhook():
         logger.error(f"Shopify webhook error: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
-# --- APP ENTRY ---
+# --- APPLICATION ENTRY POINT ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     logger.info(f"Starting Complete Assignment Implementation on port {port}")
