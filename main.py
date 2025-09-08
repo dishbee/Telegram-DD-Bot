@@ -206,17 +206,22 @@ def build_smart_time_suggestions(order_id: str, vendor: Optional[str] = None) ->
         ])
 
 def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
-    """Build MDG dispatch message per assignment requirements"""
+    """Build MDG dispatch message per user's exact specifications"""
     try:
         order_type = order.get("order_type", "shopify")
         vendors = order.get("vendors", [])
         
-        # Title: "dishbee + Name of restaurant(s)" for Shopify
+        # 1. Title with order number and shortcuts (only for Shopify)
         if order_type == "shopify":
+            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
             if len(vendors) > 1:
-                title = f"dishbee + {', '.join(vendors)}"
+                # Multi-vendor: use shortcuts
+                shortcuts = [RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors]
+                title = f"🔖#{order_num} - dishbee ({'+'.join(shortcuts)})"
             else:
-                title = f"dishbee + {vendors[0] if vendors else 'Unknown'}"
+                # Single vendor
+                shortcut = RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper()) if vendors else ""
+                title = f"🔖#{order_num} - dishbee ({shortcut})"
         else:
             # For HubRise/Smoothr: only restaurant name
             title = vendors[0] if vendors else "Unknown"
@@ -228,7 +233,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
             if len(order_name) >= 2:
                 order_number_line = f"#{order_name[-2:]}\n"
         
-        # Address - only street, building number and zip code (no city!) in BOLD
+        # 2. Address as Google Maps link (no city)
         full_address = order['customer']['address']
         # Remove city from address - split by comma and take first parts (street + zip)
         address_parts = full_address.split(',')
@@ -238,32 +243,31 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         else:
             clean_address = address_parts[0].strip()
         
-        # Delivery time (only for Smoothr/HubRise)
-        delivery_time_line = ""
-        if order_type in ["smoothr", "hubrise"]:
-            delivery_time = order.get('delivery_time', 'ASAP')
-            if delivery_time != "ASAP":
-                delivery_time_line = f"Requested delivery time: {delivery_time}\n"
+        # Create Google Maps link
+        maps_link = f"https://www.google.com/maps?q={clean_address.replace(' ', '+')}"
+        address_line = f"[{clean_address}]({maps_link})"
         
-        # Note (if added)
+        # 3. Note (if added)
         note_line = ""
         note = order.get("note", "")
         if note:
             note_line = f"Note: {note}\n"
         
-        # Tips (if added)
+        # 4. Tips (if added)
         tips_line = ""
         tips = order.get("tips", "")
         if tips:
             tips_line = f"Tips: {tips}\n"
         
-        # Payment method - Paid/Cash (only for Shopify)
+        # 5. Payment method - CoD with total (only for Shopify)
         payment_line = ""
         if order_type == "shopify":
             payment = order.get("payment_method", "Paid")
-            payment_line = f"Payment: {payment}\n"
+            if payment.lower() == "cash on delivery":
+                total = order.get("total", "0.00")
+                payment_line = f"Payment: CoD ({total})\n"
         
-        # Products with vendor names above (for multi-vendor)
+        # 6. Items (same as current implementation)
         if order_type == "shopify" and len(vendors) > 1:
             # Multi-vendor: show vendor name above each vendor's products
             vendor_items = order.get("vendor_items", {})
@@ -277,19 +281,22 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
             # Single vendor: just list items
             items_text = order.get("items_text", "")
         
-        # Customer name
+        # 7. Customer name
         customer_name = order['customer']['name']
+        
+        # 8. Clickable phone number (tel: link)
+        phone = order['customer']['phone']
+        phone_line = f"[{phone}](tel:{phone})"
         
         # Build final message
         text = f"{title}\n"
-        text += order_number_line
-        text += f"**{clean_address}**\n"  # Bold font for address
-        text += delivery_time_line
+        text += f"{address_line}\n"
         text += note_line
         text += tips_line
         text += payment_line
         text += f"{items_text}\n"
-        text += f"{customer_name}"
+        text += f"{customer_name}\n"
+        text += f"{phone_line}"
         
         return text
     except Exception as e:
