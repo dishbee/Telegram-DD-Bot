@@ -355,6 +355,7 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
         return f"Error formatting details for {vendor}"
 
 # --- KEYBOARD FUNCTIONS ---
+def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build MDG time request buttons per assignment requirements"""
     try:
         order = STATE.get(order_id)
@@ -620,6 +621,7 @@ def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([])
 
 # --- ASYNC UTILITY FUNCTIONS ---
+async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN):
     """Send message with error handling and retry logic"""
     max_retries = 3
     for attempt in range(max_retries):
