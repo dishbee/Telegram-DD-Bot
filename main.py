@@ -663,6 +663,35 @@ async def safe_delete_message(chat_id: int, message_id: int):
     except Exception as e:
         logger.error(f"Error deleting message {message_id}: {e}")
 
+async def cleanup_mdg_messages(order_id: str):
+    """Clean up additional MDG messages, keeping only the original order message"""
+    order = STATE.get(order_id)
+    if not order:
+        return
+    
+    additional_messages = order.get("mdg_additional_messages", [])
+    if not additional_messages:
+        return
+    
+    logger.info(f"Cleaning up {len(additional_messages)} additional MDG messages for order {order_id}")
+    
+    for message_id in additional_messages:
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                await bot.delete_message(chat_id=DISPATCH_MAIN_CHAT_ID, message_id=message_id)
+                logger.info(f"Successfully deleted MDG message {message_id} for order {order_id}")
+                break
+            except Exception as e:
+                logger.error(f"Attempt {attempt + 1} failed to delete message {message_id}: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                else:
+                    logger.error(f"Failed to delete message {message_id} after {max_retries} attempts")
+    
+    # Clear the list after cleanup
+    order["mdg_additional_messages"] = []
+
 # --- WEBHOOK ENDPOINTS ---
 @app.route("/", methods=["GET"])
 def health_check():
@@ -717,11 +746,16 @@ def telegram_webhook():
                     logger.info(f"Selected vendor {vendor} for order {order_id}")
                     
                     # Send vendor-specific time request buttons
-                    await safe_send_message(
+                    msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         f"📍 Request time from {vendor}:",
                         vendor_time_keyboard(order_id, vendor)
                     )
+                    
+                    # Track additional message for cleanup
+                    order = STATE.get(order_id)
+                    if order:
+                        order["mdg_additional_messages"].append(msg.message_id)
                 
                 # VENDOR-SPECIFIC ACTIONS
                 elif action == "vendor_asap":
@@ -748,10 +782,13 @@ def telegram_webhook():
                         )
                     
                     # Update MDG status
-                    await safe_send_message(
+                    status_msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         f"✅ ASAP request sent to {vendor}"
                     )
+                    
+                    # Clean up additional MDG messages
+                    await cleanup_mdg_messages(order_id)
                 
                 elif action == "vendor_time":
                     order_id, vendor = data[1], data[2]
@@ -764,11 +801,14 @@ def telegram_webhook():
                     # Show TIME submenu for this vendor (same as single-vendor)
                     keyboard = mdg_time_submenu_keyboard(order_id, vendor)
                     title_text = f"Lederergasse 15 ({RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +"
-                    await safe_send_message(
+                    msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         title_text,
                         keyboard
                     )
+                    
+                    # Track additional message for cleanup
+                    order["mdg_additional_messages"].append(msg.message_id)
                 
                 elif action == "vendor_same":
                     logger.info("VENDOR_SAME: Starting handler")
@@ -777,16 +817,24 @@ def telegram_webhook():
                     
                     recent = get_recent_orders_for_same_time(order_id)
                     if recent:
-                        await safe_send_message(
+                        msg = await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             f"🔗 Select order to match timing for {vendor}:",
                             same_time_keyboard(order_id)
                         )
+                        # Track additional message for cleanup
+                        order = STATE.get(order_id)
+                        if order:
+                            order["mdg_additional_messages"].append(msg.message_id)
                     else:
-                        await safe_send_message(
+                        msg = await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             "No recent orders found (last 1 hour)"
                         )
+                        # Track additional message for cleanup
+                        order = STATE.get(order_id)
+                        if order:
+                            order["mdg_additional_messages"].append(msg.message_id)
                 
                 elif action == "vendor_exact":
                     logger.info("VENDOR_EXACT: Starting handler")
@@ -794,11 +842,16 @@ def telegram_webhook():
                     logger.info(f"VENDOR_EXACT: Processing for order {order_id}, vendor {vendor}")
                     
                     # Show exact time picker
-                    await safe_send_message(
+                    msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         f"🕒 Set exact time for {vendor}:",
                         exact_time_keyboard(order_id)
                     )
+                    
+                    # Track additional message for cleanup
+                    order = STATE.get(order_id)
+                    if order:
+                        order["mdg_additional_messages"].append(msg.message_id)
                 
                 elif action == "smart_time":
                     order_id, vendor, selected_time = data[1], data[2], data[3]
@@ -842,10 +895,13 @@ def telegram_webhook():
                     
                     # Update state and MDG
                     order["requested_time"] = selected_time
-                    await safe_send_message(
+                    status_msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         f"✅ Time request ({selected_time}) sent to {vendor if vendor != 'all' else 'vendors'}"
                     )
+                    
+                    # Clean up additional MDG messages
+                    await cleanup_mdg_messages(order_id)
                 
                 # ORIGINAL TIME REQUEST ACTIONS (MDG)
                 elif action == "req_asap":
@@ -889,6 +945,9 @@ def telegram_webhook():
                         mdg_text,
                         mdg_time_request_keyboard(order_id)  # Keep same buttons
                     )
+                    
+                    # Clean up additional MDG messages
+                    await cleanup_mdg_messages(order_id)
                 
                 elif action == "req_time":
                     order_id = data[1]
@@ -906,11 +965,14 @@ def telegram_webhook():
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
                         keyboard = mdg_time_submenu_keyboard(order_id)
                         title_text = f"{order['customer']['address'].split(',')[0]} ({RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +"
-                        await safe_send_message(
+                        msg = await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             title_text,
                             keyboard
                         )
+                        
+                        # Track additional message for cleanup
+                        order["mdg_additional_messages"].append(msg.message_id)
                     else:
                         # For multi-vendor, this shouldn't happen as they have vendor buttons
                         logger.warning(f"Unexpected req_time for multi-vendor order {order_id}")
@@ -970,6 +1032,9 @@ def telegram_webhook():
                         mdg_text,
                         mdg_time_request_keyboard(order_id)
                     )
+                    
+                    # Clean up additional MDG messages
+                    await cleanup_mdg_messages(order_id)
                 
                 elif action == "req_same":
                     order_id = data[1]
@@ -978,34 +1043,56 @@ def telegram_webhook():
                     recent = get_recent_orders_for_same_time(order_id)
                     if recent:
                         keyboard = same_time_keyboard(order_id)
-                        await safe_send_message(
+                        msg = await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             "🔗 Select order to match timing:",
                             keyboard
                         )
+                        
+                        # Track additional message for cleanup
+                        order = STATE.get(order_id)
+                        if order:
+                            order["mdg_additional_messages"].append(msg.message_id)
                     else:
-                        await safe_send_message(
+                        msg = await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             "No recent orders found (last 1 hour)"
                         )
+                        
+                        # Track additional message for cleanup
+                        order = STATE.get(order_id)
+                        if order:
+                            order["mdg_additional_messages"].append(msg.message_id)
                 
                 elif action == "no_recent":
                     # Handle click on disabled "Same as" button
-                    await safe_send_message(
+                    msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         "No recent confirmed orders available to match timing with"
                     )
+                    
+                    # Track additional message for cleanup
+                    order_id = data[1] if len(data) > 1 else None
+                    if order_id:
+                        order = STATE.get(order_id)
+                        if order:
+                            order["mdg_additional_messages"].append(msg.message_id)
                 
                 elif action == "req_exact":
                     order_id = data[1]
                     logger.info(f"Processing REQUEST EXACT TIME for order {order_id}")
                     
                     # Show hour picker for exact time
-                    await safe_send_message(
+                    msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         "🕒 Select hour:",
                         exact_time_keyboard(order_id)
                     )
+                    
+                    # Track additional message for cleanup
+                    order = STATE.get(order_id)
+                    if order:
+                        order["mdg_additional_messages"].append(msg.message_id)
                 
                 elif action == "same_selected":
                     order_id, reference_order_id = data[1], data[2]
@@ -1056,6 +1143,9 @@ def telegram_webhook():
                         mdg_text,
                         mdg_time_request_keyboard(order_id)
                     )
+                    
+                    # Clean up additional MDG messages
+                    await cleanup_mdg_messages(order_id)
                 
                 # EXACT TIME ACTIONS
                 elif action == "exact_hour":
@@ -1109,6 +1199,9 @@ def telegram_webhook():
                     chat_id = cq["message"]["chat"]["id"]
                     message_id = cq["message"]["message_id"]
                     await safe_delete_message(chat_id, message_id)
+                    
+                    # Clean up additional MDG messages
+                    await cleanup_mdg_messages(order_id)
                 
                 elif action == "exact_back_hours":
                     order_id = data[1]
@@ -1386,7 +1479,8 @@ def shopify_webhook():
             "vendor_expanded": {},
             "requested_time": None,
             "confirmed_time": None,
-            "status": "new"
+            "status": "new",
+            "mdg_additional_messages": []  # Track additional MDG messages for cleanup
         }
         
         # Save order to STATE first
