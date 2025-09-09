@@ -279,9 +279,13 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         payment_line = ""
         if order_type == "shopify":
             payment = order.get("payment_method", "Paid")
+            total = order.get("total", "0.00€")
+            
             if payment.lower() == "cash on delivery":
-                total = order.get("total", "0.00")
-                payment_line = f"Payment: CoD ({total})\n"
+                payment_line = f"Cash on delivery: {total}\n"
+            else:
+                # For paid orders, just show the total
+                payment_line = f"{total}\n"
         
         # 6. Items (same as current implementation)
         if order_type == "shopify" and len(vendors) > 1:
@@ -646,7 +650,7 @@ def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([])
 
 # --- ASYNC UTILITY FUNCTIONS ---
-async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN):
+async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
     """Send message with error handling and retry logic"""
     max_retries = 3
     for attempt in range(max_retries):
@@ -656,7 +660,8 @@ async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mo
                 chat_id=chat_id, 
                 text=text, 
                 reply_markup=reply_markup, 
-                parse_mode=parse_mode
+                parse_mode=parse_mode,
+                disable_web_page_preview=disable_web_page_preview
             )
         except Exception as e:
             logger.error(f"Send message attempt {attempt + 1} failed: {e}")
@@ -667,7 +672,7 @@ async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mo
                 logger.error(f"Failed to send message after {max_retries} attempts: {e}")
                 raise
 
-async def safe_edit_message(chat_id: int, message_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN):
+async def safe_edit_message(chat_id: int, message_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
     """Edit message with error handling"""
     try:
         await bot.edit_message_text(
@@ -675,7 +680,8 @@ async def safe_edit_message(chat_id: int, message_id: int, text: str, reply_mark
             message_id=message_id,
             text=text,
             reply_markup=reply_markup,
-            parse_mode=parse_mode
+            parse_mode=parse_mode,
+            disable_web_page_preview=disable_web_page_preview
         )
     except Exception as e:
         logger.error(f"Error editing message: {e}")
@@ -1499,6 +1505,35 @@ def shopify_webhook():
             is_pickup = True
             logger.info("Pickup order detected (Abholung found in payload)")
         
+        # Extract payment method and total from Shopify payload
+        payment_method = "Paid"  # Default
+        total_price = "0.00"     # Default
+        
+        # Check payment gateway names for CoD detection
+        payment_gateways = payload.get("payment_gateway_names", [])
+        if payment_gateways:
+            gateway_str = " ".join(payment_gateways).lower()
+            if "cash" in gateway_str and "delivery" in gateway_str:
+                payment_method = "Cash on Delivery"
+        
+        # Check transactions for more detailed payment info
+        transactions = payload.get("transactions", [])
+        for transaction in transactions:
+            gateway = transaction.get("gateway", "").lower()
+            if "cash" in gateway and "delivery" in gateway:
+                payment_method = "Cash on Delivery"
+                break
+        
+        # Extract total price
+        total_price_raw = payload.get("total_price", "0.00")
+        try:
+            # Format as currency with 2 decimal places
+            total_price = f"{float(total_price_raw):.2f}€"
+        except (ValueError, TypeError):
+            total_price = "0.00€"
+        
+        logger.info(f"Payment method: {payment_method}, Total: {total_price}")
+        
         # Build order object
         order = {
             "name": order_name,
@@ -1513,7 +1548,8 @@ def shopify_webhook():
             "vendor_items": vendor_items,
             "note": payload.get("note", ""),
             "tips": "",  # Extract from payload if available
-            "payment_method": "Paid",  # Determine from payload
+            "payment_method": payment_method,
+            "total": total_price,
             "delivery_time": "ASAP",
             "is_pickup": is_pickup,
             "created_at": datetime.now(),
