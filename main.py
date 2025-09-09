@@ -71,6 +71,22 @@ def run_async(coro):
     """Run async function in background thread"""
     asyncio.run_coroutine_threadsafe(coro, loop)
 
+def validate_phone(phone: str) -> Optional[str]:
+    """Validate and format phone number for tel: links"""
+    if not phone or phone == "N/A":
+        return None
+    
+    # Remove non-numeric characters except + and spaces
+    import re
+    cleaned = re.sub(r'[^\d+\s]', '', phone).strip()
+    
+    # Basic validation: must have at least 7 digits
+    digits_only = re.sub(r'\D', '', cleaned)
+    if len(digits_only) < 7:
+        return None
+    
+    return cleaned
+
 # --- HELPER FUNCTIONS ---
 def verify_webhook(raw: bytes, hmac_header: str) -> bool:
     """Verify Shopify webhook HMAC"""
@@ -284,9 +300,11 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         # 7. Customer name
         customer_name = order['customer']['name']
         
-        # 8. Clickable phone number (tel: link)
+        # 8. Clickable phone number (tel: link) - only if valid
         phone = order['customer']['phone']
-        phone_line = f"[{phone}](tel:{phone})"
+        phone_line = ""
+        if phone and phone != "N/A":
+            phone_line = f"[{phone}](tel:{phone})\n"
         
         # Build final message
         text = f"{title}\n"
@@ -296,7 +314,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         text += payment_line
         text += f"{items_text}\n"
         text += f"{customer_name}\n"
-        text += f"{phone_line}"
+        text += phone_line
         
         return text
     except Exception as e:
@@ -1422,9 +1440,26 @@ def shopify_webhook():
 
         # Extract order data
         order_name = payload.get("name", "Unknown")
+        
+        # Extract customer data with enhanced phone extraction
         customer = payload.get("customer") or {}
         customer_name = f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip() or "Unknown"
-        phone = customer.get("phone") or payload.get("phone") or "N/A"
+        
+        # Enhanced phone extraction from multiple sources
+        phone = (
+            customer.get("phone") or 
+            payload.get("phone") or 
+            payload.get("billing_address", {}).get("phone") or 
+            payload.get("shipping_address", {}).get("phone") or 
+            "N/A"
+        )
+        
+        # Validate and format phone
+        phone = validate_phone(phone)
+        if not phone:
+            logger.warning(f"Phone number missing or invalid for order {order_id}")
+            phone = "N/A"
+        
         address = fmt_address(payload.get("shipping_address") or {})
         
         # Extract vendors from line items
