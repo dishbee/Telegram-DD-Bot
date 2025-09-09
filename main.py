@@ -227,7 +227,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         order_type = order.get("order_type", "shopify")
         vendors = order.get("vendors", [])
         
-        # 1. Title with order number and shortcuts (only for Shopify)
+        # 1. Title with order number and shortcuts (only for Shopify) - add space after emoji
         if order_type == "shopify":
             order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
             if len(vendors) > 1:
@@ -242,51 +242,51 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
             # For HubRise/Smoothr: only restaurant name
             title = vendors[0] if vendors else "Unknown"
         
-        # Order number with last two digits (only for Shopify)
-        order_number_line = ""
-        if order_type == "shopify":
-            order_name = order.get('name', '')
-            if len(order_name) >= 2:
-                order_number_line = f"#{order_name[-2:]}\n"
+        # 2. Customer name on second line with emoji
+        customer_name = order['customer']['name']
+        customer_line = f"🧑 {customer_name}"
         
-        # 2. Address as simple text format (Street Name (ZIP))
+        # 3. Address as Google Maps link with new format
         full_address = order['customer']['address']
-        # Remove city from address - split by comma and take first parts (street + zip)
+        # Parse address: split by comma to get street and zip
         address_parts = full_address.split(',')
         if len(address_parts) >= 2:
-            # Take street + zip, skip city
-            clean_address = f"{address_parts[0].strip()} ({address_parts[-1].strip()})"
+            street_part = address_parts[0].strip()
+            zip_part = address_parts[-1].strip()
+            clean_address = f"{street_part} ({zip_part})"
         else:
-            clean_address = address_parts[0].strip()
+            # Fallback if parsing fails
+            clean_address = full_address.strip()
         
-        address_line = clean_address
+        # Create Google Maps link
+        maps_link = f"https://www.google.com/maps?q={clean_address.replace(' ', '+')}"
+        address_line = f"🗺️ [{clean_address}]({maps_link})"
         
-        # 3. Note (if added)
+        # 4. Note (if added)
         note_line = ""
         note = order.get("note", "")
         if note:
             note_line = f"Note: {note}\n"
         
-        # 4. Tips (if added)
+        # 5. Tips (if added)
         tips_line = ""
         tips = order.get("tips", "")
         if tips:
-            tips_line = f"Tips: {tips}\n"
+            tips_line = f"Tip: {tips}€\n"
         
-        # 5. Payment method - CoD with total (only for Shopify)
+        # 6. Payment method - CoD with total (only for Shopify)
         payment_line = ""
-        cod_payment_line = ""
         if order_type == "shopify":
             payment = order.get("payment_method", "Paid")
             total = order.get("total", "0.00€")
             
             if payment.lower() == "cash on delivery":
-                cod_payment_line = f"Cash on delivery: {total}\n"
+                payment_line = f"Cash on delivery: {total}\n"
             else:
-                # For paid orders, show total after products
-                payment_line = f"{total}\n"
+                # For paid orders, just show the total below products
+                payment_line = ""
         
-        # 6. Items (same as current implementation)
+        # 7. Items (remove dashes)
         if order_type == "shopify" and len(vendors) > 1:
             # Multi-vendor: show vendor name above each vendor's products
             vendor_items = order.get("vendor_items", {})
@@ -295,51 +295,43 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
                 items_text += f"\n{vendor}:\n"
                 vendor_products = vendor_items.get(vendor, [])
                 for item in vendor_products:
-                    # Remove leading dash from product lines
-                    clean_item = item.lstrip('-').strip()
+                    # Remove leading dash
+                    clean_item = item.lstrip('- ').strip()
                     items_text += f"{clean_item}\n"
         else:
             # Single vendor: just list items
             items_text = order.get("items_text", "")
-            # Remove leading dash from product lines
-            if items_text:
-                items_lines = items_text.split('\n')
-                clean_lines = []
-                for line in items_lines:
-                    if line.strip():
-                        clean_lines.append(line.lstrip('-').strip())
-                    else:
-                        clean_lines.append(line)
-                items_text = '\n'.join(clean_lines)
+            # Remove leading dashes from all lines
+            lines = items_text.split('\n')
+            clean_lines = []
+            for line in lines:
+                if line.strip():
+                    clean_line = line.lstrip('- ').strip()
+                    clean_lines.append(clean_line)
+            items_text = '\n'.join(clean_lines)
         
-        # 7. Customer name
-        customer_name = order['customer']['name']
+        # Add total to items_text
+        total = order.get("total", "0.00€")
+        if order_type == "shopify":
+            payment = order.get("payment_method", "Paid")
+            if payment.lower() != "cash on delivery":
+                # For paid orders, show total here
+                items_text += f"\n{total}"
         
-        # 8. Phone number as plain text - only if valid
+        # 8. Clickable phone number (tel: link) - only if valid
         phone = order['customer']['phone']
         phone_line = ""
         if phone and phone != "N/A":
-            phone_line = f"Phone number: {phone}\n"
+            phone_line = f"[{phone}](tel:{phone})\n"
         
-        # Build final message
+        # Build final message with new structure
         text = f"{title}\n"
-        text += f"{customer_name}\n"
+        text += f"{customer_line}\n\n"  # Customer name + empty line
         text += f"{address_line}\n"
-        text += "\n"  # Empty line after address
         text += note_line
         text += tips_line
-        
-        # For CoD orders, show payment before products
-        if cod_payment_line:
-            text += cod_payment_line
-        
-        text += f"{items_text}\n"
-        text += "\n"  # Empty line after products
-        
-        # For paid orders, show payment after products
-        if payment_line:
-            text += payment_line
-        
+        text += payment_line
+        text += f"{items_text}\n\n"  # Items + empty line
         text += phone_line
         
         return text
