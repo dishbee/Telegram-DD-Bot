@@ -233,11 +233,11 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
             if len(vendors) > 1:
                 # Multi-vendor: use shortcuts
                 shortcuts = [RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors]
-                title = f"🔖#{order_num} - dishbee ({'+'.join(shortcuts)})"
+                title = f"🔖 #{order_num} - dishbee ({'+'.join(shortcuts)})"
             else:
                 # Single vendor
                 shortcut = RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper()) if vendors else ""
-                title = f"🔖#{order_num} - dishbee ({shortcut})"
+                title = f"🔖 #{order_num} - dishbee ({shortcut})"
         else:
             # For HubRise/Smoothr: only restaurant name
             title = vendors[0] if vendors else "Unknown"
@@ -249,19 +249,17 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
             if len(order_name) >= 2:
                 order_number_line = f"#{order_name[-2:]}\n"
         
-        # 2. Address as Google Maps link (no city)
+        # 2. Address as simple text format (Street Name (ZIP))
         full_address = order['customer']['address']
         # Remove city from address - split by comma and take first parts (street + zip)
         address_parts = full_address.split(',')
         if len(address_parts) >= 2:
             # Take street + zip, skip city
-            clean_address = f"{address_parts[0].strip()}, {address_parts[-1].strip()}"
+            clean_address = f"{address_parts[0].strip()} ({address_parts[-1].strip()})"
         else:
             clean_address = address_parts[0].strip()
         
-        # Create Google Maps link
-        maps_link = f"https://www.google.com/maps?q={clean_address.replace(' ', '+')}"
-        address_line = f"[{clean_address}]({maps_link})"
+        address_line = clean_address
         
         # 3. Note (if added)
         note_line = ""
@@ -277,14 +275,15 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         
         # 5. Payment method - CoD with total (only for Shopify)
         payment_line = ""
+        cod_payment_line = ""
         if order_type == "shopify":
             payment = order.get("payment_method", "Paid")
             total = order.get("total", "0.00€")
             
             if payment.lower() == "cash on delivery":
-                payment_line = f"Cash on delivery: {total}\n"
+                cod_payment_line = f"Cash on delivery: {total}\n"
             else:
-                # For paid orders, just show the total
+                # For paid orders, show total after products
                 payment_line = f"{total}\n"
         
         # 6. Items (same as current implementation)
@@ -296,28 +295,51 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
                 items_text += f"\n{vendor}:\n"
                 vendor_products = vendor_items.get(vendor, [])
                 for item in vendor_products:
-                    items_text += f"{item}\n"
+                    # Remove leading dash from product lines
+                    clean_item = item.lstrip('-').strip()
+                    items_text += f"{clean_item}\n"
         else:
             # Single vendor: just list items
             items_text = order.get("items_text", "")
+            # Remove leading dash from product lines
+            if items_text:
+                items_lines = items_text.split('\n')
+                clean_lines = []
+                for line in items_lines:
+                    if line.strip():
+                        clean_lines.append(line.lstrip('-').strip())
+                    else:
+                        clean_lines.append(line)
+                items_text = '\n'.join(clean_lines)
         
         # 7. Customer name
         customer_name = order['customer']['name']
         
-        # 8. Clickable phone number (tel: link) - only if valid
+        # 8. Phone number as plain text - only if valid
         phone = order['customer']['phone']
         phone_line = ""
         if phone and phone != "N/A":
-            phone_line = f"[{phone}](tel:{phone})\n"
+            phone_line = f"Phone number: {phone}\n"
         
         # Build final message
         text = f"{title}\n"
+        text += f"{customer_name}\n"
         text += f"{address_line}\n"
+        text += "\n"  # Empty line after address
         text += note_line
         text += tips_line
-        text += payment_line
+        
+        # For CoD orders, show payment before products
+        if cod_payment_line:
+            text += cod_payment_line
+        
         text += f"{items_text}\n"
-        text += f"{customer_name}\n"
+        text += "\n"  # Empty line after products
+        
+        # For paid orders, show payment after products
+        if payment_line:
+            text += payment_line
+        
         text += phone_line
         
         return text
