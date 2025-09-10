@@ -260,7 +260,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         
         # Create Google Maps link
         maps_link = f"https://www.google.com/maps?q={clean_address.replace(' ', '+')}"
-        address_line = f"🗺️ {clean_address}"
+        address_line = f"🗺️ [{clean_address}]({maps_link})"
         
         # 4. Note (if added)
         note_line = ""
@@ -270,9 +270,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         
         # 5. Tips (if added)
         tips_line = ""
-        tips = order.get("tips", "")
-        if tips and tips != "":
-            tips_line = f"❕ Tip: {tips}€\n"
+        tips = order.get("tips", 0.0)
+        if tips and float(tips) > 0:
+            tips_line = f"❕ Tip: {float(tips):.2f}€\n"
         
         # 6. Payment method - CoD with total (only for Shopify)
         payment_line = ""
@@ -327,7 +327,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         # Build final message with new structure
         text = f"{title}\n"
         text += f"{customer_line}\n\n"  # Customer name + empty line
-        text += f"{address_line}\n\n"  # Address + empty line
+        text += f"{address_line}\n"
         text += note_line
         text += tips_line
         text += payment_line
@@ -1538,14 +1538,31 @@ def shopify_webhook():
                 payment_method = "Cash on Delivery"
                 break
         
-        # Extract tips from Shopify payload
-        tips = payload.get("total_tip", "0.00")  # Adjust field name based on actual payload
-        if tips and float(tips) > 0:
-            tips = f"{float(tips):.2f}"
-        else:
-            tips = ""
+        # Extract total price
+        total_price_raw = payload.get("total_price", "0.00")
+        try:
+            # Format as currency with 2 decimal places
+            total_price = f"{float(total_price_raw):.2f}€"
+        except (ValueError, TypeError):
+            total_price = "0.00€"
         
-        logger.info(f"Tips extracted: {tips}")
+        logger.info(f"Payment method: {payment_method}, Total: {total_price}")
+        
+        # Extract tips from multiple possible fields
+        tips = 0.0
+        try:
+            # Check common Shopify tip fields
+            if payload.get("total_tip"):
+                tips = float(payload["total_tip"])
+            elif payload.get("tip_money") and payload["tip_money"].get("amount"):
+                tips = float(payload["tip_money"]["amount"])
+            elif payload.get("total_tips_set") and payload["total_tips_set"].get("shop_money", {}).get("amount"):
+                tips = float(payload["total_tips_set"]["shop_money"]["amount"])
+            # Add logging for debugging
+            logger.info(f"Tips extracted for order {order_id}: {tips}")
+        except (ValueError, TypeError, KeyError) as e:
+            logger.warning(f"Error extracting tips for order {order_id}: {e}")
+            tips = 0.0
         
         # Build order object
         order = {
@@ -1560,7 +1577,7 @@ def shopify_webhook():
             "items_text": items_text,
             "vendor_items": vendor_items,
             "note": payload.get("note", ""),
-            "tips": tips,  # Extracted tips from payload
+            "tips": tips,
             "payment_method": payment_method,
             "total": total_price,
             "delivery_time": "ASAP",
