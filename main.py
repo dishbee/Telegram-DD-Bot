@@ -1548,17 +1548,41 @@ def shopify_webhook():
         
         logger.info(f"Payment method: {payment_method}, Total: {total_price}")
         
+        # Debug: Log payload structure for troubleshooting
+        logger.info(f"Shopify payload keys: {list(payload.keys())}")
+        
         # Extract tips from multiple possible fields
         tips = 0.0
         try:
+            # Debug: Log all keys that might contain tip information
+            tip_related_keys = [k for k in payload.keys() if 'tip' in k.lower()]
+            if tip_related_keys:
+                logger.info(f"Found tip-related keys in payload: {tip_related_keys}")
+                for key in tip_related_keys:
+                    logger.info(f"Payload[{key}]: {payload[key]}")
+            
             # Check common Shopify tip fields
             if payload.get("total_tip"):
                 tips = float(payload["total_tip"])
+                logger.info(f"Found tips in total_tip: {tips}")
             elif payload.get("tip_money") and payload["tip_money"].get("amount"):
                 tips = float(payload["tip_money"]["amount"])
+                logger.info(f"Found tips in tip_money.amount: {tips}")
             elif payload.get("total_tips_set") and payload["total_tips_set"].get("shop_money", {}).get("amount"):
                 tips = float(payload["total_tips_set"]["shop_money"]["amount"])
-            # Add logging for debugging
+                logger.info(f"Found tips in total_tips_set.shop_money.amount: {tips}")
+            else:
+                # Check for other possible tip fields
+                if payload.get("total_tipping_value"):
+                    tips = float(payload["total_tipping_value"])
+                    logger.info(f"Found tips in total_tipping_value: {tips}")
+                elif payload.get("tip_amount"):
+                    tips = float(payload["tip_amount"])
+                    logger.info(f"Found tips in tip_amount: {tips}")
+                elif payload.get("tips"):
+                    tips = float(payload["tips"])
+                    logger.info(f"Found tips in tips: {tips}")
+            
             logger.info(f"Tips extracted for order {order_id}: {tips}")
         except (ValueError, TypeError, KeyError) as e:
             logger.warning(f"Error extracting tips for order {order_id}: {e}")
