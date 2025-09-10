@@ -253,7 +253,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         if len(address_parts) >= 2:
             street_part = address_parts[0].strip()
             zip_part = address_parts[-1].strip()
-            clean_address = f"{street_part} ({zip_part})"
+            clean_address = f"{street_part} {zip_part}"
         else:
             # Fallback if parsing fails
             clean_address = full_address.strip()
@@ -327,7 +327,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         # Build final message with new structure
         text = f"{title}\n"
         text += f"{customer_line}\n\n"  # Customer name + empty line
-        text += f"{address_line}\n"
+        text += f"{address_line}\n\n"  # Address + empty line
         text += note_line
         text += tips_line
         text += payment_line
