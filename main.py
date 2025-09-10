@@ -253,7 +253,8 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         if len(address_parts) >= 2:
             street_part = address_parts[0].strip()
             zip_part = address_parts[-1].strip()
-            # Clean zip_part to remove any extra brackets
+            # Clean both parts to remove any extra brackets
+            street_part = street_part.replace(')', '').replace('(', '')
             zip_part = zip_part.replace(')', '').replace('(', '')
             clean_address = f"{street_part} ({zip_part})"
         else:
