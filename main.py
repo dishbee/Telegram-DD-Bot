@@ -248,22 +248,21 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         
         # 3. Address as Google Maps link with new format
         full_address = order['customer']['address']
+        original_address = order['customer'].get('original_address', full_address)
+        
         # Parse address: split by comma to get street and zip
         address_parts = full_address.split(',')
         if len(address_parts) >= 2:
             street_part = address_parts[0].strip()
             zip_part = address_parts[-1].strip()
-            # Clean both parts to remove any extra brackets
-            street_part = street_part.replace(')', '').replace('(', '')
-            zip_part = zip_part.replace(')', '').replace('(', '')
-            clean_address = f"{street_part} ({zip_part})"
+            display_address = f"{street_part} ({zip_part})"
         else:
             # Fallback if parsing fails
-            clean_address = full_address.strip()
+            display_address = full_address.strip()
         
-        # Create Google Maps link
-        maps_link = f"https://www.google.com/maps?q={clean_address.replace(' ', '+')}"
-        address_line = f"🗺️ [{clean_address}]({maps_link})"
+        # Create Google Maps link using original address (clean, no parentheses)
+        maps_link = f"https://www.google.com/maps?q={original_address.replace(' ', '+')}"
+        address_line = f"🗺️ [{display_address}]({maps_link})"
         
         # 4. Note (if added)
         note_line = ""
@@ -330,7 +329,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         # Build final message with new structure
         text = f"{title}\n"
         text += f"{customer_line}\n\n"  # Customer name + empty line
-        text += f"{address_line}\n\n"  # Address + empty line
+        text += f"{address_line}\n"
         text += note_line
         text += tips_line
         text += payment_line
@@ -1485,6 +1484,12 @@ def shopify_webhook():
         
         address = fmt_address(payload.get("shipping_address") or {})
         
+        # Store original address for clean Google Maps URL
+        shipping_addr = payload.get("shipping_address", {})
+        original_address = f"{shipping_addr.get('address1', '')}, {shipping_addr.get('zip', '')}".strip()
+        if original_address == ", " or not original_address:
+            original_address = address  # fallback to formatted address
+        
         # Extract vendors from line items
         line_items = payload.get("line_items", [])
         vendors = []
@@ -1575,7 +1580,8 @@ def shopify_webhook():
             "customer": {
                 "name": customer_name,
                 "phone": phone,
-                "address": address
+                "address": address,
+                "original_address": original_address
             },
             "items_text": items_text,
             "vendor_items": vendor_items,
