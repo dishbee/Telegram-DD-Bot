@@ -254,7 +254,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         address_parts = full_address.split(',')
         if len(address_parts) >= 2:
             street_part = address_parts[0].strip()
-            zip_part = address_parts[-1].strip()
+            zip_part = address_parts[-1].strip().strip('()')  # Clean zip of any parentheses
             display_address = f"{street_part} ({zip_part})"
         else:
             # Fallback if parsing fails
