@@ -328,11 +328,13 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         
         # Build final message with new structure
         text = f"{title}\n"
-        text += f"{customer_line}\n\n"  # Customer name + empty line
-        text += f"{address_line}\n"
+        text += f"{customer_line}\n"  # Customer name
+        text += f"{address_line}\n\n"  # Address + empty line
         text += note_line
         text += tips_line
         text += payment_line
+        if note_line or tips_line or payment_line:
+            text += "\n"  # Empty line after note/tips/payment block
         text += f"{items_text}\n\n"  # Items + empty line
         text += phone_line
         
