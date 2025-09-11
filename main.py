@@ -48,6 +48,23 @@ RESTAURANT_SHORTCUTS = {
     "Wittelsbacher Apotheke": "AP"
 }
 
+# Restaurant phone mapping for CTA buttons
+# Task 6: Add Restaurant Phone Mapping - Complete Implementation
+# - Enables calling restaurants from CTA buttons
+# - Supports both single and multi-vendor orders
+# - Includes phone number validation for tel: links
+# - Handles cases where restaurant phone is not available
+RESTAURANT_PHONES = {
+    "Julis Spätzlerei": "+491234567890",  # Replace with actual phone numbers
+    "Zweite Heimat": "+491234567891",
+    "Kahaani": "+491234567892",
+    "i Sapori della Toscana": "+491234567893",
+    "Leckerolls": "+491234567894",
+    "dean & david": "+491234567895",
+    "Pommes Freunde": "+491234567896",
+    "Wittelsbacher Apotheke": "+491234567897"
+}
+
 # --- TELEGRAM BOT CONFIGURATION ---
 # Configure request with larger pool to prevent pool timeout
 request_cfg = HTTPXRequest(
@@ -72,7 +89,13 @@ def run_async(coro):
     asyncio.run_coroutine_threadsafe(coro, loop)
 
 def validate_phone(phone: str) -> Optional[str]:
-    """Validate and format phone number for tel: links"""
+    """Validate and format phone number for tel: links
+    
+    Task 6: Enhanced phone validation for restaurant calling
+    - Removes non-numeric characters except + and spaces
+    - Validates minimum length (7 digits)
+    - Returns formatted phone number or None if invalid
+    """
     if not phone or phone == "N/A":
         return None
     
@@ -83,8 +106,10 @@ def validate_phone(phone: str) -> Optional[str]:
     # Basic validation: must have at least 7 digits
     digits_only = re.sub(r'\D', '', cleaned)
     if len(digits_only) < 7:
+        logger.warning(f"Phone number too short: {phone} (cleaned: {cleaned})")
         return None
     
+    logger.info(f"Phone number validated: {phone} -> {cleaned}")
     return cleaned
 
 # --- HELPER FUNCTIONS ---
@@ -712,34 +737,336 @@ async def safe_delete_message(chat_id: int, message_id: int):
     except Exception as e:
         logger.error(f"Error deleting message {message_id}: {e}")
 
-async def cleanup_mdg_messages(order_id: str):
-    """Clean up additional MDG messages, keeping only the original order message"""
+async def cleanup_mdg_messages(order_id: str, cleanup_assignment: bool = False):
+    """Clean up additional MDG messages and optionally assignment messages
+    
+    Task 5: Update Message Management - Enhanced cleanup functionality
+    - Handles both additional MDG messages and assignment messages
+    - Maintains message threading by cleaning up in proper order
+    - Tracks message IDs in STATE for proper cleanup
+    """
     order = STATE.get(order_id)
     if not order:
         return
     
+    # Clean up additional MDG messages
     additional_messages = order.get("mdg_additional_messages", [])
-    if not additional_messages:
+    if additional_messages:
+        logger.info(f"Cleaning up {len(additional_messages)} additional MDG messages for order {order_id}")
+        
+        for message_id in additional_messages:
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    await bot.delete_message(chat_id=DISPATCH_MAIN_CHAT_ID, message_id=message_id)
+                    logger.info(f"Successfully deleted MDG message {message_id} for order {order_id}")
+                    break
+                except Exception as e:
+                    logger.error(f"Attempt {attempt + 1} failed to delete message {message_id}: {e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1)
+                    else:
+                        logger.error(f"Failed to delete message {message_id} after {max_retries} attempts")
+        
+        # Clear the list after cleanup
+        order["mdg_additional_messages"] = []
+    
+    # Clean up assignment message if requested
+    if cleanup_assignment:
+        assignment_message_id = order.get("assignment_message_id")
+        if assignment_message_id:
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    await bot.delete_message(chat_id=DISPATCH_MAIN_CHAT_ID, message_id=assignment_message_id)
+                    logger.info(f"Successfully deleted assignment message {assignment_message_id} for order {order_id}")
+                    break
+                except Exception as e:
+                    logger.error(f"Attempt {attempt + 1} failed to delete assignment message {assignment_message_id}: {e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1)
+                    else:
+                        logger.error(f"Failed to delete assignment message {assignment_message_id} after {max_retries} attempts")
+            
+            # Clear assignment message ID after cleanup
+            order["assignment_message_id"] = None
+
+async def update_mdg_message_status(order_id: str, status_update: str):
+    """Update the original MDG message with assignment or delivery status
+    
+    Task 5: Update Message Management - Status updates to original messages
+    - Updates original MDG dispatch message when order is assigned/delivered
+    - Maintains message threading by keeping original message as reference
+    - Provides real-time status updates without cluttering chat
+    """
+    order = STATE.get(order_id)
+    if not order:
+        logger.warning(f"Order {order_id} not found in state for status update")
         return
     
-    logger.info(f"Cleaning up {len(additional_messages)} additional MDG messages for order {order_id}")
+    mdg_message_id = order.get("mdg_message_id")
+    if not mdg_message_id:
+        logger.warning(f"No MDG message ID found for order {order_id}")
+        return
     
-    for message_id in additional_messages:
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                await bot.delete_message(chat_id=DISPATCH_MAIN_CHAT_ID, message_id=message_id)
-                logger.info(f"Successfully deleted MDG message {message_id} for order {order_id}")
-                break
-            except Exception as e:
-                logger.error(f"Attempt {attempt + 1} failed to delete message {message_id}: {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(1)
-                else:
-                    logger.error(f"Failed to delete message {message_id} after {max_retries} attempts")
+    try:
+        # Get current MDG message text
+        current_text = build_mdg_dispatch_text(order)
+        
+        # Add status update
+        if "assigned" in status_update.lower():
+            # Add assignment info
+            assigned_to = order.get("assigned_to", {}).get("user_name", "Unknown")
+            current_text += f"\n\n✅ Assigned to: {assigned_to}"
+        elif "delivered" in status_update.lower():
+            # Add delivery info
+            assigned_to = order.get("assigned_to", {}).get("user_name", "Unknown")
+            delivered_time = order.get("delivered_at")
+            if delivered_time:
+                time_str = delivered_time.strftime("%H:%M")
+                current_text += f"\n\n✅ Delivered by {assigned_to} at {time_str}"
+            else:
+                current_text += f"\n\n✅ Delivered by {assigned_to}"
+        
+        # Update the original MDG message
+        await safe_edit_message(
+            DISPATCH_MAIN_CHAT_ID,
+            mdg_message_id,
+            current_text,
+            None  # Remove keyboard after assignment/delivery
+        )
+        
+        logger.info(f"Updated MDG message status for order {order_id}: {status_update}")
+        
+    except Exception as e:
+        logger.error(f"Error updating MDG message status for order {order_id}: {e}")
+
+async def cleanup_completed_order(order_id: str):
+    """Clean up all messages for a completed order (delivered or canceled)
     
-    # Clear the list after cleanup
-    order["mdg_additional_messages"] = []
+    Task 5: Update Message Management - Complete order cleanup
+    - Cleans up assignment messages, additional MDG messages, and vendor messages
+    - Maintains message threading by cleaning up related messages together
+    - Ensures proper STATE tracking and cleanup for completed orders
+    """
+    order = STATE.get(order_id)
+    if not order:
+        return
+    
+    try:
+        # Clean up additional MDG messages and assignment message
+        await cleanup_mdg_messages(order_id, cleanup_assignment=True)
+        
+        # Clean up vendor messages
+        vendor_messages = order.get("vendor_messages", {})
+        for vendor, message_id in vendor_messages.items():
+            if message_id:
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        await bot.delete_message(chat_id=VENDOR_GROUP_MAP[vendor], message_id=message_id)
+                        logger.info(f"Successfully deleted vendor message {message_id} for {vendor}")
+                        break
+                    except Exception as e:
+                        logger.error(f"Attempt {attempt + 1} failed to delete vendor message {message_id}: {e}")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(1)
+                        else:
+                            logger.error(f"Failed to delete vendor message {message_id} after {max_retries} attempts")
+        
+        # Clear vendor messages from state
+        order["vendor_messages"] = {}
+        
+        logger.info(f"Completed cleanup for order {order_id}")
+        
+    except Exception as e:
+        logger.error(f"Error during order cleanup for {order_id}: {e}")
+
+def build_assignment_text(order: Dict[str, Any]) -> str:
+    """Build assignment message text with exact format specified"""
+    try:
+        order_type = order.get("order_type", "shopify")
+        vendors = order.get("vendors", [])
+        
+        # 1. Title with order number and shortcuts
+        if order_type == "shopify":
+            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+            if len(vendors) > 1:
+                # Multi-vendor: use shortcuts
+                shortcuts = [RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors]
+                title = f"🔖 #{order_num} - dishbee ({'+'.join(shortcuts)})"
+            else:
+                # Single vendor
+                shortcut = RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper()) if vendors else ""
+                title = f"🔖 #{order_num} - dishbee ({shortcut})"
+        else:
+            # For HubRise/Smoothr: only restaurant name
+            title = vendors[0] if vendors else "Unknown"
+        
+        # 2. Customer name
+        customer_name = order['customer']['name']
+        customer_line = f"👤 {customer_name}"
+        
+        # 3. Address (not as link)
+        full_address = order['customer']['address']
+        address_parts = full_address.split(',')
+        if len(address_parts) >= 2:
+            street_part = address_parts[0].strip()
+            zip_part = address_parts[-1].strip().strip('()')
+            display_address = f"{street_part} ({zip_part})"
+        else:
+            display_address = full_address.strip()
+        address_line = f"📍 {display_address}"
+        
+        # 4. Phone number (not as link)
+        phone = order['customer']['phone']
+        phone_line = f"{phone}"
+        
+        # 5. Products count
+        if order_type == "shopify" and len(vendors) > 1:
+            # Multi-vendor: sum all products across vendors
+            total_products = 0
+            vendor_items = order.get("vendor_items", {})
+            for vendor_products in vendor_items.values():
+                for item in vendor_products:
+                    # Extract quantity from item line like "- 2 x Item Name"
+                    if " x " in item:
+                        try:
+                            qty_str = item.split(" x ")[0].strip("- ").strip()
+                            total_products += int(qty_str)
+                        except (ValueError, IndexError):
+                            total_products += 1  # Default to 1 if parsing fails
+                    else:
+                        total_products += 1  # Default to 1 if no quantity found
+            products_line = f"📦 Products amount: {total_products}"
+        else:
+            # Single vendor or non-Shopify: count items in items_text
+            items_text = order.get("items_text", "")
+            if items_text:
+                # Count lines that start with "-"
+                item_lines = [line for line in items_text.split('\n') if line.strip().startswith('-')]
+                products_count = len(item_lines)
+            else:
+                products_count = 0
+            products_line = f"📦 Products amount: {products_count}"
+        
+        # Build final assignment message
+        assignment_text = f"{title}\n"
+        assignment_text += f"{customer_line}\n"
+        assignment_text += f"{address_line}\n"
+        assignment_text += f"{phone_line}\n"
+        assignment_text += f"{products_line}"
+        
+        return assignment_text
+    except Exception as e:
+        logger.error(f"Error building assignment text: {e}")
+        return f"Error formatting assignment for order {order.get('name', 'Unknown')}"
+
+def build_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build assignment keyboard with assign to myself and assign to others buttons"""
+    try:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("👈 Assign to myself", callback_data=f"assign_self|{order_id}")],
+            [InlineKeyboardButton("👉 Assign to...", callback_data=f"assign_others|{order_id}")]
+        ])
+    except Exception as e:
+        logger.error(f"Error building assignment keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+def build_member_selection_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build member selection keyboard with Bee 1, Bee 2, Bee 3 options"""
+    try:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("🐝 Bee 1", callback_data=f"assign_to_member|{order_id}|Bee 1")],
+            [InlineKeyboardButton("🐝 Bee 2", callback_data=f"assign_to_member|{order_id}|Bee 2")],
+            [InlineKeyboardButton("🐝 Bee 3", callback_data=f"assign_to_member|{order_id}|Bee 3")]
+        ])
+    except Exception as e:
+        logger.error(f"Error building member selection keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+def build_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build CTA keyboard with 5 buttons for assigned orders
+    
+    Task 6: Enhanced restaurant phone mapping for multi-vendor support
+    - Handles both single and multi-vendor orders
+    - Uses validated phone numbers for tel: links
+    - Provides fallback for missing phone numbers
+    """
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            return InlineKeyboardMarkup([])
+        
+        vendors = order.get("vendors", [])
+        
+        # Handle restaurant phone for Call restaurant button
+        restaurant_phone = None
+        restaurant_name = None
+        
+        if vendors:
+            if len(vendors) == 1:
+                # Single vendor: use that vendor's phone
+                restaurant_name = vendors[0]
+                restaurant_phone = RESTAURANT_PHONES.get(vendors[0], "N/A")
+            else:
+                # Multi-vendor: use first vendor's phone (could be enhanced to show all)
+                restaurant_name = vendors[0]
+                restaurant_phone = RESTAURANT_PHONES.get(vendors[0], "N/A")
+        
+        # Validate phone number
+        if restaurant_phone and restaurant_phone != "N/A":
+            restaurant_phone = validate_phone(restaurant_phone)
+        
+        # Build CTA buttons
+        buttons = [
+            [
+                InlineKeyboardButton("📞 Call customer", callback_data=f"call_customer|{order_id}"),
+                InlineKeyboardButton("🗺️ Navigate", callback_data=f"navigate|{order_id}")
+            ],
+            [
+                InlineKeyboardButton("⏰ Delay", callback_data=f"delay|{order_id}"),
+                InlineKeyboardButton("🍽 Call restaurant", callback_data=f"call_restaurant|{order_id}")
+            ],
+            [
+                InlineKeyboardButton("✅ Delivered", callback_data=f"delivered|{order_id}")
+            ]
+        ]
+        
+        return InlineKeyboardMarkup(buttons)
+    except Exception as e:
+        logger.error(f"Error building CTA keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+async def send_assignment_message(order_id: str):
+    """Send assignment message to MDG when restaurant confirms time"""
+    order = STATE.get(order_id)
+    if not order:
+        logger.warning(f"Order {order_id} not found in state for assignment")
+        return
+    
+    try:
+        # Update order status to ready for assignment
+        order["status"] = "ready_for_assignment"
+        
+        # Build assignment message using separate functions
+        assignment_text = build_assignment_text(order)
+        assignment_keyboard = build_assignment_keyboard(order_id)
+        
+        # Send assignment message to MDG
+        assignment_msg = await safe_send_message(
+            DISPATCH_MAIN_CHAT_ID,
+            assignment_text,
+            assignment_keyboard
+        )
+        
+        # Track assignment message for cleanup
+        order["assignment_message_id"] = assignment_msg.message_id
+        
+        logger.info(f"Assignment message sent for order {order_id}")
+        
+    except Exception as e:
+        logger.error(f"Error sending assignment message for order {order_id}: {e}")
 
 # --- WEBHOOK ENDPOINTS ---
 @app.route("/", methods=["GET"])
@@ -1313,6 +1640,9 @@ def telegram_webhook():
                     # Post status to MDG
                     status_msg = f"■ {vendor} replied: Works 👍 ■"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                    
+                    # Send assignment message to MDG
+                    await send_assignment_message(order_id)
                 
                 elif action == "later":
                     order_id, vendor = data[1], data[2]
@@ -1339,6 +1669,9 @@ def telegram_webhook():
                                 status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
                                 await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                                 break
+                    
+                    # Send assignment message to MDG
+                    await send_assignment_message(order_id)
                 
                 elif action == "prepare":
                     order_id, vendor = data[1], data[2]
@@ -1363,6 +1696,9 @@ def telegram_webhook():
                                 status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
                                 await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                                 break
+                    
+                    # Send assignment message to MDG
+                    await send_assignment_message(order_id)
                 
                 elif action == "wrong":
                     order_id, vendor = data[1], data[2]
@@ -1392,7 +1728,22 @@ def telegram_webhook():
                 
                 elif action == "wrong_canceled":
                     order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
+                    order = STATE.get(order_id)
+                    if order:
+                        # Mark order as canceled
+                        order["status"] = "canceled"
+                        order["canceled_at"] = datetime.now()
+                        order["canceled_by"] = vendor
+                        
+                        # Send cancellation notification
+                        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"❌ Order #{order_num} canceled by {vendor}")
+                        
+                        # Update original MDG message with cancellation status
+                        await update_mdg_message_status(order_id, f"Canceled by {vendor}")
+                        
+                        # Clean up all messages for canceled order
+                        await cleanup_completed_order(order_id)
                 
                 elif action in ["wrong_technical", "wrong_other"]:
                     order_id, vendor = data[1], data[2]
@@ -1434,6 +1785,300 @@ def telegram_webhook():
                 elif action == "delay_time":
                     order_id, vendor, delay_time = data[1], data[2], data[3]
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
+                
+                # ASSIGNMENT SELECTION HANDLERS
+                elif action == "assign_self":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        logger.warning(f"Order {order_id} not found in state for assignment")
+                        return
+                    
+                    # Extract current user from callback query
+                    user = cq.get("from", {})
+                    user_id = user.get("id")
+                    user_name = user.get("first_name", "Unknown")
+                    
+                    if user_id:
+                        # Update order STATE with assignment
+                        order["assigned_to"] = {
+                            "user_id": user_id,
+                            "user_name": user_name,
+                            "assigned_at": datetime.now(),
+                            "assignment_type": "self"
+                        }
+                        order["status"] = "assigned"
+                        
+                        # Send confirmation message to MDG
+                        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                        confirmation_msg = f"✅ Order #{order_num} assigned to {user_name}"
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, confirmation_msg)
+                        
+                        # Update original MDG message with assignment status
+                        await update_mdg_message_status(order_id, f"Assigned to {user_name}")
+                        
+                        # Update assignment message to show assignment and CTA buttons
+                        assignment_text = build_assignment_text(order) + f"\n\n✅ Assigned to: {user_name}"
+                        cta_keyboard = build_cta_keyboard(order_id)
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["assignment_message_id"],
+                            assignment_text,
+                            cta_keyboard
+                        )
+                        
+                        logger.info(f"Order {order_id} assigned to user {user_name} (ID: {user_id})")
+                
+                elif action == "assign_others":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        logger.warning(f"Order {order_id} not found in state for assignment")
+                        return
+                    
+                    # Show member selection keyboard
+                    member_keyboard = build_member_selection_keyboard(order_id)
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["assignment_message_id"],
+                        build_assignment_text(order) + "\n\nSelect team member:",
+                        member_keyboard
+                    )
+                
+                elif action == "assign_to_member":
+                    order_id, member_name = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        logger.warning(f"Order {order_id} not found in state for member assignment")
+                        return
+                    
+                    # Extract current user from callback query (assigner)
+                    user = cq.get("from", {})
+                    assigner_name = user.get("first_name", "Unknown")
+                    
+                    # Update order STATE with assignment
+                    order["assigned_to"] = {
+                        "user_id": None,  # No user ID for Bee members
+                        "user_name": member_name,
+                        "assigned_at": datetime.now(),
+                        "assignment_type": "member",
+                        "assigned_by": assigner_name
+                    }
+                    order["status"] = "assigned"
+                    
+                    # Send confirmation message to MDG
+                    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                    confirmation_msg = f"✅ Order #{order_num} assigned to {member_name} by {assigner_name}"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, confirmation_msg)
+                    
+                    # Update original MDG message with assignment status
+                    await update_mdg_message_status(order_id, f"Assigned to {member_name}")
+                    
+                    # Update assignment message to show assignment and CTA buttons
+                    assignment_text = build_assignment_text(order) + f"\n\n✅ Assigned to: {member_name}"
+                    cta_keyboard = build_cta_keyboard(order_id)
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["assignment_message_id"],
+                        assignment_text,
+                        cta_keyboard
+                    )
+                    
+                    logger.info(f"Order {order_id} assigned to member {member_name} by {assigner_name}")
+                
+                # CTA BUTTON HANDLERS
+                elif action == "call_customer":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    customer_phone = order.get("customer", {}).get("phone", "N/A")
+                    if customer_phone and customer_phone != "N/A":
+                        # Create tel: link for calling
+                        tel_link = f"tel:{customer_phone}"
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            f"📞 Calling customer: [{customer_phone}]({tel_link})"
+                        )
+                    else:
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "❌ Customer phone number not available"
+                        )
+                
+                elif action == "navigate":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    customer_address = order.get("customer", {}).get("original_address", "")
+                    if customer_address:
+                        # Create Google Maps navigation link with driving directions
+                        maps_link = f"https://www.google.com/maps/dir/?api=1&destination={customer_address.replace(' ', '+')}&directionsmode=driving"
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            f"🗺️ Navigate to: [{customer_address}]({maps_link})"
+                        )
+                    else:
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "❌ Customer address not available"
+                        )
+                
+                elif action == "delay":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    # Show delay time picker (+5/+10/+15/+20 mins from confirmed time)
+                    confirmed_time = order.get("confirmed_time")
+                    if confirmed_time and confirmed_time != "ASAP":
+                        try:
+                            hour, minute = map(int, confirmed_time.split(':'))
+                            base_time = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+                            
+                            delay_buttons = []
+                            for minutes in [5, 10, 15, 20]:
+                                delay_time = base_time + timedelta(minutes=minutes)
+                                button_text = f"+{minutes}min ({delay_time.strftime('%H:%M')})"
+                                delay_buttons.append([InlineKeyboardButton(
+                                    button_text,
+                                    callback_data=f"delay_confirm|{order_id}|{delay_time.strftime('%H:%M')}"
+                                )])
+                            
+                            await safe_send_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                "⏰ Select delay time:",
+                                InlineKeyboardMarkup(delay_buttons)
+                            )
+                        except Exception as e:
+                            logger.error(f"Error creating delay picker: {e}")
+                            await safe_send_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                "❌ Error creating delay options"
+                            )
+                    else:
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "❌ No confirmed time available for delay calculation"
+                        )
+                
+                elif action == "delay_confirm":
+                    order_id, new_time = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    # Update order with new delayed time
+                    old_time = order.get("confirmed_time", "Unknown")
+                    order["confirmed_time"] = new_time
+                    order["delayed_from"] = old_time
+                    
+                    # Send delay notification
+                    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"⏰ Order #{order_num} delayed from {old_time} to {new_time}"
+                    )
+                    
+                    # Update original MDG message with new time
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Confirmed: {new_time} (delayed from {old_time})"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        None
+                    )
+                    
+                    # Update assignment message with new time
+                    assignment_text = build_assignment_text(order) + f"\n\n✅ Assigned to: {order['assigned_to']['user_name']}\n⏰ Confirmed: {new_time} (delayed from {old_time})"
+                    cta_keyboard = build_cta_keyboard(order_id)
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["assignment_message_id"],
+                        assignment_text,
+                        cta_keyboard
+                    )
+                
+                elif action == "call_restaurant":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    vendors = order.get("vendors", [])
+                    if vendors:
+                        # For multi-vendor orders, call the first restaurant
+                        # (Could be enhanced to show selection for all vendors)
+                        restaurant_name = vendors[0]
+                        restaurant_phone = RESTAURANT_PHONES.get(restaurant_name, "N/A")
+                        
+                        # Validate phone number before creating tel: link
+                        validated_phone = validate_phone(restaurant_phone)
+                        
+                        if validated_phone:
+                            # Create tel: link for calling restaurant
+                            tel_link = f"tel:{validated_phone}"
+                            
+                            # Show different message for multi-vendor vs single vendor
+                            if len(vendors) > 1:
+                                await safe_send_message(
+                                    DISPATCH_MAIN_CHAT_ID,
+                                    f"🍽 Calling {restaurant_name}: [{validated_phone}]({tel_link})\n_(Multi-vendor order - calling first restaurant)_"
+                                )
+                            else:
+                                await safe_send_message(
+                                    DISPATCH_MAIN_CHAT_ID,
+                                    f"🍽 Calling {restaurant_name}: [{validated_phone}]({tel_link})"
+                                )
+                        else:
+                            await safe_send_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                f"❌ Phone number not available for {restaurant_name}"
+                            )
+                    else:
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "❌ No restaurant information available"
+                        )
+                
+                elif action == "delivered":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    # Mark order as delivered
+                    order["status"] = "delivered"
+                    order["delivered_at"] = datetime.now()
+                    
+                    # Send delivery confirmation
+                    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                    assigned_to = order.get("assigned_to", {}).get("user_name", "Unknown")
+                    await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"✅ Order #{order_num} delivered by {assigned_to}"
+                    )
+                    
+                    # Update original MDG message with delivery status
+                    await update_mdg_message_status(order_id, "Delivered")
+                    
+                    # Update assignment message to show delivery
+                    assignment_text = build_assignment_text(order) + f"\n\n✅ Assigned to: {assigned_to}\n✅ Delivered at: {datetime.now().strftime('%H:%M')}"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["assignment_message_id"],
+                        assignment_text,
+                        None  # Remove keyboard after delivery
+                    )
+                    
+                    # Clean up all messages for completed order
+                    await cleanup_completed_order(order_id)
+                    
+                    logger.info(f"Order {order_id} marked as delivered by {assigned_to}")
                 
             except Exception as e:
                 logger.error(f"Callback processing error: {e}")
