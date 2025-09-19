@@ -555,8 +555,8 @@ def restaurant_response_keyboard(request_type: str, order_id: str, vendor: str) 
     try:
         rows = []
         
-        if request_type == "ASAP":
-            # ASAP request: show "Will prepare at" + "Something is wrong"
+        if request_type in ["ASAP", "delay"]:
+            # ASAP or delay request: show "Will prepare at" + "Something is wrong"
             rows.append([
                 InlineKeyboardButton("Will prepare at", callback_data=f"prepare|{order_id}|{vendor}")
             ])
@@ -776,6 +776,452 @@ async def cleanup_mdg_messages(order_id: str):
     # Clear the list after cleanup
     order["mdg_additional_messages"] = []
 
+# =============================================================================
+# SECTION 2: RG - RESTAURANT GROUPS
+# =============================================================================
+# WORKFLOW: Restaurants receive order notifications → Confirm or propose new time
+# → Status updates posted to MDG → After confirmation, messages cleaned up
+# DEPENDENCIES: Uses STATE for order data, called by MDG functions
+# =============================================================================
+
+# --- (RG) RESTAURANT GROUP LOGIC ---
+def build_rg_order_message(order: Dict[str, Any], vendor: str) -> str:
+    """Build order message for restaurant group"""
+    try:
+        order_type = order.get("order_type", "shopify")
+        
+        # Title: 🔖 #{order_number} - dishbee (no shortcuts)
+        if order_type == "shopify":
+            title = f"🔖 #{order['name'][-2:] if len(order['name']) >= 2 else order['name']} - dishbee"
+        else:
+            # For HubRise/Smoothr: only restaurant name
+            title = vendor if vendor else "Unknown"
+        
+        # Customer name: 👤 {name}
+        customer_name = order['customer']['name']
+        customer_line = f"👤 {customer_name}"
+        
+        # Address: 🔺 {street} ({zip})
+        full_address = order['customer']['address']
+        original_address = order['customer'].get('original_address', full_address)
+        
+        # Parse address: split by comma to get street and zip
+        address_parts = full_address.split(',')
+        if len(address_parts) >= 2:
+            street_part = address_parts[0].strip()
+            zip_part = address_parts[-1].strip().strip('()')  # Clean zip of any parentheses
+            display_address = f"{street_part} ({zip_part})"
+        else:
+            # Fallback if parsing fails
+            display_address = full_address.strip()
+        
+        # Create Google Maps link using original address (clean, no parentheses)
+        maps_link = f"https://www.google.com/maps?q={original_address.replace(' ', '+')}"
+        address_line = f"🗺️ [{display_address}]({maps_link})"
+        
+        # 4. Note (if added)
+        note_line = ""
+        note = order.get("note", "")
+        if note:
+            note_line = f"Note: {note}\n"
+        
+        # 5. Tips (if added)
+        tips_line = ""
+        tips = order.get("tips", 0.0)
+        if tips and float(tips) > 0:
+            tips_line = f"❕ Tip: {float(tips):.2f}€\n"
+        
+        # 6. Payment method - CoD with total (only for Shopify)
+        payment_line = ""
+        if order_type == "shopify":
+            payment = order.get("payment_method", "Paid")
+            total = order.get("total", "0.00€")
+            
+            if payment.lower() == "cash on delivery":
+                payment_line = f"❕ Cash on delivery: {total}\n"
+            else:
+                # For paid orders, just show the total below products
+                payment_line = ""
+        
+        # 7. Items (remove dashes)
+        vendor_items = order.get("vendor_items", {}).get(vendor, [])
+        items_text = ""
+        for item in vendor_items:
+            # Remove leading dash
+            clean_item = item.lstrip('- ').strip()
+            items_text += f"{clean_item}\n"
+        
+        # Add total to items_text
+        total = order.get("total", "0.00€")
+        if order_type == "shopify":
+            payment = order.get("payment_method", "Paid")
+            if payment.lower() != "cash on delivery":
+                # For paid orders, show total here
+                items_text += f"\n{total}"
+        
+        # 8. Clickable phone number (tel: link) - only if valid
+        phone = order['customer']['phone']
+        phone_line = ""
+        if phone and phone != "N/A":
+            phone_line = f"[{phone}](tel:{phone})\n"
+        
+        # Build final message with new structure
+        text = f"{title}\n"
+        text += f"{customer_line}\n"  # Customer name
+        text += f"{address_line}\n\n"  # Address + empty line
+        text += note_line
+        text += tips_line
+        text += payment_line
+        if note_line or tips_line or payment_line:
+            text += "\n"  # Empty line after note/tips/payment block
+        text += f"{items_text}\n\n"  # Items + empty line
+        text += phone_line
+        
+        return text
+    except Exception as e:
+        logger.error(f"Error building RG order message: {e}")
+        return f"Error formatting order {order.get('name', 'Unknown')} for vendor {vendor}"
+
+def build_rg_response_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build response buttons for restaurant time requests"""
+    try:
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}"),
+                InlineKeyboardButton("Later at", callback_data=f"later|{order_id}")
+            ],
+            [
+                InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}")
+            ]
+        ])
+    except Exception as e:
+        logger.error(f"Error building RG response keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+# --- (RG) RESTAURANT GROUP HANDLERS ---
+async def handle_rg_order_notification(order_id: str):
+    """Handle sending order notification to restaurant group"""
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found for notification")
+            return
+        
+        # Send order message to each vendor group
+        for vendor in order.get("vendors", []):
+            vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+            if vendor_chat:
+                message_text = build_rg_order_message(order, vendor)
+                await safe_send_message(
+                    vendor_chat,
+                    message_text
+                )
+        
+        logger.info(f"Order notification sent to restaurant groups for order {order_id}")
+    except Exception as e:
+        logger.error(f"Error in handle_rg_order_notification: {e}")
+
+async def handle_rg_time_response(order_id: str, vendor: str, response_type: str, proposed_time: str = None):
+    """Handle restaurant time responses"""
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found for response handling")
+            return
+        
+        # Update order with confirmed or proposed time
+        confirmed_times = order.get("confirmed_times", {})
+        if response_type == "works":
+            confirmed_times[vendor] = order.get("requested_time", "ASAP")
+            await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"✅ {vendor} confirmed ASAP")
+        elif response_type == "later" and proposed_time:
+            confirmed_times[vendor] = proposed_time
+            await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"✅ {vendor} proposed new time: {proposed_time}")
+        elif response_type == "wrong":
+            await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"❌ {vendor} reported an issue")
+        
+        order["confirmed_times"] = confirmed_times
+        
+        # Check if all vendors have confirmed
+        all_confirmed = await check_all_vendors_confirmed(order_id)
+        if all_confirmed:
+            # All vendors confirmed - update MDG and send assignment messages
+            await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"✅ All vendors confirmed for order {order_id}")
+            
+            # Add assignment buttons to MDG message
+            await add_assignment_buttons(order_id)
+            
+            # Send assignment message to each user (private chat)
+            for user_id in DRIVERS.values():
+                await send_assignment_message(order_id, user_id)
+            
+            # Clean up additional MDG messages
+            await cleanup_mdg_messages(order_id)
+        else:
+            logger.info(f"Not all vendors confirmed yet for order {order_id}")
+    
+    except Exception as e:
+        logger.error(f"Error in handle_rg_time_response: {e}")
+
+# =============================================================================
+# SECTION 3: UPC - USER PRIVATE CHATS
+# =============================================================================
+# WORKFLOW: Assignment messages sent to private chats after all vendors confirm
+# → Users interact with CTA buttons for delivery coordination
+# → Status updates posted to MDG, messages cleaned up after 15 seconds
+# DEPENDENCIES: Called after RG confirmations, uses STATE for order data
+# =============================================================================
+
+def build_assignment_message(order: Dict[str, Any]) -> str:
+    """Build assignment message for private chat"""
+    try:
+        # Title: 🔖 #{order_number} - dishbee (no shortcuts)
+        title = f"🔖 #{order['name'][-2:] if len(order['name']) >= 2 else order['name']} - dishbee"
+        
+        # Vendor lines: 🏠 {vendor}: {time} 📦 {quantity}
+        vendor_lines = []
+        confirmed_times = order.get("confirmed_times", {})
+        vendor_items = order.get("vendor_items", {})
+        
+        for vendor in order.get("vendors", []):
+            time = confirmed_times.get(vendor, "ASAP")
+            quantity = sum(int(item.split(' x ')[0].lstrip('- ')) for item in vendor_items.get(vendor, []))
+            vendor_lines.append(f"🏠 {vendor}: {time} 📦 {quantity}")
+        
+        vendor_text = "\n".join(vendor_lines)
+        
+        # Customer name: 👤 {name}
+        customer_line = f"👤 {order['customer']['name']}"
+        
+        # Address: 🔺 {street} ({zip})
+        address_parts = order['customer']['address'].split(',')
+        street = address_parts[0].strip() if address_parts else "Unknown"
+        zip_code = address_parts[-1].strip().split()[0] if len(address_parts) > 1 else ""
+        address_line = f"🔺 {street} ({zip_code})"
+        
+        # Tips: ❕ Tip: {amount}€
+        tips_line = ""
+        tips = order.get("tips", 0.0)
+        if tips and float(tips) > 0:
+            tips_line = f"❕ Tip: {float(tips):.2f}€\n"
+        
+        # Cash payment: ❕ Cash on delivery: {total}€
+        payment_line = ""
+        if order.get("payment_method") == "Cash on Delivery":
+            payment_line = f"❕ Cash on delivery: {order.get('total', '0.00€')}\n"
+        
+        # Phone: 📞 {phone}
+        phone_line = f"📞 {order['customer']['phone']}"
+        
+        # Build final message
+        text = f"{title}\n{vendor_text}\n\n{customer_line}\n{address_line}\n\n{tips_line}{payment_line}{phone_line}"
+        return text.strip()
+    except Exception as e:
+        logger.error(f"Error building assignment message: {e}")
+        return f"Error formatting assignment for order {order.get('name', 'Unknown')}"
+
+def assignment_cta_keyboard(order_id: str, is_multi_vendor: bool, phone: str = None) -> InlineKeyboardMarkup:
+    """Build CTA buttons for assignment message"""
+    try:
+        # Call customer button - direct link if phone available
+        if phone and phone != "N/A":
+            call_button = InlineKeyboardButton("☎️ Call customer", url=f"tel:{phone}")
+        else:
+            call_button = InlineKeyboardButton("☎️ Call customer", callback_data="call_customer_error")
+        
+        buttons = [
+            [
+                call_button,
+                InlineKeyboardButton("🧭 Navigate", callback_data=f"navigate|{order_id}")
+            ],
+            [
+                InlineKeyboardButton("⏰ Delay", callback_data=f"delay|{order_id}"),
+                InlineKeyboardButton("🍽 Call restaurant", callback_data=f"call_restaurant|{order_id}")
+            ],
+            [
+                InlineKeyboardButton("✅ Delivered", callback_data=f"delivered|{order_id}")
+            ]
+        ]
+        return InlineKeyboardMarkup(buttons)
+    except Exception as e:
+        logger.error(f"Error building CTA keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+def delay_vendor_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build vendor selection for delay"""
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            return InlineKeyboardMarkup([])
+        
+        vendors = order.get("vendors", [])
+        buttons = []
+        
+        for vendor in vendors:
+            shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+            buttons.append([InlineKeyboardButton(
+                f"Request {shortcut}",
+                callback_data=f"delay_vendor|{order_id}|{vendor}"
+            )])
+        
+        return InlineKeyboardMarkup(buttons)
+    except Exception as e:
+        logger.error(f"Error building delay vendor keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+def delay_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
+    """Build delay time selection"""
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            return InlineKeyboardMarkup([])
+        
+        confirmed_time = order.get("confirmed_times", {}).get(vendor, "ASAP")
+        
+        if confirmed_time == "ASAP":
+            base_time = datetime.now()
+        else:
+            try:
+                hour, minute = map(int, confirmed_time.split(':'))
+                base_time = datetime.now().replace(hour=hour, minute=minute)
+            except:
+                base_time = datetime.now()
+        
+        intervals = []
+        for minutes in [5, 10, 15, 20]:
+            time_option = base_time + timedelta(minutes=minutes)
+            intervals.append(time_option.strftime("%H:%M"))
+        
+        buttons = []
+        for i in range(0, len(intervals), 2):
+            row = []
+            for j in range(2):
+                if i + j < len(intervals):
+                    row.append(InlineKeyboardButton(
+                        intervals[i + j],
+                        callback_data=f"delay_confirm|{order_id}|{vendor}|{intervals[i + j]}"
+                    ))
+            if row:
+                buttons.append(row)
+        
+        return InlineKeyboardMarkup(buttons)
+    except Exception as e:
+        logger.error(f"Error building delay time keyboard: {e}")
+        return InlineKeyboardMarkup([])
+
+async def send_assignment_message(order_id: str, user_id: int):
+    """Send assignment message to user's private chat"""
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found for assignment")
+            return
+        
+        # Check if user has started a private chat with the bot
+        try:
+            chat = await bot.get_chat(user_id)
+            if chat.type != "private":
+                raise Exception("Not a private chat")
+        except Exception as e:
+            logger.warning(f"Cannot send to user {user_id}: {e}")
+            # Send error message to MDG
+            await safe_send_message(
+                DISPATCH_MAIN_CHAT_ID,
+                f"❌ Cannot assign order {order['name'][-2:] if len(order['name']) >= 2 else order['name']} - user hasn't started a private chat with the bot"
+            )
+            return
+        
+        # Build and send assignment message
+        message_text = build_assignment_message(order)
+        is_multi_vendor = len(order.get("vendors", [])) > 1
+        
+        assignment_msg = await safe_send_message(
+            user_id,
+            message_text,
+            assignment_cta_keyboard(order_id, is_multi_vendor, phone)
+        )
+        
+        # Track assignment message for cleanup
+        if "assignment_messages" not in order:
+            order["assignment_messages"] = []
+        order["assignment_messages"].append(assignment_msg.message_id)
+        
+        logger.info(f"Assignment message sent to user {user_id} for order {order_id}")
+        
+    except Exception as e:
+        logger.error(f"Error sending assignment message: {e}")
+
+async def check_all_vendors_confirmed(order_id: str) -> bool:
+    """Check if all vendors have confirmed times"""
+    order = STATE.get(order_id)
+    if not order:
+        return False
+    
+    vendors = order.get("vendors", [])
+    confirmed_times = order.get("confirmed_times", {})
+    
+    return len(confirmed_times) == len(vendors) && all(vendor in confirmed_times for vendor in vendors)
+
+async def add_assignment_buttons(order_id: str):
+    """Add assignment buttons to MDG confirmation message"""
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            return
+        
+        # Send a new message with assignment buttons
+        assignment_msg = await safe_send_message(
+            DISPATCH_MAIN_CHAT_ID,
+            "✅ All vendors confirmed - ready for assignment",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("👈 Assign to myself", callback_data=f"assign_self|{order_id}")],
+                [InlineKeyboardButton("👉 Assign to...", callback_data=f"assign_to|{order_id}")]
+            ])
+        )
+        
+        # Track the assignment message for potential cleanup (but keep it until delivered)
+        if "assignment_messages" not in order:
+            order["assignment_messages"] = []
+        order["assignment_messages"].append(assignment_msg.message_id)
+        
+        logger.info(f"Assignment buttons added to MDG for order {order_id}")
+        
+    except Exception as e:
+        logger.error(f"Error adding assignment buttons: {e}")
+
+async def cleanup_assignment_messages(order_id: str):
+    """Clean up assignment-related messages after 15 seconds"""
+    try:
+        await asyncio.sleep(15)
+        
+        order = STATE.get(order_id)
+        if not order:
+            return
+        
+        # Clean up assignment status messages
+        assignment_status_messages = order.get("assignment_status_messages", [])
+        for message_id in assignment_status_messages:
+            try:
+                await safe_delete_message(DISPATCH_MAIN_CHAT_ID, message_id)
+            except Exception as e:
+                logger.error(f"Error deleting assignment status message {message_id}: {e}")
+        
+        # Clear the list
+        order["assignment_status_messages"] = []
+        
+    except Exception as e:
+        logger.error(f"Error in cleanup_assignment_messages: {e}")
+
+# Extend order state initialization
+# ...existing code...
+
+# In shopify_webhook, add confirmed_times initialization
+# ...existing code...
+            "confirmed_times": {},  # Track per-vendor confirmed times
+            "all_confirmed": False,  # Track if all vendors confirmed
+            "assignment_messages": [],  # Track assignment message IDs
+            "assignment_status_messages": []  # Track status message IDs for cleanup
+# ...existing code...
 # --- WEBHOOK ENDPOINTS ---
 @app.route("/", methods=["GET"])
 def health_check():
@@ -1337,7 +1783,6 @@ def telegram_webhook():
                     # Delete the exact time picker message
                     chat_id = cq["message"]["chat"]["id"]
                     message_id = cq["message"]["message_id"]
-                    
                     await safe_delete_message(chat_id, message_id)
                 
                 # VENDOR RESPONSES
@@ -1369,9 +1814,16 @@ def telegram_webhook():
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
                     if order:
-                        # Track confirmed time
-                        order["confirmed_time"] = order.get("requested_time", "ASAP")
-                        order["confirmed_by"] = vendor
+                        # Track confirmed time per vendor
+                        confirmed_times = order.get("confirmed_times", {})
+                        confirmed_times[vendor] = order.get("requested_time", "ASAP")
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
                     
                     # Post status to MDG
                     status_msg = f"■ {vendor} replied: Works 👍 ■"
@@ -1394,7 +1846,19 @@ def telegram_webhook():
                     order = STATE.get(order_id)
                     if order:
                         # Track confirmed time
-                        order["confirmed_time"] = selected_time
+                        confirmed_times = order.get("confirmed_times", {})
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                confirmed_times[vendor] = selected_time
+                                break
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
                         
                         # Find which vendor this is from
                         for vendor in order["vendors"]:
@@ -1418,7 +1882,19 @@ def telegram_webhook():
                     order = STATE.get(order_id)
                     if order:
                         # Track confirmed time
-                        order["confirmed_time"] = selected_time
+                        confirmed_times = order.get("confirmed_times", {})
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                confirmed_times[vendor] = selected_time
+                                break
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
                         
                         # Find which vendor this is from
                         for vendor in order["vendors"]:
@@ -1498,252 +1974,608 @@ def telegram_webhook():
                     order_id, vendor, delay_time = data[1], data[2], data[3]
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
                 
-            except Exception as e:
-                logger.error(f"Callback processing error: {e}")
-        
-        # Run the async handler in background
-        run_async(handle())
-        return "OK"
-        
-    except Exception as e:
-        logger.error(f"Telegram webhook error: {e}")
-        return jsonify({"error": "Internal server error"}), 500
-
-# --- SHOPIFY WEBHOOK ---
-@app.route("/webhooks/shopify", methods=["POST"])
-def shopify_webhook():
-    """Handle Shopify webhooks"""
-    try:
-        raw = request.get_data()
-        hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
-        
-        if not verify_webhook(raw, hmac_header):
-            return jsonify({"error": "Unauthorized"}), 401
-
-        payload = json.loads(raw.decode('utf-8'))
-        order_id = str(payload.get("id"))
-        
-        logger.info(f"Processing Shopify order: {order_id}")
-
-        # Extract order data
-        order_name = payload.get("name", "Unknown")
-        
-        # Extract customer data with enhanced phone extraction
-        customer = payload.get("customer") or {}
-        customer_name = f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip() or "Unknown"
-        
-        # Enhanced phone extraction from multiple sources
-        phone = (
-            customer.get("phone") or 
-            payload.get("phone") or 
-            payload.get("billing_address", {}).get("phone") or 
-            payload.get("shipping_address", {}).get("phone") or 
-            "N/A"
-        )
-        
-        # Validate and format phone
-        phone = validate_phone(phone)
-        if not phone:
-            logger.warning(f"Phone number missing or invalid for order {order_id}")
-            phone = "N/A"
-        
-        address = fmt_address(payload.get("shipping_address") or {})
-        
-        # Store original address for clean Google Maps URL
-        shipping_addr = payload.get("shipping_address", {})
-        original_address = f"{shipping_addr.get('address1', '')}, {shipping_addr.get('zip', '')}".strip()
-        if original_address == ", " or not original_address:
-            original_address = address  # fallback to formatted address
-        
-        # Extract vendors from line items
-        line_items = payload.get("line_items", [])
-        vendors = []
-        vendor_items = {}
-        items_text = ""
-        
-        for item in line_items:
-            vendor = item.get('vendor')
-            if vendor and vendor in VENDOR_GROUP_MAP:
-                if vendor not in vendors:
-                    vendors.append(vendor)
-                    vendor_items[vendor] = []
-                
-                item_line = f"- {item.get('quantity', 1)} x {item.get('name', 'Item')}"
-                vendor_items[vendor].append(item_line)
-        
-        # Build items text
-        if len(vendors) > 1:
-            # Multi-vendor: show vendor names above items
-            items_by_vendor = ""
-            for vendor in vendors:
-                items_by_vendor += f"\n{vendor}:\n" + "\n".join(vendor_items[vendor]) + "\n"
-            items_text = items_by_vendor.strip()
-        else:
-            # Single vendor: just list items
-            all_items = []
-            for vendor_item_list in vendor_items.values():
-                all_items.extend(vendor_item_list)
-            items_text = "\n".join(all_items)
-        
-        # Check for pickup orders
-        is_pickup = False
-        payload_str = str(payload).lower()
-        if "abholung" in payload_str:
-            is_pickup = True
-            logger.info("Pickup order detected (Abholung found in payload)")
-        
-        # Extract payment method and total from Shopify payload
-        payment_method = "Paid"  # Default
-        total_price = "0.00"     # Default
-        
-        # Check payment gateway names for CoD detection
-        payment_gateways = payload.get("payment_gateway_names", [])
-        if payment_gateways:
-            gateway_str = " ".join(payment_gateways).lower()
-            if "cash" in gateway_str and "delivery" in gateway_str:
-                payment_method = "Cash on Delivery"
-        
-        # Check transactions for more detailed payment info
-        transactions = payload.get("transactions", [])
-        for transaction in transactions:
-            gateway = transaction.get("gateway", "").lower()
-            if "cash" in gateway and "delivery" in gateway:
-                payment_method = "Cash on Delivery"
-                break
-        
-        # Extract total price
-        total_price_raw = payload.get("total_price", "0.00")
-        try:
-            # Format as currency with 2 decimal places
-            total_price = f"{float(total_price_raw):.2f}€"
-        except (ValueError, TypeError):
-            total_price = "0.00€"
-        
-        logger.info(f"Payment method: {payment_method}, Total: {total_price}")
-        
-        # Extract tips from Shopify payload
-        tips = 0.0
-        try:
-            # Check for the actual tip field used by Shopify
-            if payload.get("total_tip_received"):
-                tips = float(payload["total_tip_received"])
-            elif payload.get("total_tip"):
-                tips = float(payload["total_tip"])
-            elif payload.get("tip_money") and payload["tip_money"].get("amount"):
-                tips = float(payload["tip_money"]["amount"])
-            elif payload.get("total_tips_set") and payload["total_tips_set"].get("shop_money", {}).get("amount"):
-                tips = float(payload["total_tips_set"]["shop_money"]["amount"])
-        except (ValueError, TypeError, KeyError) as e:
-            logger.warning(f"Error extracting tips for order {order_id}: {e}")
-            tips = 0.0
-        
-        # Build order object
-        order = {
-            "name": order_name,
-            "order_type": "shopify",
-            "vendors": vendors,
-            "customer": {
-                "name": customer_name,
-                "phone": phone,
-                "address": address,
-                "original_address": original_address
-            },
-            "items_text": items_text,
-            "vendor_items": vendor_items,
-            "note": payload.get("note", ""),
-            "tips": tips,
-            "payment_method": payment_method,
-            "total": total_price,
-            "delivery_time": "ASAP",
-            "is_pickup": is_pickup,
-            "created_at": datetime.now(),
-            "vendor_messages": {},
-            "vendor_expanded": {},
-            "requested_time": None,
-            "confirmed_time": None,
-            "status": "new",
-            "mdg_additional_messages": []  # Track additional MDG messages for cleanup
-        }
-        
-        # Save order to STATE first
-        STATE[order_id] = order
-        
-        logger.info(f"Order {order_id} has vendors: {vendors} (count: {len(vendors)})")
-        if len(vendors) > 1:
-            logger.info(f"MULTI-VENDOR detected: {vendors}")
-        else:
-            logger.info(f"SINGLE VENDOR detected: {vendors}")
-
-        async def process():
-            try:
-                # Send to MDG with appropriate buttons
-                mdg_text = build_mdg_dispatch_text(order)
-                
-                # Special formatting for pickup orders
-                if is_pickup:
-                    pickup_header = "**Order for Selbstabholung**\n"
-                    pickup_message = f"\nPlease call the customer and arrange the pickup time on this number: {phone}"
-                    mdg_text = pickup_header + mdg_text + pickup_message
-                
-                mdg_msg = await safe_send_message(
-                    DISPATCH_MAIN_CHAT_ID,
-                    mdg_text,
-                    mdg_time_request_keyboard(order_id)
-                )
-                order["mdg_message_id"] = mdg_msg.message_id
-                
-                # Send to each vendor group (summary by default)
-                for vendor in vendors:
-                    vendor_chat = VENDOR_GROUP_MAP.get(vendor)
-                    if vendor_chat:
-                        vendor_text = build_vendor_summary_text(order, vendor)
-                        # Order message has only expand/collapse button
-                        vendor_msg = await safe_send_message(
-                            vendor_chat,
-                            vendor_text,
-                            vendor_keyboard(order_id, vendor, False)
+                elif action == "navigate":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if order:
+                        original_address = order['customer'].get('original_address', order['customer']['address'])
+                        maps_url = f"https://www.google.com/maps/dir/?api=1&destination={original_address.replace(' ', '+')}&travelmode=bicycling"
+                        await safe_send_message(
+                            cq["message"]["chat"]["id"],
+                            f"🧭 Navigate to delivery address:\n{maps_url}"
                         )
-                        order["vendor_messages"][vendor] = vendor_msg.message_id
-                        order["vendor_expanded"][vendor] = False
                 
-                # Update STATE with message IDs
-                STATE[order_id] = order
+                elif action == "call_customer_error":
+                    await safe_send_message(
+                        cq["message"]["chat"]["id"],
+                        "❌ No phone number available"
+                    )
                 
-                # Keep only recent orders
-                RECENT_ORDERS.append({
-                    "order_id": order_id,
-                    "created_at": datetime.now(),
-                    "vendors": vendors
-                })
+                # VENDOR RESPONSES
+                elif action == "toggle":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        logger.warning(f"Order {order_id} not found in state")
+                        return
+                    
+                    expanded = not order["vendor_expanded"].get(vendor, False)
+                    order["vendor_expanded"][vendor] = expanded
+                    logger.info(f"Toggling vendor message for {vendor}, expanded: {expanded}")
+                    
+                    # Update vendor message
+                    if expanded:
+                        text = build_vendor_details_text(order, vendor)
+                    else:
+                        text = build_vendor_summary_text(order, vendor)
+                    
+                    await safe_edit_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        order["vendor_messages"][vendor],
+                        text,
+                        vendor_keyboard(order_id, vendor, expanded)
+                    )
                 
-                if len(RECENT_ORDERS) > 50:
-                    RECENT_ORDERS.pop(0)
+                elif action == "works":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order:
+                        # Track confirmed time per vendor
+                        confirmed_times = order.get("confirmed_times", {})
+                        confirmed_times[vendor] = order.get("requested_time", "ASAP")
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
+                    
+                    # Post status to MDG
+                    status_msg = f"■ {vendor} replied: Works 👍 ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                 
-                logger.info(f"Order {order_id} processed successfully")
+                elif action == "later":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    requested = order.get("requested_time", "ASAP") if order else "ASAP"
+                    
+                    # Show time picker for vendor response
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        f"Select later time:",
+                        time_picker_keyboard(order_id, "later_time", requested)
+                    )
                 
-            except Exception as e:
-                logger.error(f"Error processing order: {e}")
-                raise
-
-        run_async(process())
-        return jsonify({"status": "success"}), 200
-        
-    except Exception as e:
-        logger.error(f"Shopify webhook error: {e}")
-        return jsonify({"error": "Internal server error"}), 500
-
-# --- APPLICATION ENTRY POINT ---
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    logger.info(f"Starting Complete Assignment Implementation on port {port}")
-    
-    # Start the event loop in a separate thread
-    def run_event_loop():
-        asyncio.set_event_loop(loop)
-        loop.run_forever()
-    
-    loop_thread = threading.Thread(target=run_event_loop)
-    loop_thread.daemon = True
-    loop_thread.start()
-    
-    app.run(host="0.0.0.0", port=port, debug=False)
+                elif action == "later_time":
+                    order_id, selected_time = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order:
+                        # Track confirmed time
+                        confirmed_times = order.get("confirmed_times", {})
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                confirmed_times[vendor] = selected_time
+                                break
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
+                        
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
+                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                                break
+                
+                elif action == "prepare":
+                    order_id, vendor = data[1], data[2]
+                    
+                    # Show time picker for vendor response
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        f"Select preparation time:",
+                        time_picker_keyboard(order_id, "prepare_time", None)
+                    )
+                
+                elif action == "prepare_time":
+                    order_id, selected_time = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order:
+                        # Track confirmed time
+                        confirmed_times = order.get("confirmed_times", {})
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                confirmed_times[vendor] = selected_time
+                                break
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
+                        
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
+                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                                break
+                
+                elif action == "wrong":
+                    order_id, vendor = data[1], data[2]
+                    # Show "Something is wrong" submenu
+                    wrong_buttons = [
+                        [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")]
+                    ]
+                    
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        "What's wrong?",
+                        InlineKeyboardMarkup(wrong_buttons)
+                    )
+                
+                elif action == "wrong_unavailable":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order and order.get("order_type") == "shopify":
+                        msg = f"■ {vendor}: Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee. ■"
+                    else:
+                        msg = f"■ {vendor}: Please call the customer and organize a replacement or a refund. ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
+                
+                elif action == "wrong_canceled":
+                    order_id, vendor = data[1], data[2]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
+                
+                elif action in ["wrong_technical", "wrong_other"]:
+                    order_id, vendor = data[1], data[2]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Write a message to dishbee and describe the issue ■")
+                
+                elif action == "wrong_delay":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    agreed_time = order.get("confirmed_time") or order.get("requested_time", "ASAP") if order else "ASAP"
+                    
+                    # Show delay time picker
+                    try:
+                        if agreed_time != "ASAP":
+                            hour, minute = map(int, agreed_time.split(':'))
+                            base_time = datetime.now().replace(hour=hour, minute=minute)
+                        else:
+                            base_time = datetime.now()
+                        
+                        delay_intervals = []
+                        for minutes in [5, 10, 15, 20]:
+                            time_option = base_time + timedelta(minutes=minutes)
+                            delay_intervals.append(time_option.strftime("%H:%M"))
+                        
+                        delay_buttons = []
+                        for i in range(0, len(delay_intervals), 2):
+                            row = [InlineKeyboardButton(delay_intervals[i], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i]}")]
+                            if i + 1 < len(delay_intervals):
+                                row.append(InlineKeyboardButton(delay_intervals[i + 1], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i + 1]}"))
+                            delay_buttons.append(row)
+                        
+                        await safe_send_message(
+                            VENDOR_GROUP_MAP[vendor],
+                            "Select delay time:",
+                            InlineKeyboardMarkup(delay_buttons)
+                        )
+                    except:
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay ■")
+                
+                elif action == "delay_time":
+                    order_id, vendor, delay_time = data[1], data[2], data[3]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
+                
+                elif action == "navigate":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if order:
+                        original_address = order['customer'].get('original_address', order['customer']['address'])
+                        maps_url = f"https://www.google.com/maps/dir/?api=1&destination={original_address.replace(' ', '+')}&travelmode=bicycling"
+                        await safe_send_message(
+                            cq["message"]["chat"]["id"],
+                            f"🧭 Navigate to delivery address:\n{maps_url}"
+                        )
+                
+                elif action == "call_customer_error":
+                    await safe_send_message(
+                        cq["message"]["chat"]["id"],
+                        "❌ No phone number available"
+                    )
+                
+                # VENDOR RESPONSES
+                elif action == "toggle":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        logger.warning(f"Order {order_id} not found in state")
+                        return
+                    
+                    expanded = not order["vendor_expanded"].get(vendor, False)
+                    order["vendor_expanded"][vendor] = expanded
+                    logger.info(f"Toggling vendor message for {vendor}, expanded: {expanded}")
+                    
+                    # Update vendor message
+                    if expanded:
+                        text = build_vendor_details_text(order, vendor)
+                    else:
+                        text = build_vendor_summary_text(order, vendor)
+                    
+                    await safe_edit_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        order["vendor_messages"][vendor],
+                        text,
+                        vendor_keyboard(order_id, vendor, expanded)
+                    )
+                
+                elif action == "works":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order:
+                        # Track confirmed time per vendor
+                        confirmed_times = order.get("confirmed_times", {})
+                        confirmed_times[vendor] = order.get("requested_time", "ASAP")
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
+                    
+                    # Post status to MDG
+                    status_msg = f"■ {vendor} replied: Works 👍 ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                
+                elif action == "later":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    requested = order.get("requested_time", "ASAP") if order else "ASAP"
+                    
+                    # Show time picker for vendor response
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        f"Select later time:",
+                        time_picker_keyboard(order_id, "later_time", requested)
+                    )
+                
+                elif action == "later_time":
+                    order_id, selected_time = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order:
+                        # Track confirmed time
+                        confirmed_times = order.get("confirmed_times", {})
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                confirmed_times[vendor] = selected_time
+                                break
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
+                        
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
+                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                                break
+                
+                elif action == "prepare":
+                    order_id, vendor = data[1], data[2]
+                    
+                    # Show time picker for vendor response
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        f"Select preparation time:",
+                        time_picker_keyboard(order_id, "prepare_time", None)
+                    )
+                
+                elif action == "prepare_time":
+                    order_id, selected_time = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order:
+                        # Track confirmed time
+                        confirmed_times = order.get("confirmed_times", {})
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                confirmed_times[vendor] = selected_time
+                                break
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
+                        
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
+                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                                break
+                
+                elif action == "wrong":
+                    order_id, vendor = data[1], data[2]
+                    # Show "Something is wrong" submenu
+                    wrong_buttons = [
+                        [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")]
+                    ]
+                    
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        "What's wrong?",
+                        InlineKeyboardMarkup(wrong_buttons)
+                    )
+                
+                elif action == "wrong_unavailable":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order and order.get("order_type") == "shopify":
+                        msg = f"■ {vendor}: Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee. ■"
+                    else:
+                        msg = f"■ {vendor}: Please call the customer and organize a replacement or a refund. ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
+                
+                elif action == "wrong_canceled":
+                    order_id, vendor = data[1], data[2]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
+                
+                elif action in ["wrong_technical", "wrong_other"]:
+                    order_id, vendor = data[1], data[2]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Write a message to dishbee and describe the issue ■")
+                
+                elif action == "wrong_delay":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    agreed_time = order.get("confirmed_time") or order.get("requested_time", "ASAP") if order else "ASAP"
+                    
+                    # Show delay time picker
+                    try:
+                        if agreed_time != "ASAP":
+                            hour, minute = map(int, agreed_time.split(':'))
+                            base_time = datetime.now().replace(hour=hour, minute=minute)
+                        else:
+                            base_time = datetime.now()
+                        
+                        delay_intervals = []
+                        for minutes in [5, 10, 15, 20]:
+                            time_option = base_time + timedelta(minutes=minutes)
+                            delay_intervals.append(time_option.strftime("%H:%M"))
+                        
+                        delay_buttons = []
+                        for i in range(0, len(delay_intervals), 2):
+                            row = [InlineKeyboardButton(delay_intervals[i], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i]}")]
+                            if i + 1 < len(delay_intervals):
+                                row.append(InlineKeyboardButton(delay_intervals[i + 1], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i + 1]}"))
+                            delay_buttons.append(row)
+                        
+                        await safe_send_message(
+                            VENDOR_GROUP_MAP[vendor],
+                            "Select delay time:",
+                            InlineKeyboardMarkup(delay_buttons)
+                        )
+                    except:
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay ■")
+                
+                elif action == "delay_time":
+                    order_id, vendor, delay_time = data[1], data[2], data[3]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
+                
+                elif action == "navigate":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if order:
+                        original_address = order['customer'].get('original_address', order['customer']['address'])
+                        maps_url = f"https://www.google.com/maps/dir/?api=1&destination={original_address.replace(' ', '+')}&travelmode=bicycling"
+                        await safe_send_message(
+                            cq["message"]["chat"]["id"],
+                            f"🧭 Navigate to delivery address:\n{maps_url}"
+                        )
+                
+                elif action == "call_customer_error":
+                    await safe_send_message(
+                        cq["message"]["chat"]["id"],
+                        "❌ No phone number available"
+                    )
+                
+                # VENDOR RESPONSES
+                elif action == "toggle":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if not order:
+                        logger.warning(f"Order {order_id} not found in state")
+                        return
+                    
+                    expanded = not order["vendor_expanded"].get(vendor, False)
+                    order["vendor_expanded"][vendor] = expanded
+                    logger.info(f"Toggling vendor message for {vendor}, expanded: {expanded}")
+                    
+                    # Update vendor message
+                    if expanded:
+                        text = build_vendor_details_text(order, vendor)
+                    else:
+                        text = build_vendor_summary_text(order, vendor)
+                    
+                    await safe_edit_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        order["vendor_messages"][vendor],
+                        text,
+                        vendor_keyboard(order_id, vendor, expanded)
+                    )
+                
+                elif action == "works":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order:
+                        # Track confirmed time per vendor
+                        confirmed_times = order.get("confirmed_times", {})
+                        confirmed_times[vendor] = order.get("requested_time", "ASAP")
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
+                    
+                    # Post status to MDG
+                    status_msg = f"■ {vendor} replied: Works 👍 ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                
+                elif action == "later":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    requested = order.get("requested_time", "ASAP") if order else "ASAP"
+                    
+                    # Show time picker for vendor response
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        f"Select later time:",
+                        time_picker_keyboard(order_id, "later_time", requested)
+                    )
+                
+                elif action == "later_time":
+                    order_id, selected_time = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order:
+                        # Track confirmed time
+                        confirmed_times = order.get("confirmed_times", {})
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                confirmed_times[vendor] = selected_time
+                                break
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
+                        
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
+                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                                break
+                
+                elif action == "prepare":
+                    order_id, vendor = data[1], data[2]
+                    
+                    # Show time picker for vendor response
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        f"Select preparation time:",
+                        time_picker_keyboard(order_id, "prepare_time", None)
+                    )
+                
+                elif action == "prepare_time":
+                    order_id, selected_time = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order:
+                        # Track confirmed time
+                        confirmed_times = order.get("confirmed_times", {})
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                confirmed_times[vendor] = selected_time
+                                break
+                        order["confirmed_times"] = confirmed_times
+                        
+                        # Check if all vendors confirmed
+                        all_confirmed = await check_all_vendors_confirmed(order_id)
+                        if all_confirmed:
+                            order["all_confirmed"] = True
+                            await add_assignment_buttons(order_id)
+                        
+                        # Find which vendor this is from
+                        for vendor in order["vendors"]:
+                            if vendor in order.get("vendor_messages", {}):
+                                status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
+                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                                break
+                
+                elif action == "wrong":
+                    order_id, vendor = data[1], data[2]
+                    # Show "Something is wrong" submenu
+                    wrong_buttons = [
+                        [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")]
+                    ]
+                    
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        "What's wrong?",
+                        InlineKeyboardMarkup(wrong_buttons)
+                    )
+                
+                elif action == "wrong_unavailable":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    if order and order.get("order_type") == "shopify":
+                        msg = f"■ {vendor}: Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee. ■"
+                    else:
+                        msg = f"■ {vendor}: Please call the customer and organize a replacement or a refund. ■"
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
+                
+                elif action == "wrong_canceled":
+                    order_id, vendor = data[1], data[2]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
+                
+                elif action in ["wrong_technical", "wrong_other"]:
+                    order_id, vendor = data[1], data[2]
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Write a message to dishbee and describe the issue ■")
+                
+                elif action == "wrong_delay":
+                    order_id, vendor = data[1], data[2]
+                    order = STATE.get(order_id)
+                    agreed_time = order.get("confirmed_time") or order.get("requested_time", "ASAP") if order else "ASAP"
+                    
+                    # Show delay time picker
+                    try:
+                        if agreed_time != "ASAP":
+                            hour, minute = map(int, agreed_time.split(':'))
+                            base_time = datetime.now().replace(hour=hour, minute=minute)
+                        else:
+                            base_time = datetime.now()
+                        
+                        delay_intervals = []
+                        for minutes in [5, 10, 15, 20]:
+                            time_option = base_time + timedelta(minutes=minutes)
+                            delay_intervals.append(time_option.strftime("%H:%M"))
+                        
+                        delay_buttons = []
+                        for i in range(0, len(delay_intervals), 2):
+                            row = [InlineKeyboardButton(delay_intervals[i], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i]}")]
+                            if i + 1 < len(delay_intervals):
+                                row.append(InlineKeyboardButton(delay_intervals[i + 1], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i + 1]}"))
+                            delay_buttons.append(row)
