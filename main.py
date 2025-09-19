@@ -1160,7 +1160,7 @@ async def check_all_vendors_confirmed(order_id: str) -> bool:
     vendors = order.get("vendors", [])
     confirmed_times = order.get("confirmed_times", {})
     
-    return len(confirmed_times) == len(vendors) && all(vendor in confirmed_times for vendor in vendors)
+    return len(confirmed_times) == len(vendors) and all(vendor in confirmed_times for vendor in vendors)
 
 async def add_assignment_buttons(order_id: str):
     """Add assignment buttons to MDG confirmation message"""
@@ -1945,7 +1945,7 @@ def telegram_webhook():
                     # Show delay time picker
                     try:
                         if agreed_time != "ASAP":
-                            hour, minute = map(int, agreed_time.split(':'))
+                            hour, minute = map(int, agreed_time.split(':'))  
                             base_time = datetime.now().replace(hour=hour, minute=minute)
                         else:
                             base_time = datetime.now()
@@ -1974,6 +1974,117 @@ def telegram_webhook():
                     order_id, vendor, delay_time = data[1], data[2], data[3]
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
                 
+                # UPC - USER PRIVATE CHATS
+                elif action == "assign_self":
+                    order_id = data[1]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"Assigning order {order_id} to self (user {user_id})")
+                    
+                    # Send assignment message to user's private chat
+                    await send_assignment_message(order_id, user_id)
+                    
+                    # Post status to MDG
+                    order = STATE.get(order_id)
+                    order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name'] if order else "Unknown"
+                    status_msg = await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"✅ Order #{order_num} assigned to you"
+                    )
+                    
+                    # Track for cleanup
+                    if order:
+                        order["assignment_status_messages"].append(status_msg.message_id)
+                    
+                    # Start cleanup timer
+                    run_async(cleanup_assignment_messages(order_id))
+                
+                elif action == "assign_to":
+                    order_id = data[1]
+                    logger.info(f"Showing assignment options for order {order_id}")
+                    
+                    # Fetch MDG members (prioritize COURIER_MAP users)
+                    try:
+                        # Get chat members from MDG group
+                        mdg_members = []
+                        async for member in bot.get_chat_members(DISPATCH_MAIN_CHAT_ID):
+                            if member.user.id != bot.id:  # Exclude bot itself
+                                mdg_members.append(member.user)
+                        
+                        # Prioritize COURIER_MAP users
+                        prioritized = []
+                        others = []
+                        courier_ids = set(DRIVERS.values())
+                        
+                        for member in mdg_members:
+                            if member.id in courier_ids:
+                                prioritized.append(member)
+                            else:
+                                others.append(member)
+                        
+                        # Combine: prioritized first, then others
+                        sorted_members = prioritized + others
+                        
+                        # Build keyboard with member list
+                        buttons = []
+                        for member in sorted_members[:10]:  # Limit to 10
+                            display_name = member.first_name or member.username or str(member.id)
+                            buttons.append([InlineKeyboardButton(
+                                f"👤 {display_name}",
+                                callback_data=f"assign_select|{order_id}|{member.id}"
+                            )])
+                        
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "Select user to assign order to:",
+                            InlineKeyboardMarkup(buttons)
+                        )
+                        
+                    except Exception as e:
+                        logger.error(f"Error fetching MDG members: {e}")
+                        await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "❌ Error fetching group members"
+                        )
+                
+                elif action == "assign_select":
+                    order_id, selected_user_id = data[1], int(data[2])
+                    logger.info(f"Assigning order {order_id} to user {selected_user_id}")
+                    
+                    # Send assignment message to selected user's private chat
+                    await send_assignment_message(order_id, selected_user_id)
+                    
+                    # Post status to MDG
+                    order = STATE.get(order_id)
+                    order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name'] if order else "Unknown"
+                    status_msg = await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"✅ Order #{order_num} assigned to selected user"
+                    )
+                    
+                    # Track for cleanup
+                    if order:
+                        order["assignment_status_messages"].append(status_msg.message_id)
+                    
+                    # Start cleanup timer
+                    run_async(cleanup_assignment_messages(order_id))
+                
+                elif action == "call_customer":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if order:
+                        phone = order['customer']['phone']
+                        if phone and phone != "N/A":
+                            # Send message with tel: link
+                            await safe_send_message(
+                                cq["message"]["chat"]["id"],
+                                f"📞 Call customer: [{phone}](tel:{phone})"
+                            )
+                        else:
+                            await safe_send_message(
+                                cq["message"]["chat"]["id"],
+                                "❌ No phone number available"
+                            )
+                
                 elif action == "navigate":
                     order_id = data[1]
                     order = STATE.get(order_id)
@@ -1985,200 +2096,103 @@ def telegram_webhook():
                             f"🧭 Navigate to delivery address:\n{maps_url}"
                         )
                 
-                elif action == "call_customer_error":
+                elif action == "delay":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if order:
+                        vendors = order.get("vendors", [])
+                        if len(vendors) > 1:
+                            # Multi-vendor: show vendor selection
+                            await safe_send_message(
+                                cq["message"]["chat"]["id"],
+                                "Select restaurant to delay:",
+                                delay_vendor_keyboard(order_id)
+                            )
+                        else:
+                            # Single vendor: show time selection
+                            vendor = vendors[0] if vendors else None
+                            if vendor:
+                                await safe_send_message(
+                                    cq["message"]["chat"]["id"],
+                                    "Select delay time:",
+                                    delay_time_keyboard(order_id, vendor)
+                                )
+                
+                elif action == "delay_vendor":
+                    order_id, vendor = data[1], data[2]
                     await safe_send_message(
                         cq["message"]["chat"]["id"],
-                        "❌ No phone number available"
+                        f"Select delay time for {vendor}:",
+                        delay_time_keyboard(order_id, vendor)
                     )
                 
-                # VENDOR RESPONSES
-                elif action == "toggle":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if not order:
-                        logger.warning(f"Order {order_id} not found in state")
-                        return
-                    
-                    expanded = not order["vendor_expanded"].get(vendor, False)
-                    order["vendor_expanded"][vendor] = expanded
-                    logger.info(f"Toggling vendor message for {vendor}, expanded: {expanded}")
-                    
-                    # Update vendor message
-                    if expanded:
-                        text = build_vendor_details_text(order, vendor)
-                    else:
-                        text = build_vendor_summary_text(order, vendor)
-                    
-                    await safe_edit_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        order["vendor_messages"][vendor],
-                        text,
-                        vendor_keyboard(order_id, vendor, expanded)
-                    )
-                
-                elif action == "works":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time per vendor
-                        confirmed_times = order.get("confirmed_times", {})
-                        confirmed_times[vendor] = order.get("requested_time", "ASAP")
-                        order["confirmed_times"] = confirmed_times
-                        
-                        # Check if all vendors confirmed
-                        all_confirmed = await check_all_vendors_confirmed(order_id)
-                        if all_confirmed:
-                            order["all_confirmed"] = True
-                            await add_assignment_buttons(order_id)
-                    
-                    # Post status to MDG
-                    status_msg = f"■ {vendor} replied: Works 👍 ■"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                
-                elif action == "later":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    requested = order.get("requested_time", "ASAP") if order else "ASAP"
-                    
-                    # Show time picker for vendor response
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        f"Select later time:",
-                        time_picker_keyboard(order_id, "later_time", requested)
-                    )
-                
-                elif action == "later_time":
-                    order_id, selected_time = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time
-                        confirmed_times = order.get("confirmed_times", {})
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                confirmed_times[vendor] = selected_time
-                                break
-                        order["confirmed_times"] = confirmed_times
-                        
-                        # Check if all vendors confirmed
-                        all_confirmed = await check_all_vendors_confirmed(order_id)
-                        if all_confirmed:
-                            order["all_confirmed"] = True
-                            await add_assignment_buttons(order_id)
-                        
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
-                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                                break
-                
-                elif action == "prepare":
-                    order_id, vendor = data[1], data[2]
-                    
-                    # Show time picker for vendor response
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        f"Select preparation time:",
-                        time_picker_keyboard(order_id, "prepare_time", None)
-                    )
-                
-                elif action == "prepare_time":
-                    order_id, selected_time = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time
-                        confirmed_times = order.get("confirmed_times", {})
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                confirmed_times[vendor] = selected_time
-                                break
-                        order["confirmed_times"] = confirmed_times
-                        
-                        # Check if all vendors confirmed
-                        all_confirmed = await check_all_vendors_confirmed(order_id)
-                        if all_confirmed:
-                            order["all_confirmed"] = True
-                            await add_assignment_buttons(order_id)
-                        
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
-                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                                break
-                
-                elif action == "wrong":
-                    order_id, vendor = data[1], data[2]
-                    # Show "Something is wrong" submenu
-                    wrong_buttons = [
-                        [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")]
-                    ]
-                    
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        "What's wrong?",
-                        InlineKeyboardMarkup(wrong_buttons)
-                    )
-                
-                elif action == "wrong_unavailable":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order and order.get("order_type") == "shopify":
-                        msg = f"■ {vendor}: Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee. ■"
-                    else:
-                        msg = f"■ {vendor}: Please call the customer and organize a replacement or a refund. ■"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
-                
-                elif action == "wrong_canceled":
-                    order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
-                
-                elif action in ["wrong_technical", "wrong_other"]:
-                    order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Write a message to dishbee and describe the issue ■")
-                
-                elif action == "wrong_delay":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    agreed_time = order.get("confirmed_time") or order.get("requested_time", "ASAP") if order else "ASAP"
-                    
-                    # Show delay time picker
-                    try:
-                        if agreed_time != "ASAP":
-                            hour, minute = map(int, agreed_time.split(':'))
-                            base_time = datetime.now().replace(hour=hour, minute=minute)
-                        else:
-                            base_time = datetime.now()
-                        
-                        delay_intervals = []
-                        for minutes in [5, 10, 15, 20]:
-                            time_option = base_time + timedelta(minutes=minutes)
-                            delay_intervals.append(time_option.strftime("%H:%M"))
-                        
-                        delay_buttons = []
-                        for i in range(0, len(delay_intervals), 2):
-                            row = [InlineKeyboardButton(delay_intervals[i], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i]}")]
-                            if i + 1 < len(delay_intervals):
-                                row.append(InlineKeyboardButton(delay_intervals[i + 1], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i + 1]}"))
-                            delay_buttons.append(row)
-                        
-                        await safe_send_message(
-                            VENDOR_GROUP_MAP[vendor],
-                            "Select delay time:",
-                            InlineKeyboardMarkup(delay_buttons)
-                        )
-                    except:
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay ■")
-                
-                elif action == "delay_time":
+                elif action == "delay_confirm":
                     order_id, vendor, delay_time = data[1], data[2], data[3]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
+                    # Send delay message to vendor RG
+                    vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                    if vendor_chat:
+                        order = STATE.get(order_id)
+                        if order:
+                            order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
+                            delay_msg = f"We have a delay, if possible prepare #{order_num} at {delay_time}. If not, please keep it warm."
+                            await safe_send_message(
+                                vendor_chat,
+                                delay_msg,
+                                restaurant_response_keyboard("delay", order_id, vendor)
+                            )
+                            # Post status to MDG
+                            status_msg = await safe_send_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                f"■ Delay requested for {vendor}: {delay_time} ■"
+                            )
+                            # Track for cleanup
+                            if order:
+                                order["assignment_status_messages"].append(status_msg.message_id)
+                            # Start cleanup
+                            run_async(cleanup_assignment_messages(order_id))
+                
+                elif action == "call_restaurant":
+                    order_id = data[1]
+                    # Placeholder: Restaurant accounts not implemented yet
+                    await safe_send_message(
+                        cq["message"]["chat"]["id"],
+                        "🍽 Restaurant calling not implemented yet"
+                    )
+                
+                elif action == "delivered":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if order:
+                        # Update order status
+                        order["status"] = "delivered"
+                        
+                        # Update MDG message
+                        order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            f"✅ Order #{order_num} delivered",
+                            None  # Remove buttons
+                        )
+                        
+                        # Send completion message to MDG
+                        completion_msg = await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            f"Order #{order_num} was delivered"
+                        )
+                        
+                        # Track for cleanup
+                        order["assignment_status_messages"].append(completion_msg.message_id)
+                        
+                        # Clean up assignment messages
+                        for msg_id in order.get("assignment_messages", []):
+                            try:
+                                await safe_delete_message(DISPATCH_MAIN_CHAT_ID, msg_id)
+                            except Exception as e:
+                                logger.error(f"Error deleting assignment message {msg_id}: {e}")
+                        
+                        # Start cleanup for status messages
+                        run_async(cleanup_assignment_messages(order_id))
                 
                 elif action == "navigate":
                     order_id = data[1]
@@ -2196,386 +2210,3 @@ def telegram_webhook():
                         cq["message"]["chat"]["id"],
                         "❌ No phone number available"
                     )
-                
-                # VENDOR RESPONSES
-                elif action == "toggle":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if not order:
-                        logger.warning(f"Order {order_id} not found in state")
-                        return
-                    
-                    expanded = not order["vendor_expanded"].get(vendor, False)
-                    order["vendor_expanded"][vendor] = expanded
-                    logger.info(f"Toggling vendor message for {vendor}, expanded: {expanded}")
-                    
-                    # Update vendor message
-                    if expanded:
-                        text = build_vendor_details_text(order, vendor)
-                    else:
-                        text = build_vendor_summary_text(order, vendor)
-                    
-                    await safe_edit_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        order["vendor_messages"][vendor],
-                        text,
-                        vendor_keyboard(order_id, vendor, expanded)
-                    )
-                
-                elif action == "works":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time per vendor
-                        confirmed_times = order.get("confirmed_times", {})
-                        confirmed_times[vendor] = order.get("requested_time", "ASAP")
-                        order["confirmed_times"] = confirmed_times
-                        
-                        # Check if all vendors confirmed
-                        all_confirmed = await check_all_vendors_confirmed(order_id)
-                        if all_confirmed:
-                            order["all_confirmed"] = True
-                            await add_assignment_buttons(order_id)
-                    
-                    # Post status to MDG
-                    status_msg = f"■ {vendor} replied: Works 👍 ■"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                
-                elif action == "later":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    requested = order.get("requested_time", "ASAP") if order else "ASAP"
-                    
-                    # Show time picker for vendor response
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        f"Select later time:",
-                        time_picker_keyboard(order_id, "later_time", requested)
-                    )
-                
-                elif action == "later_time":
-                    order_id, selected_time = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time
-                        confirmed_times = order.get("confirmed_times", {})
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                confirmed_times[vendor] = selected_time
-                                break
-                        order["confirmed_times"] = confirmed_times
-                        
-                        # Check if all vendors confirmed
-                        all_confirmed = await check_all_vendors_confirmed(order_id)
-                        if all_confirmed:
-                            order["all_confirmed"] = True
-                            await add_assignment_buttons(order_id)
-                        
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
-                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                                break
-                
-                elif action == "prepare":
-                    order_id, vendor = data[1], data[2]
-                    
-                    # Show time picker for vendor response
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        f"Select preparation time:",
-                        time_picker_keyboard(order_id, "prepare_time", None)
-                    )
-                
-                elif action == "prepare_time":
-                    order_id, selected_time = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time
-                        confirmed_times = order.get("confirmed_times", {})
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                confirmed_times[vendor] = selected_time
-                                break
-                        order["confirmed_times"] = confirmed_times
-                        
-                        # Check if all vendors confirmed
-                        all_confirmed = await check_all_vendors_confirmed(order_id)
-                        if all_confirmed:
-                            order["all_confirmed"] = True
-                            await add_assignment_buttons(order_id)
-                        
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
-                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                                break
-                
-                elif action == "wrong":
-                    order_id, vendor = data[1], data[2]
-                    # Show "Something is wrong" submenu
-                    wrong_buttons = [
-                        [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")]
-                    ]
-                    
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        "What's wrong?",
-                        InlineKeyboardMarkup(wrong_buttons)
-                    )
-                
-                elif action == "wrong_unavailable":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order and order.get("order_type") == "shopify":
-                        msg = f"■ {vendor}: Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee. ■"
-                    else:
-                        msg = f"■ {vendor}: Please call the customer and organize a replacement or a refund. ■"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
-                
-                elif action == "wrong_canceled":
-                    order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
-                
-                elif action in ["wrong_technical", "wrong_other"]:
-                    order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Write a message to dishbee and describe the issue ■")
-                
-                elif action == "wrong_delay":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    agreed_time = order.get("confirmed_time") or order.get("requested_time", "ASAP") if order else "ASAP"
-                    
-                    # Show delay time picker
-                    try:
-                        if agreed_time != "ASAP":
-                            hour, minute = map(int, agreed_time.split(':'))
-                            base_time = datetime.now().replace(hour=hour, minute=minute)
-                        else:
-                            base_time = datetime.now()
-                        
-                        delay_intervals = []
-                        for minutes in [5, 10, 15, 20]:
-                            time_option = base_time + timedelta(minutes=minutes)
-                            delay_intervals.append(time_option.strftime("%H:%M"))
-                        
-                        delay_buttons = []
-                        for i in range(0, len(delay_intervals), 2):
-                            row = [InlineKeyboardButton(delay_intervals[i], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i]}")]
-                            if i + 1 < len(delay_intervals):
-                                row.append(InlineKeyboardButton(delay_intervals[i + 1], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i + 1]}"))
-                            delay_buttons.append(row)
-                        
-                        await safe_send_message(
-                            VENDOR_GROUP_MAP[vendor],
-                            "Select delay time:",
-                            InlineKeyboardMarkup(delay_buttons)
-                        )
-                    except:
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay ■")
-                
-                elif action == "delay_time":
-                    order_id, vendor, delay_time = data[1], data[2], data[3]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
-                
-                elif action == "navigate":
-                    order_id = data[1]
-                    order = STATE.get(order_id)
-                    if order:
-                        original_address = order['customer'].get('original_address', order['customer']['address'])
-                        maps_url = f"https://www.google.com/maps/dir/?api=1&destination={original_address.replace(' ', '+')}&travelmode=bicycling"
-                        await safe_send_message(
-                            cq["message"]["chat"]["id"],
-                            f"🧭 Navigate to delivery address:\n{maps_url}"
-                        )
-                
-                elif action == "call_customer_error":
-                    await safe_send_message(
-                        cq["message"]["chat"]["id"],
-                        "❌ No phone number available"
-                    )
-                
-                # VENDOR RESPONSES
-                elif action == "toggle":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if not order:
-                        logger.warning(f"Order {order_id} not found in state")
-                        return
-                    
-                    expanded = not order["vendor_expanded"].get(vendor, False)
-                    order["vendor_expanded"][vendor] = expanded
-                    logger.info(f"Toggling vendor message for {vendor}, expanded: {expanded}")
-                    
-                    # Update vendor message
-                    if expanded:
-                        text = build_vendor_details_text(order, vendor)
-                    else:
-                        text = build_vendor_summary_text(order, vendor)
-                    
-                    await safe_edit_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        order["vendor_messages"][vendor],
-                        text,
-                        vendor_keyboard(order_id, vendor, expanded)
-                    )
-                
-                elif action == "works":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time per vendor
-                        confirmed_times = order.get("confirmed_times", {})
-                        confirmed_times[vendor] = order.get("requested_time", "ASAP")
-                        order["confirmed_times"] = confirmed_times
-                        
-                        # Check if all vendors confirmed
-                        all_confirmed = await check_all_vendors_confirmed(order_id)
-                        if all_confirmed:
-                            order["all_confirmed"] = True
-                            await add_assignment_buttons(order_id)
-                    
-                    # Post status to MDG
-                    status_msg = f"■ {vendor} replied: Works 👍 ■"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                
-                elif action == "later":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    requested = order.get("requested_time", "ASAP") if order else "ASAP"
-                    
-                    # Show time picker for vendor response
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        f"Select later time:",
-                        time_picker_keyboard(order_id, "later_time", requested)
-                    )
-                
-                elif action == "later_time":
-                    order_id, selected_time = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time
-                        confirmed_times = order.get("confirmed_times", {})
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                confirmed_times[vendor] = selected_time
-                                break
-                        order["confirmed_times"] = confirmed_times
-                        
-                        # Check if all vendors confirmed
-                        all_confirmed = await check_all_vendors_confirmed(order_id)
-                        if all_confirmed:
-                            order["all_confirmed"] = True
-                            await add_assignment_buttons(order_id)
-                        
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
-                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                                break
-                
-                elif action == "prepare":
-                    order_id, vendor = data[1], data[2]
-                    
-                    # Show time picker for vendor response
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        f"Select preparation time:",
-                        time_picker_keyboard(order_id, "prepare_time", None)
-                    )
-                
-                elif action == "prepare_time":
-                    order_id, selected_time = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time
-                        confirmed_times = order.get("confirmed_times", {})
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                confirmed_times[vendor] = selected_time
-                                break
-                        order["confirmed_times"] = confirmed_times
-                        
-                        # Check if all vendors confirmed
-                        all_confirmed = await check_all_vendors_confirmed(order_id)
-                        if all_confirmed:
-                            order["all_confirmed"] = True
-                            await add_assignment_buttons(order_id)
-                        
-                        # Find which vendor this is from
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
-                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                                break
-                
-                elif action == "wrong":
-                    order_id, vendor = data[1], data[2]
-                    # Show "Something is wrong" submenu
-                    wrong_buttons = [
-                        [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")]
-                    ]
-                    
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        "What's wrong?",
-                        InlineKeyboardMarkup(wrong_buttons)
-                    )
-                
-                elif action == "wrong_unavailable":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order and order.get("order_type") == "shopify":
-                        msg = f"■ {vendor}: Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee. ■"
-                    else:
-                        msg = f"■ {vendor}: Please call the customer and organize a replacement or a refund. ■"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
-                
-                elif action == "wrong_canceled":
-                    order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
-                
-                elif action in ["wrong_technical", "wrong_other"]:
-                    order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Write a message to dishbee and describe the issue ■")
-                
-                elif action == "wrong_delay":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    agreed_time = order.get("confirmed_time") or order.get("requested_time", "ASAP") if order else "ASAP"
-                    
-                    # Show delay time picker
-                    try:
-                        if agreed_time != "ASAP":
-                            hour, minute = map(int, agreed_time.split(':'))
-                            base_time = datetime.now().replace(hour=hour, minute=minute)
-                        else:
-                            base_time = datetime.now()
-                        
-                        delay_intervals = []
-                        for minutes in [5, 10, 15, 20]:
-                            time_option = base_time + timedelta(minutes=minutes)
-                            delay_intervals.append(time_option.strftime("%H:%M"))
-                        
-                        delay_buttons = []
-                        for i in range(0, len(delay_intervals), 2):
-                            row = [InlineKeyboardButton(delay_intervals[i], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i]}")]
-                            if i + 1 < len(delay_intervals):
-                                row.append(InlineKeyboardButton(delay_intervals[i + 1], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i + 1]}"))
-                            delay_buttons.append(row)
