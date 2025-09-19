@@ -1217,12 +1217,63 @@ async def cleanup_assignment_messages(order_id: str):
 
 # In shopify_webhook, add confirmed_times initialization
 # ...existing code...
+# ...existing code...
+# --- WEBHOOK ENDPOINTS ---
+@app.route("/shopify", methods=["POST"])
+def shopify_webhook():
+    """Handle Shopify webhooks"""
+    try:
+        # Verify webhook
+        raw_data = request.get_data()
+        hmac_header = request.headers.get("X-Shopify-Hmac-SHA256")
+        if not verify_webhook(raw_data, hmac_header):
+            return "Unauthorized", 401
+
+        data = request.get_json()
+        order_id = str(data["id"])
+        
+        # Initialize order state
+        STATE[order_id] = {
+            "order_type": "shopify",
+            "name": data.get("name", ""),
+            "created_at": datetime.now(),
+            "customer": {
+                "name": data["customer"]["first_name"] + " " + data["customer"]["last_name"],
+                "phone": data["customer"].get("phone", "N/A"),
+                "address": fmt_address(data["customer"]["default_address"]) if data["customer"].get("default_address") else "No address",
+                "original_address": data["customer"]["default_address"]["address1"] + ", " + data["customer"]["default_address"]["zip"] if data["customer"].get("default_address") else ""
+            },
+            "vendors": [],  # To be filled based on line items
+            "vendor_items": {},
+            "items_text": "",
+            "total": data.get("total_price", "0.00") + "€",
+            "payment_method": data.get("payment_gateway_names", ["Paid"])[0],
+            "note": data.get("note", ""),
+            "tips": float(data.get("total_tip_received", "0.00")),
+            "requested_time": None,
+            "confirmed_time": None,
+            "status": "pending",
+            "mdg_message_id": None,
+            "vendor_messages": {},
+            "vendor_expanded": {},
+            "mdg_additional_messages": [],
             "confirmed_times": {},  # Track per-vendor confirmed times
             "all_confirmed": False,  # Track if all vendors confirmed
             "assignment_messages": [],  # Track assignment message IDs
             "assignment_status_messages": []  # Track status message IDs for cleanup
-# ...existing code...
-# --- WEBHOOK ENDPOINTS ---
+        }
+        
+        # Process order and send to MDG
+        # ... existing code ...
+        
+        return "OK"
+    except Exception as e:
+        logger.error(f"Shopify webhook error: {e}")
+        return "Error", 500
+    except Exception as e:
+        logger.error(f"Shopify webhook error: {e}")
+        return "Error", 500
+
 @app.route("/", methods=["GET"])
 def health_check():
     """Health check endpoint for monitoring"""
@@ -2210,3 +2261,13 @@ def telegram_webhook():
                         cq["message"]["chat"]["id"],
                         "❌ No phone number available"
                     )
+
+            except Exception as e:
+                logger.error(f"handle callback error: {e}")
+
+            # Process callback asynchronously
+            asyncio.create_task(handle())
+
+    except Exception as e:
+        logger.error(f"telegram_webhook error: {e}")
+        return "OK"
