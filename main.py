@@ -43,11 +43,31 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # --- ENVIRONMENT VARIABLES ---
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
-DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
-VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
-DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
+try:
+    BOT_TOKEN = os.environ["BOT_TOKEN"]
+    WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
+    DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
+    VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
+    DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
+    
+    # Log successful configuration
+    logger.info("Environment variables loaded successfully")
+    logger.info(f"Dispatch Main Chat ID: {DISPATCH_MAIN_CHAT_ID}")
+    logger.info(f"Vendor Group Map: {list(VENDOR_GROUP_MAP.keys())}")
+    logger.info(f"Drivers configured: {len(DRIVERS)}")
+    
+except KeyError as e:
+    logger.error(f"Missing required environment variable: {e}")
+    logger.error("Required environment variables:")
+    logger.error("- BOT_TOKEN: Telegram bot token")
+    logger.error("- SHOPIFY_WEBHOOK_SECRET: Shopify webhook secret")
+    logger.error("- DISPATCH_MAIN_CHAT_ID: Main dispatch chat ID")
+    logger.error("- VENDOR_GROUP_MAP: JSON mapping of vendor names to chat IDs (optional)")
+    logger.error("- DRIVERS: JSON mapping of driver names to user IDs (optional)")
+    raise SystemExit("Application cannot start due to missing environment variables")
+except (ValueError, json.JSONDecodeError) as e:
+    logger.error(f"Invalid environment variable format: {e}")
+    raise SystemExit("Application cannot start due to invalid environment variable format")
 
 # --- CONSTANTS AND MAPPINGS ---
 # Restaurant shortcut mapping (per assignment in Doc)
@@ -73,6 +93,10 @@ request_cfg = HTTPXRequest(
 )
 bot = Bot(token=BOT_TOKEN, request=request_cfg)
 
+# Log successful bot initialization
+logger.info("Telegram bot initialized successfully")
+logger.info(f"Bot token configured: {'Yes' if BOT_TOKEN else 'No'}")
+
 # --- GLOBAL STATE ---
 STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
@@ -80,6 +104,11 @@ RECENT_ORDERS: List[Dict[str, Any]] = []
 # Create event loop for async operations
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
+
+# Log successful application startup
+logger.info("Dishbee Telegram Dispatch Bot application started successfully")
+logger.info(f"Flask app configured with {len(app.url_map._rules)} routes")
+logger.info("Ready to receive webhooks and Telegram updates")
 
 def run_async(coro):
     """Run async function in background thread"""
@@ -1134,6 +1163,7 @@ async def send_assignment_message(order_id: str, user_id: int):
         # Build and send assignment message
         message_text = build_assignment_message(order)
         is_multi_vendor = len(order.get("vendors", [])) > 1
+        phone = order['customer']['phone']
         
         assignment_msg = await safe_send_message(
             user_id,
