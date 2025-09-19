@@ -795,9 +795,37 @@ def telegram_webhook():
         upd = request.get_json(force=True)
         if not upd:
             return "OK"
-        
+
+        # Log all incoming updates for spam detection
+        logger.info(f"=== INCOMING UPDATE ===")
+        logger.info(f"Update ID: {upd.get('update_id')}")
+        logger.info(f"Timestamp: {datetime.now().isoformat()}")
+
+        # Check for regular messages (potential spam source)
+        if "message" in upd:
+            msg = upd["message"]
+            from_user = msg.get("from", {})
+            chat = msg.get("chat", {})
+            text = msg.get("text", "")
+
+            logger.info(f"MESSAGE RECEIVED:")
+            logger.info(f"  Chat ID: {chat.get('id')}")
+            logger.info(f"  Chat Type: {chat.get('type')}")
+            logger.info(f"  Chat Title: {chat.get('title', 'N/A')}")
+            logger.info(f"  From User ID: {from_user.get('id')}")
+            logger.info(f"  From Username: {from_user.get('username', 'N/A')}")
+            logger.info(f"  From First Name: {from_user.get('first_name', 'N/A')}")
+            logger.info(f"  From Last Name: {from_user.get('last_name', 'N/A')}")
+            logger.info(f"  Message Text: {text[:200]}{'...' if len(text) > 200 else ''}")
+            logger.info(f"  Message Length: {len(text)}")
+
+            # Flag potential spam
+            if "FOXY" in text.upper() or "airdrop" in text.lower() or "t.me/" in text:
+                logger.warning(f"🚨 POTENTIAL SPAM DETECTED: {text[:100]}...")
+
         cq = upd.get("callback_query")
         if not cq:
+            logger.info("=== NO CALLBACK QUERY - END UPDATE ===")
             return "OK"
 
         # Answer callback query immediately (synchronously)
