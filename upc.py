@@ -24,14 +24,13 @@ def check_all_vendors_confirmed(order_id: str) -> bool:
     if not vendors:
         return False
 
-    # Check if all vendors have confirmed_time set
-    for vendor in vendors:
-        if not order.get("confirmed_time"):
-            logger.info(f"Order {order_id}: Vendor {vendor} has not confirmed time yet")
-            return False
+    # For single vendor orders, check if confirmed_time is set
+    if len(vendors) == 1:
+        return order.get("confirmed_time") is not None
 
-    logger.info(f"Order {order_id}: ALL vendors have confirmed - ready for assignment")
-    return True
+    # For multi-vendor orders, check if all vendors have confirmed
+    confirmed_vendors = order.get("confirmed_vendors", set())
+    return len(confirmed_vendors) == len(vendors)
 
 def assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build assignment buttons that appear after all vendors confirm"""
@@ -39,14 +38,11 @@ def assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
         # Get list of available couriers from COURIER_MAP
         couriers = []
         for user_id, user_info in COURIER_MAP.items():
-            if isinstance(user_info, dict) and user_info.get("is_courier", False):
+            if isinstance(user_info, dict):
                 username = user_info.get("username", f"User{user_id}")
                 couriers.append((user_id, username))
 
         buttons = []
-
-        # "Assign to me" button (for current user - we'll need to pass user_id)
-        # This will be context-dependent when called
 
         # "Assign to [specific user]" buttons
         for user_id, username in couriers[:5]:  # Limit to 5 for UI
@@ -96,12 +92,23 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int, assigned_
             logger.error(f"Order {order_id} not found for assignment")
             return
 
+        # Get user info from COURIER_MAP
+        user_info = COURIER_MAP.get(str(user_id))
+        if not user_info:
+            logger.error(f"User {user_id} not found in COURIER_MAP")
+            return
+
+        chat_id = user_info.get("chat_id")
+        if not chat_id:
+            logger.error(f"No chat_id found for user {user_id}")
+            return
+
         # Build assignment message
         assignment_text = build_assignment_message(order)
 
         # Send to user's private chat
         msg = await safe_send_message(
-            user_id,
+            chat_id,
             assignment_text,
             assignment_cta_keyboard(order_id)
         )
@@ -244,7 +251,7 @@ async def handle_assignment_callback(action: str, data: list, user_id: int):
 
         elif action == "assign_user":
             order_id, target_user_id = data[1], int(data[2])
-            target_user_info = COURIER_MAP.get(int(target_user_id), {})
+            target_user_info = COURIER_MAP.get(str(target_user_id), {})
             assigned_by = target_user_info.get("username", f"User{target_user_id}")
 
             await send_assignment_to_private_chat(order_id, int(target_user_id), assigned_by)
@@ -283,7 +290,7 @@ async def update_mdg_assignment_status(order_id: str, assigned_user_id: int, ass
             return
 
         # Get assignee info
-        assignee_info = COURIER_MAP.get(assigned_user_id, {})
+        assignee_info = COURIER_MAP.get(str(assigned_user_id), {})
         assignee_name = assignee_info.get("username", f"User{assigned_user_id}")
 
         # Build updated MDG text with assignment info
@@ -321,7 +328,7 @@ async def handle_delivery_completion(order_id: str, user_id: int):
         order["delivered_by"] = user_id
 
         # Send confirmation to MDG
-        delivered_msg = f"✅ Order {order['name']} delivered by {COURIER_MAP.get(user_id, {}).get('username', f'User{user_id}')}"
+        delivered_msg = f"✅ Order {order['name']} delivered by {COURIER_MAP.get(str(user_id), {}).get('username', f'User{user_id}')}"
         await safe_send_message(utils.DISPATCH_MAIN_CHAT_ID, delivered_msg)
 
         # Update private chat message
