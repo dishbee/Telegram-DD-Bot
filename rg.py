@@ -8,6 +8,36 @@ from utils import (
     STATE, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP,
     logger, safe_send_message, safe_edit_message
 )
+from upc import check_all_vendors_confirmed, assignment_keyboard
+
+async def show_assignment_buttons(order_id: str):
+    """Show assignment buttons in MDG when all vendors have confirmed"""
+    try:
+        order = STATE.get(order_id)
+        if not order or "mdg_message_id" not in order:
+            return
+
+        # Get assignment keyboard
+        assign_keyboard = assignment_keyboard(order_id)
+        if not assign_keyboard:
+            return
+
+        # Update MDG message with assignment buttons
+        import mdg
+        current_text = mdg.build_mdg_dispatch_text(order)
+        updated_text = current_text + "\n\n👤 **Ready for assignment!**"
+
+        await safe_edit_message(
+            DISPATCH_MAIN_CHAT_ID,
+            order["mdg_message_id"],
+            updated_text,
+            assign_keyboard
+        )
+
+        logger.info(f"Assignment buttons shown for order {order_id}")
+
+    except Exception as e:
+        logger.error(f"Error showing assignment buttons: {e}")
 
 async def handle_rg_callback(action: str, data: list):
     """Handle Restaurant Group callback actions"""
@@ -17,13 +47,18 @@ async def handle_rg_callback(action: str, data: list):
             order_id, vendor = data[1], data[2]
             order = STATE.get(order_id)
             if order:
-                # Track confirmed time
-                order["confirmed_time"] = order.get("requested_time", "ASAP")
-                order["confirmed_by"] = vendor
+                # Track confirmed time per vendor
+                if "vendor_confirmed_times" not in order:
+                    order["vendor_confirmed_times"] = {}
+                order["vendor_confirmed_times"][vendor] = order.get("requested_time", "ASAP")
 
             # Post status to MDG
             status_msg = f"■ {vendor} replied: Works 👍 ■"
             await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+
+            # Check if all vendors have confirmed - if so, show assignment buttons
+            if order and check_all_vendors_confirmed(order_id):
+                await show_assignment_buttons(order_id)
 
         elif action == "later":
             order_id, vendor = data[1], data[2]
@@ -41,15 +76,21 @@ async def handle_rg_callback(action: str, data: list):
             order_id, selected_time = data[1], data[2]
             order = STATE.get(order_id)
             if order:
-                # Track confirmed time
-                order["confirmed_time"] = selected_time
-
+                # Track confirmed time per vendor
+                if "vendor_confirmed_times" not in order:
+                    order["vendor_confirmed_times"] = {}
+                
                 # Find which vendor this is from
                 for vendor in order["vendors"]:
                     if vendor in order.get("vendor_messages", {}):
+                        order["vendor_confirmed_times"][vendor] = selected_time
                         status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
                         await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                         break
+
+                # Check if all vendors have confirmed - if so, show assignment buttons
+                if check_all_vendors_confirmed(order_id):
+                    await show_assignment_buttons(order_id)
 
         elif action == "prepare":
             order_id, vendor = data[1], data[2]
@@ -65,15 +106,21 @@ async def handle_rg_callback(action: str, data: list):
             order_id, selected_time = data[1], data[2]
             order = STATE.get(order_id)
             if order:
-                # Track confirmed time
-                order["confirmed_time"] = selected_time
-
+                # Track confirmed time per vendor
+                if "vendor_confirmed_times" not in order:
+                    order["vendor_confirmed_times"] = {}
+                
                 # Find which vendor this is from
                 for vendor in order["vendors"]:
                     if vendor in order.get("vendor_messages", {}):
+                        order["vendor_confirmed_times"][vendor] = selected_time
                         status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
                         await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                         break
+
+                # Check if all vendors have confirmed - if so, show assignment buttons
+                if check_all_vendors_confirmed(order_id):
+                    await show_assignment_buttons(order_id)
 
         elif action == "wrong":
             order_id, vendor = data[1], data[2]

@@ -24,9 +24,11 @@ def check_all_vendors_confirmed(order_id: str) -> bool:
     if not vendors:
         return False
 
+    vendor_confirmed_times = order.get("vendor_confirmed_times", {})
+
     # Check if all vendors have confirmed_time set
     for vendor in vendors:
-        if not order.get("confirmed_time"):
+        if vendor not in vendor_confirmed_times:
             logger.info(f"Order {order_id}: Vendor {vendor} has not confirmed time yet")
             return False
 
@@ -148,7 +150,12 @@ def build_assignment_message(order: dict) -> str:
         order_section = f"📦 **Order Details:**\n{items_text}\n\n"
 
         # Timing info
-        confirmed_time = order.get("confirmed_time", "ASAP")
+        vendor_confirmed_times = order.get("vendor_confirmed_times", {})
+        if vendor_confirmed_times:
+            # Use the first confirmed time (assuming all vendors agree on time)
+            confirmed_time = list(vendor_confirmed_times.values())[0]
+        else:
+            confirmed_time = order.get("confirmed_time", "ASAP")
         timing_section = f"⏰ **Delivery Time:** {confirmed_time}\n\n"
 
         # Payment info
