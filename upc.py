@@ -24,23 +24,44 @@ def check_all_vendors_confirmed(order_id: str) -> bool:
     if not vendors:
         return False
 
-    # For single vendor orders, check if confirmed_time is set
-    if len(vendors) == 1:
-        return order.get("confirmed_time") is not None
+    # Check if all vendors have confirmed_time set
+    for vendor in vendors:
+        if not order.get("confirmed_time"):
+            logger.info(f"Order {order_id}: Vendor {vendor} has not confirmed time yet")
+            return False
 
-    # For multi-vendor orders, check if all vendors have confirmed
-    confirmed_vendors = order.get("confirmed_vendors", set())
-    return len(confirmed_vendors) == len(vendors)
+    logger.info(f"Order {order_id}: ALL vendors have confirmed - ready for assignment")
+    return True
 
 def assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build assignment buttons that appear after all vendors confirm"""
     try:
-        buttons = [
-            [InlineKeyboardButton("👈 Assign to myself", callback_data=f"assign_myself|{order_id}")],
-            [InlineKeyboardButton("👉 Assign to...", callback_data=f"assign_submenu|{order_id}")]
-        ]
+        # Get list of available couriers from COURIER_MAP
+        couriers = []
+        for user_id, user_info in COURIER_MAP.items():
+            if isinstance(user_info, dict) and user_info.get("is_courier", False):
+                username = user_info.get("username", f"User{user_id}")
+                couriers.append((user_id, username))
 
-        return InlineKeyboardMarkup(buttons)
+        buttons = []
+
+        # "Assign to me" button (for current user - we'll need to pass user_id)
+        # This will be context-dependent when called
+
+        # "Assign to [specific user]" buttons
+        for user_id, username in couriers[:5]:  # Limit to 5 for UI
+            buttons.append([InlineKeyboardButton(
+                f"Assign to {username}",
+                callback_data=f"assign_user|{order_id}|{user_id}"
+            )])
+
+        # "Mark as delivered" button for completed orders
+        buttons.append([InlineKeyboardButton(
+            "Mark as delivered",
+            callback_data=f"mark_delivered|{order_id}"
+        )])
+
+        return InlineKeyboardMarkup(buttons) if buttons else None
 
     except Exception as e:
         logger.error(f"Error building assignment keyboard: {e}")
@@ -75,23 +96,12 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int, assigned_
             logger.error(f"Order {order_id} not found for assignment")
             return
 
-        # Get user info from COURIER_MAP
-        user_info = COURIER_MAP.get(str(user_id))
-        if not user_info:
-            logger.error(f"User {user_id} not found in COURIER_MAP")
-            return
-
-        chat_id = user_info.get("chat_id")
-        if not chat_id:
-            logger.error(f"No chat_id found for user {user_id}")
-            return
-
         # Build assignment message
         assignment_text = build_assignment_message(order)
 
         # Send to user's private chat
         msg = await safe_send_message(
-            chat_id,
+            user_id,
             assignment_text,
             assignment_cta_keyboard(order_id)
         )
@@ -113,126 +123,50 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int, assigned_
         logger.error(f"Error sending assignment to private chat: {e}")
 
 def build_assignment_message(order: dict) -> str:
-    """Build the assignment message sent to courier's private chat - matches MDG format"""
+    """Build the assignment message sent to courier's private chat"""
     try:
         order_type = order.get("order_type", "shopify")
-        vendors = order.get("vendors", [])
-        from utils import validate_phone
 
-        # 1. Title with order number and shortcuts (only for Shopify) - add space after emoji
+        # Header with assignment info
         if order_type == "shopify":
-            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-            if len(vendors) > 1:
-                # Multi-vendor: use shortcuts
-                from utils import RESTAURANT_SHORTCUTS
-                shortcuts = [RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors]
-                title = f"🚚 ORDER ASSIGNED - #{order_num} ({'+'.join(shortcuts)})"
-            else:
-                # Single vendor
-                from utils import RESTAURANT_SHORTCUTS
-                shortcut = RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper()) if vendors else ""
-                title = f"🚚 ORDER ASSIGNED - #{order_num} ({shortcut})"
+            header = f"🚚 **ORDER ASSIGNED** - #{order['name'][-2:]}\n"
         else:
-            # For HubRise/Smoothr: only restaurant name
-            title = f"🚚 ORDER ASSIGNED - {vendors[0] if vendors else 'Unknown'}"
+            addr = order['customer']['address'].split(',')[0]
+            header = f"🚚 **ORDER ASSIGNED** - {addr}\n"
 
-        # 2. Customer name on second line with emoji
+        # Customer details
         customer_name = order['customer']['name']
-        customer_line = f"🧑 {customer_name}"
-
-        # 3. Address as Google Maps link with new format
-        full_address = order['customer']['address']
-        original_address = order['customer'].get('original_address', full_address)
-
-        # Parse address: split by comma to get street and zip
-        address_parts = full_address.split(',')
-        if len(address_parts) >= 2:
-            street_part = address_parts[0].strip()
-            zip_part = address_parts[-1].strip().strip('()')  # Clean zip of any parentheses
-            display_address = f"{street_part} ({zip_part})"
-        else:
-            # Fallback if parsing fails
-            display_address = full_address.strip()
-
-        # Create Google Maps link using original address (clean, no parentheses)
-        maps_link = f"https://www.google.com/maps?q={original_address.replace(' ', '+')}"
-        address_line = f"🗺️ [{display_address}]({maps_link})"
-
-        # 4. Note (if added)
-        note_line = ""
-        note = order.get("note", "")
-        if note:
-            note_line = f"Note: {note}\n"
-
-        # 5. Tips (if added)
-        tips_line = ""
-        tips = order.get("tips", 0.0)
-        if tips and float(tips) > 0:
-            tips_line = f"❕ Tip: {float(tips):.2f}€\n"
-
-        # 6. Payment method - CoD with total (only for Shopify)
-        payment_line = ""
-        if order_type == "shopify":
-            payment = order.get("payment_method", "Paid")
-            total = order.get("total", "0.00€")
-
-            if payment.lower() == "cash on delivery":
-                payment_line = f"❕ Cash on delivery: {total}\n"
-            else:
-                # For paid orders, just show the total below products
-                payment_line = ""
-
-        # 7. Items (remove dashes)
-        if order_type == "shopify" and len(vendors) > 1:
-            # Multi-vendor: show vendor names above items
-            vendor_items = order.get("vendor_items", {})
-            items_text = ""
-            for vendor in vendors:
-                items_text += f"\n{vendor}:\n"
-                vendor_products = vendor_items.get(vendor, [])
-                for item in vendor_products:
-                    # Remove leading dash
-                    clean_item = item.lstrip('- ').strip()
-                    items_text += f"{clean_item}\n"
-        else:
-            # Single vendor: just list items
-            items_text = order.get("items_text", "")
-            # Remove leading dashes from all lines
-            lines = items_text.split('\n')
-            clean_lines = []
-            for line in lines:
-                if line.strip():
-                    clean_line = line.lstrip('- ').strip()
-                    clean_lines.append(clean_line)
-            items_text = '\n'.join(clean_lines)
-
-        # Add total to items_text
-        total = order.get("total", "0.00€")
-        if order_type == "shopify":
-            payment = order.get("payment_method", "Paid")
-            if payment.lower() != "cash on delivery":
-                # For paid orders, show total here
-                items_text += f"\n{total}"
-
-        # 8. Clickable phone number (tel: link) - only if valid
         phone = order['customer']['phone']
-        phone_line = ""
-        if phone and phone != "N/A":
-            phone_line = f"[{phone}](tel:{phone})\n"
+        address = order['customer']['address']
 
-        # Build final message with new structure
-        text = f"{title}\n"
-        text += f"{customer_line}\n"  # Customer name
-        text += f"{address_line}\n\n"  # Address + empty line
-        text += note_line
-        text += tips_line
-        text += payment_line
-        if note_line or tips_line or payment_line:
-            text += "\n"  # Empty line after note/tips/payment block
-        text += f"{items_text}\n\n"  # Items + empty line
-        text += phone_line
+        customer_section = f"👤 **Customer:** {customer_name}\n"
+        customer_section += f"📞 **Phone:** [{phone}](tel:{phone})\n"
+        customer_section += f"📍 **Address:** {address}\n\n"
 
-        return text
+        # Order details
+        items_text = order.get("items_text", "")
+        order_section = f"📦 **Order Details:**\n{items_text}\n\n"
+
+        # Timing info
+        confirmed_time = order.get("confirmed_time", "ASAP")
+        timing_section = f"⏰ **Delivery Time:** {confirmed_time}\n\n"
+
+        # Payment info
+        payment = order.get("payment_method", "Paid")
+        total = order.get("total", "0.00€")
+        payment_section = f"💰 **Payment:** {payment}"
+        if payment.lower() == "cash on delivery":
+            payment_section += f" - {total}"
+        payment_section += "\n\n"
+
+        # Instructions
+        instructions = "🎯 **Actions:** Use the buttons below to manage this delivery\n"
+        instructions += "✅ Mark as delivered when complete"
+
+        # Combine all sections
+        message = header + customer_section + order_section + timing_section + payment_section + instructions
+
+        return message
 
     except Exception as e:
         logger.error(f"Error building assignment message: {e}")
@@ -247,14 +181,12 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
         buttons = []
 
-        # Get order details
+        # Row 1: Call customer, Navigate
         phone = order['customer']['phone']
         address = order['customer'].get('original_address', order['customer']['address'])
-        vendors = order.get("vendors", [])
 
-        # Row 1: Call, Navigate, Delay
-        call = InlineKeyboardButton(
-            "📞 Call",
+        call_customer = InlineKeyboardButton(
+            "📞 Call Customer",
             url=f"tel:{phone}" if phone and phone != "N/A" else None
         )
 
@@ -262,32 +194,37 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
         maps_url = f"https://www.google.com/maps/dir/?api=1&destination={address.replace(' ', '+')}"
         navigate = InlineKeyboardButton("🗺️ Navigate", url=maps_url)
 
+        buttons.append([call_customer, navigate])
+
+        # Row 2: Delay order, Call restaurant
         delay = InlineKeyboardButton(
             "⏰ Delay",
             callback_data=f"delay_order|{order_id}"
         )
 
-        buttons.append([call, navigate, delay])
-
-        # Row 2: Restaurant Call, Delivered
+        # Call restaurant button (if single vendor)
+        vendors = order.get("vendors", [])
         if len(vendors) == 1:
             vendor = vendors[0]
-            restaurant_call = InlineKeyboardButton(
-                "📞 Restaurant Call",
+            call_restaurant = InlineKeyboardButton(
+                f"📞 Call {vendor[:10]}",  # Truncate long names
                 callback_data=f"call_restaurant|{order_id}|{vendor}"
             )
+            buttons.append([delay, call_restaurant])
         else:
             # Multi-vendor - show vendor selection
-            restaurant_call = InlineKeyboardButton(
-                "📞 Restaurant Call",
+            call_restaurant = InlineKeyboardButton(
+                "📞 Call Restaurant",
                 callback_data=f"select_restaurant|{order_id}"
             )
+            buttons.append([delay, call_restaurant])
 
+        # Row 3: Mark delivered
         delivered = InlineKeyboardButton(
             "✅ Delivered",
             callback_data=f"confirm_delivered|{order_id}"
         )
-        buttons.append([restaurant_call, delivered])
+        buttons.append([delivered])
 
         return InlineKeyboardMarkup(buttons)
 
@@ -298,43 +235,16 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
 async def handle_assignment_callback(action: str, data: list, user_id: int):
     """Handle assignment-related callback actions"""
     try:
-        order_id = data[1] if len(data) > 1 else None
-        if not order_id:
-            return
-
-        order = STATE.get(order_id)
-        if not order:
-            return
-
-        # Check if order is already assigned
-        current_assignee = order.get("assigned_to")
-        if current_assignee is not None:
-            assignee_info = COURIER_MAP.get(str(current_assignee), {})
-            assignee_name = assignee_info.get("username", f"User{current_assignee}")
-            await safe_send_message(
-                user_id,
-                f"❌ Order already assigned to {assignee_name}"
-            )
-            return
-
-        if action == "assign_myself":
-            await send_assignment_to_private_chat(order_id, user_id, "self")
-
-            # Update MDG to show assignment
-            await update_mdg_assignment_status(order_id, user_id, "self-assigned")
-
-        elif action == "assign_submenu":
-            await show_assign_submenu(order_id)
-
-        elif action == "assign_me":
+        if action == "assign_me":
+            order_id = data[1]
             await send_assignment_to_private_chat(order_id, user_id, "self")
 
             # Update MDG to show assignment
             await update_mdg_assignment_status(order_id, user_id, "self-assigned")
 
         elif action == "assign_user":
-            target_user_id = int(data[2])
-            target_user_info = COURIER_MAP.get(str(target_user_id), {})
+            order_id, target_user_id = data[1], int(data[2])
+            target_user_info = COURIER_MAP.get(int(target_user_id), {})
             assigned_by = target_user_info.get("username", f"User{target_user_id}")
 
             await send_assignment_to_private_chat(order_id, int(target_user_id), assigned_by)
@@ -353,14 +263,6 @@ async def handle_assignment_callback(action: str, data: list, user_id: int):
         elif action == "delay_order":
             order_id = data[1]
             await show_delay_options(order_id, user_id)
-
-        elif action == "delay_minutes":
-            order_id, minutes = data[1], int(data[2])
-            await handle_delay_minutes(order_id, minutes, user_id)
-
-        elif action == "delay_custom":
-            order_id = data[1]
-            await handle_delay_custom(order_id, user_id)
 
         elif action == "call_restaurant":
             order_id, vendor = data[1], data[2]
@@ -381,7 +283,7 @@ async def update_mdg_assignment_status(order_id: str, assigned_user_id: int, ass
             return
 
         # Get assignee info
-        assignee_info = COURIER_MAP.get(str(assigned_user_id), {})
+        assignee_info = COURIER_MAP.get(assigned_user_id, {})
         assignee_name = assignee_info.get("username", f"User{assigned_user_id}")
 
         # Build updated MDG text with assignment info
@@ -401,23 +303,6 @@ async def update_mdg_assignment_status(order_id: str, assigned_user_id: int, ass
             None  # No keyboard - assignment complete
         )
 
-        # Also update the assignment message if it exists
-        if "assignment_message_id" in order:
-            assignment_status_text = f"✅ **Order assigned to:** {assignee_name}"
-            if assigned_by != "self-assigned":
-                assignment_status_text += f" (by {assigned_by})"
-            
-            await safe_edit_message(
-                utils.DISPATCH_MAIN_CHAT_ID,
-                order["assignment_message_id"],
-                assignment_status_text,
-                None  # Remove keyboard
-            )
-
-        # Clean up additional MDG messages after assignment
-        import mdg
-        await mdg.cleanup_mdg_messages(order_id)
-
         logger.info(f"Updated MDG for order {order_id} - assigned to {assignee_name}")
 
     except Exception as e:
@@ -436,7 +321,7 @@ async def handle_delivery_completion(order_id: str, user_id: int):
         order["delivered_by"] = user_id
 
         # Send confirmation to MDG
-        delivered_msg = f"✅ Order {order['name']} delivered by {COURIER_MAP.get(str(user_id), {}).get('username', f'User{user_id}')}"
+        delivered_msg = f"✅ Order {order['name']} delivered by {COURIER_MAP.get(user_id, {}).get('username', f'User{user_id}')}"
         await safe_send_message(utils.DISPATCH_MAIN_CHAT_ID, delivered_msg)
 
         # Update private chat message
@@ -468,60 +353,6 @@ async def show_delay_options(order_id: str, user_id: int):
     except Exception as e:
         logger.error(f"Error showing delay options: {e}")
 
-async def handle_delay_minutes(order_id: str, minutes: int, user_id: int):
-    """Handle delay by adding minutes to confirmed time"""
-    try:
-        order = STATE.get(order_id)
-        if not order:
-            return
-
-        current_time = order.get("confirmed_time")
-        if not current_time or current_time == "ASAP":
-            await safe_send_message(user_id, "Cannot delay ASAP orders. Please set a specific time first.")
-            return
-
-        # Parse current time
-        try:
-            hour, minute = map(int, current_time.split(':'))
-            from datetime import datetime, timedelta
-            base_time = datetime.now().replace(hour=hour, minute=minute)
-            new_time = base_time + timedelta(minutes=minutes)
-            new_time_str = new_time.strftime("%H:%M")
-            
-            # Update order
-            order["confirmed_time"] = new_time_str
-            
-            # Notify MDG
-            await safe_send_message(
-                utils.DISPATCH_MAIN_CHAT_ID,
-                f"⏰ Order {order['name']} delayed by {minutes} minutes - new delivery time: {new_time_str}"
-            )
-            
-            # Confirm to courier
-            await safe_send_message(
-                user_id,
-                f"✅ Delay confirmed. New delivery time: {new_time_str}"
-            )
-            
-            logger.info(f"Order {order_id} delayed by {minutes} minutes to {new_time_str}")
-            
-        except Exception as e:
-            logger.error(f"Error parsing time for delay: {e}")
-            await safe_send_message(user_id, "Error processing delay. Please try again.")
-
-    except Exception as e:
-        logger.error(f"Error handling delay minutes: {e}")
-
-async def handle_delay_custom(order_id: str, user_id: int):
-    """Handle custom delay time (placeholder - would need user input)"""
-    try:
-        await safe_send_message(
-            user_id,
-            "Custom delay not implemented yet. Please use preset delay options."
-        )
-    except Exception as e:
-        logger.error(f"Error handling delay custom: {e}")
-
 async def show_restaurant_selection(order_id: str, user_id: int):
     """Show restaurant selection for multi-vendor orders"""
     try:
@@ -547,33 +378,21 @@ async def show_restaurant_selection(order_id: str, user_id: int):
     except Exception as e:
         logger.error(f"Error showing restaurant selection: {e}")
 
-async def show_assign_submenu(order_id: str):
-    """Show submenu with list of couriers to assign to"""
+async def initiate_restaurant_call(order_id: str, vendor: str, user_id: int):
+    """Initiate call to restaurant (placeholder - would integrate with phone system)"""
     try:
-        # Get list of available couriers from COURIER_MAP
-        couriers = []
-        for user_id, user_info in COURIER_MAP.items():
-            if isinstance(user_info, dict):
-                username = user_info.get("username", f"User{user_id}")
-                couriers.append((user_id, username))
-
-        buttons = []
-
-        # "Assign to [specific user]" buttons
-        for user_id, username in couriers[:10]:  # Allow more for submenu
-            buttons.append([InlineKeyboardButton(
-                f"Assign to {username}",
-                callback_data=f"assign_user|{order_id}|{user_id}"
-            )])
-
+        # For now, just show contact info
+        # In production, this would integrate with telephony system
         await safe_send_message(
-            utils.DISPATCH_MAIN_CHAT_ID,
-            "Select courier to assign:",
-            InlineKeyboardMarkup(buttons)
+            user_id,
+            f"📞 Calling {vendor}...\n\nPlease contact them directly for coordination."
         )
 
+        # Log the call attempt
+        logger.info(f"User {user_id} initiated call to {vendor} for order {order_id}")
+
     except Exception as e:
-        logger.error(f"Error showing assign submenu: {e}")
+        logger.error(f"Error initiating restaurant call: {e}")
 
 # Placeholder functions for future implementation
 def get_assignment_status(order_id: str) -> str:

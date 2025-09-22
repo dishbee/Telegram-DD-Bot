@@ -17,6 +17,7 @@ Expected Outcome: [Describe EXACTLY what should happen after the change - NO ass
 Pre-Change Checklist (I MUST COMPLETE THIS):
 
  Surgical change? (Only touches what's needed)
+ 
  No assumptions? (Verified against exact assignment)
  No breaking working code? (Preserves existing functionality)
  Confirmation requested? (Waiting for user approval)

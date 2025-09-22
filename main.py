@@ -32,26 +32,166 @@ from telegram.constants import ParseMode
 from telegram.request import HTTPXRequest
 from telegram.error import TelegramError, TimedOut, NetworkError
 
-# Import modules
-from utils import (
-    BOT_TOKEN, WEBHOOK_SECRET, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, 
-    COURIER_MAP, RESTAURANT_SHORTCUTS, bot, STATE, RECENT_ORDERS, 
-    loop, run_async, validate_phone, verify_webhook, safe_send_message, 
-    safe_edit_message, safe_delete_message, cleanup_mdg_messages, logger
-)
-from mdg import (
-    fmt_address, get_time_intervals, get_recent_orders_for_same_time, 
-    get_last_confirmed_order, build_smart_time_suggestions, build_mdg_dispatch_text,
-    build_vendor_summary_text, build_vendor_details_text, mdg_time_request_keyboard,
-    mdg_time_submenu_keyboard, vendor_time_keyboard, vendor_keyboard,
-    restaurant_response_keyboard, same_time_keyboard, time_picker_keyboard,
-    exact_time_keyboard, exact_hour_keyboard
-)
+# Import modular components
+from mdg import *
 from rg import *
-from upc import check_all_vendors_confirmed, assignment_keyboard, assignment_keyboard_with_me, send_assignment_to_private_chat, handle_assignment_callback
+from upc import *
 
-# --- FLASK APPLICATION SETUP ---
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# --- FLASK APP SETUP ---
 app = Flask(__name__)
+
+# --- ENVIRONMENT VARIABLES ---
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
+DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
+VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
+DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
+
+# --- CONSTANTS AND MAPPINGS ---
+# Restaurant shortcut mapping (per assignment in Doc)
+RESTAURANT_SHORTCUTS = {
+    "Julis Spätzlerei": "JS",
+    "Zweite Heimat": "ZH", 
+    "Kahaani": "KA",
+    "i Sapori della Toscana": "SA",
+    "Leckerolls": "LR",
+    "dean & david": "DD",
+    "Pommes Freunde": "PF",
+    "Wittelsbacher Apotheke": "AP"
+}
+
+# --- TELEGRAM BOT CONFIGURATION ---
+# Configure request with larger pool to prevent pool timeout
+request_cfg = HTTPXRequest(
+    connection_pool_size=32,
+    pool_timeout=30.0,
+    read_timeout=30.0,
+    write_timeout=30.0,
+    connect_timeout=15.0,
+)
+bot = Bot(token=BOT_TOKEN, request=request_cfg)
+
+# --- GLOBAL STATE ---
+STATE: Dict[str, Dict[str, Any]] = {}
+RECENT_ORDERS: List[Dict[str, Any]] = []
+
+# Create event loop for async operations
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+def run_async(coro):
+    """Run async function in background thread"""
+    asyncio.run_coroutine_threadsafe(coro, loop)
+
+def validate_phone(phone: str) -> Optional[str]:
+    """Validate and format phone number for tel: links"""
+    if not phone or phone == "N/A":
+        return None
+    
+    # Remove non-numeric characters except + and spaces
+    import re
+    cleaned = re.sub(r'[^\d+\s]', '', phone).strip()
+    
+    # Basic validation: must have at least 7 digits
+    digits_only = re.sub(r'\D', '', cleaned)
+    if len(digits_only) < 7:
+        return None
+    
+    return cleaned
+
+# --- HELPER FUNCTIONS ---
+def verify_webhook(raw: bytes, hmac_header: str) -> bool:
+    """Verify Shopify webhook HMAC"""
+    try:
+        if not hmac_header:
+            return False
+        computed = hmac.new(WEBHOOK_SECRET.encode("utf-8"), raw, hashlib.sha256).digest()
+        expected = base64.b64encode(computed).decode("utf-8")
+        return hmac.compare_digest(expected, hmac_header)
+    except Exception as e:
+        logger.error(f"HMAC verification error: {e}")
+        return False
+
+# --- ASYNC UTILITY FUNCTIONS ---
+async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
+    """Send message with error handling and retry logic"""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Send message attempt {attempt + 1}")
+            return await bot.send_message(
+                chat_id=chat_id, 
+                text=text, 
+                reply_markup=reply_markup, 
+                parse_mode=parse_mode,
+                disable_web_page_preview=disable_web_page_preview
+            )
+        except Exception as e:
+            logger.error(f"Send message attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            else:
+                logger.error(f"Failed to send message after {max_retries} attempts: {e}")
+                raise
+
+async def safe_edit_message(chat_id: int, message_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
+    """Edit message with error handling"""
+    try:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+            disable_web_page_preview=disable_web_page_preview
+        )
+    except Exception as e:
+        logger.error(f"Error editing message: {e}")
+
+async def safe_delete_message(chat_id: int, message_id: int):
+    """Delete message with error handling"""
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+        logger.info(f"Successfully deleted message {message_id}")
+    except Exception as e:
+        logger.error(f"Error deleting message {message_id}: {e}")
+
+async def cleanup_mdg_messages(order_id: str):
+    """Clean up additional MDG messages, keeping only the original order message"""
+    order = STATE.get(order_id)
+    if not order:
+        return
+    
+    additional_messages = order.get("mdg_additional_messages", [])
+    if not additional_messages:
+        return
+    
+    logger.info(f"Cleaning up {len(additional_messages)} additional MDG messages for order {order_id}")
+    
+    for message_id in additional_messages:
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                await bot.delete_message(chat_id=DISPATCH_MAIN_CHAT_ID, message_id=message_id)
+                logger.info(f"Successfully deleted MDG message {message_id} for order {order_id}")
+                break
+            except Exception as e:
+                logger.error(f"Attempt {attempt + 1} failed to delete message {message_id}: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                else:
+                    logger.error(f"Failed to delete message {message_id} after {max_retries} attempts")
+    
+    # Clear the list after cleanup
+    order["mdg_additional_messages"] = []
 
 # --- WEBHOOK ENDPOINTS ---
 @app.route("/", methods=["GET"])
@@ -63,31 +203,6 @@ def health_check():
         "orders_in_state": len(STATE),
         "timestamp": datetime.now().isoformat()
     }), 200
-
-async def show_assignment_buttons(order_id: str):
-    """Show assignment buttons in MDG when all vendors have confirmed"""
-    try:
-        order = STATE.get(order_id)
-        if not order or "mdg_message_id" not in order:
-            return
-        
-        # Send new MDG message with assignment buttons
-        mdg_text = build_mdg_dispatch_text(order) + "\n\n✅ **All vendors confirmed - Ready for assignment!**"
-        keyboard = assignment_keyboard(order_id)
-        
-        assignment_msg = await safe_send_message(
-            DISPATCH_MAIN_CHAT_ID,
-            mdg_text,
-            keyboard
-        )
-        
-        # Track the assignment message
-        order["assignment_message_id"] = assignment_msg.message_id
-        
-        logger.info(f"Assignment buttons shown for order {order_id}")
-        
-    except Exception as e:
-        logger.error(f"Error showing assignment buttons: {e}")
 
 # --- TELEGRAM WEBHOOK ---
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
@@ -373,7 +488,7 @@ def telegram_webhook():
                     
                     vendors = order.get("vendors", [])
                     logger.info(f"Order {order_id} has vendors: {vendors} (count: {len(vendors)})")
-
+                    
                     # For single vendor, show TIME submenu per assignment
                     if len(vendors) <= 1:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
@@ -646,189 +761,31 @@ def telegram_webhook():
                 elif action == "toggle":
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
-                    if order:
-                        expanded = not order["vendor_expanded"].get(vendor, False)
-                        order["vendor_expanded"][vendor] = expanded
-                        logger.info(f"Toggling vendor message for {vendor}, expanded: {expanded}")
-                        
-                        # Update vendor message
-                        if expanded:
-                            text = build_vendor_details_text(order, vendor)
-                        else:
-                            text = build_vendor_summary_text(order, vendor)
-                        
-                        await safe_edit_message(
-                            VENDOR_GROUP_MAP[vendor],
-                            order["vendor_messages"][vendor],
-                            text,
-                            vendor_keyboard(order_id, vendor, expanded)
-                        )
-                
-                elif action == "works":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time
-                        order["confirmed_time"] = order.get("requested_time", "ASAP")
-                        order["confirmed_by"] = vendor
-                        
-                        # Track confirmed vendors for multi-vendor orders
-                        if "confirmed_vendors" not in order:
-                            order["confirmed_vendors"] = set()
-                        order["confirmed_vendors"].add(vendor)
+                    if not order:
+                        logger.warning(f"Order {order_id} not found in state")
+                        return
                     
-                    # Post status to MDG
-                    status_msg = f"■ {vendor} replied: Works 👍 ■"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                    expanded = not order["vendor_expanded"].get(vendor, False)
+                    order["vendor_expanded"][vendor] = expanded
+                    logger.info(f"Toggling vendor message for {vendor}, expanded: {expanded}")
                     
-                    # Check if all vendors confirmed - show assignment buttons
-                    if check_all_vendors_confirmed(order_id):
-                        await show_assignment_buttons(order_id)
-                
-                elif action == "later":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    requested = order.get("requested_time", "ASAP") if order else "ASAP"
-                    
-                    # Show time picker for vendor response
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        f"Select later time:",
-                        time_picker_keyboard(order_id, "later_time", requested)
-                    )
-                
-                elif action == "later_time":
-                    order_id, selected_time = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time
-                        order["confirmed_time"] = selected_time
-                        
-                        # Find which vendor this is from and track confirmed vendors
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
-                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                                
-                                # Track confirmed vendors for multi-vendor orders
-                                if "confirmed_vendors" not in order:
-                                    order["confirmed_vendors"] = set()
-                                order["confirmed_vendors"].add(vendor)
-                                break
-                    
-                    # Check if all vendors confirmed - show assignment buttons
-                    if check_all_vendors_confirmed(order_id):
-                        await show_assignment_buttons(order_id)
-                
-                elif action == "prepare":
-                    order_id, vendor = data[1], data[2]
-                    
-                    # Show time picker for vendor response
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        f"Select preparation time:",
-                        time_picker_keyboard(order_id, "prepare_time", None)
-                    )
-                
-                elif action == "prepare_time":
-                    order_id, selected_time = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order:
-                        # Track confirmed time
-                        order["confirmed_time"] = selected_time
-                        
-                        # Find which vendor this is from and track confirmed vendors
-                        for vendor in order["vendors"]:
-                            if vendor in order.get("vendor_messages", {}):
-                                status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
-                                await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                                
-                                # Track confirmed vendors for multi-vendor orders
-                                if "confirmed_vendors" not in order:
-                                    order["confirmed_vendors"] = set()
-                                order["confirmed_vendors"].add(vendor)
-                                break
-                    
-                    # Check if all vendors confirmed - show assignment buttons
-                    if check_all_vendors_confirmed(order_id):
-                        await show_assignment_buttons(order_id)
-                
-                elif action == "wrong":
-                    order_id, vendor = data[1], data[2]
-                    # Show "Something is wrong" submenu
-                    wrong_buttons = [
-                        [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")]
-                    ]
-                    
-                    await safe_send_message(
-                        VENDOR_GROUP_MAP[vendor],
-                        "What's wrong?",
-                        InlineKeyboardMarkup(wrong_buttons)
-                    )
-                
-                elif action == "wrong_unavailable":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    if order and order.get("order_type") == "shopify":
-                        msg = f"■ {vendor}: Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee. ■"
+                    # Update vendor message
+                    if expanded:
+                        text = build_vendor_details_text(order, vendor)
                     else:
-                        msg = f"■ {vendor}: Please call the customer and organize a replacement or a refund. ■"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
-                
-                elif action == "wrong_canceled":
-                    order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
-                
-                elif action in ["wrong_technical", "wrong_other"]:
-                    order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Write a message to dishbee and describe the issue ■")
-                
-                elif action == "wrong_delay":
-                    order_id, vendor = data[1], data[2]
-                    order = STATE.get(order_id)
-                    agreed_time = order.get("confirmed_time") or order.get("requested_time", "ASAP") if order else "ASAP"
+                        text = build_vendor_summary_text(order, vendor)
                     
-                    # Show delay time picker
-                    try:
-                        if agreed_time != "ASAP":
-                            hour, minute = map(int, agreed_time.split(':')) if order else (datetime.now().hour, datetime.now().minute)
-                            base_time = datetime.now().replace(hour=hour, minute=minute)
-                        else:
-                            base_time = datetime.now()
-                        
-                        delay_intervals = []
-                        for minutes in [5, 10, 15, 20]:
-                            time_option = base_time + timedelta(minutes=minutes)
-                            delay_intervals.append(time_option.strftime("%H:%M"))
-                        
-                        delay_buttons = []
-                        for i in range(0, len(delay_intervals), 2):
-                            row = [InlineKeyboardButton(delay_intervals[i], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i]}")]
-                            if i + 1 < len(delay_intervals):
-                                row.append(InlineKeyboardButton(delay_intervals[i + 1], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i + 1]}"))
-                            delay_buttons.append(row)
-                        
-                        await safe_send_message(
-                            VENDOR_GROUP_MAP[vendor],
-                            "Select delay time:",
-                            InlineKeyboardMarkup(delay_buttons)
-                        )
-                    except:
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay ■")
-                
-                elif action == "delay_time":
-                    order_id, vendor, delay_time = data[1], data[2], data[3]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
-                
-                # ASSIGNMENT ACTIONS (UPC)
-                elif action in ["assign_myself", "assign_submenu", "assign_me", "assign_user", "mark_delivered", "confirm_delivered", "delay_order", "delay_minutes", "delay_custom", "call_restaurant", "select_restaurant"]:
-                    user_id = cq["from"]["id"]
-                    await handle_assignment_callback(action, data, user_id)
-                
+                    await safe_edit_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        order["vendor_messages"][vendor],
+                        text,
+                        vendor_keyboard(order_id, vendor, expanded)
+                    )
+
+                # DELEGATE RG CALLBACKS TO RG MODULE
+                elif action in ["works", "later", "later_time", "prepare", "prepare_time", "wrong", "wrong_unavailable", "wrong_canceled", "wrong_technical", "wrong_other", "wrong_delay", "delay_time"]:
+                    await handle_rg_callback(action, data)
+
             except Exception as e:
                 logger.error(f"Callback processing error: {e}")
         
