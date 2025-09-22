@@ -37,6 +37,13 @@ import mdg
 import rg
 import upc
 
+# Import shared utilities and state
+from utils import (
+    STATE, RECENT_ORDERS, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, COURIER_MAP,
+    RESTAURANT_SHORTCUTS, logger, safe_send_message, safe_edit_message,
+    safe_delete_message, cleanup_mdg_messages, validate_phone, verify_webhook
+)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -77,10 +84,6 @@ request_cfg = HTTPXRequest(
     connect_timeout=15.0,
 )
 bot = Bot(token=BOT_TOKEN, request=request_cfg)
-
-# --- GLOBAL STATE ---
-STATE: Dict[str, Dict[str, Any]] = {}
-RECENT_ORDERS: List[Dict[str, Any]] = []
 
 # Create event loop for async operations
 loop = asyncio.new_event_loop()
