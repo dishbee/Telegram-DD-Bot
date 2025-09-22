@@ -88,6 +88,7 @@ async def show_assignment_buttons(order_id: str):
         logger.error(f"Error showing assignment buttons: {e}")
 
 # --- TELEGRAM WEBHOOK ---
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
     """Handle Telegram webhooks"""
     try:
