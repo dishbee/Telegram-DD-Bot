@@ -71,16 +71,18 @@ async def show_assignment_buttons(order_id: str):
         if not order or "mdg_message_id" not in order:
             return
         
-        # Update MDG message with assignment buttons
+        # Send new MDG message with assignment buttons
         mdg_text = build_mdg_dispatch_text(order) + "\n\n✅ **All vendors confirmed - Ready for assignment!**"
         keyboard = assignment_keyboard(order_id)
         
-        await safe_edit_message(
+        assignment_msg = await safe_send_message(
             DISPATCH_MAIN_CHAT_ID,
-            order["mdg_message_id"],
             mdg_text,
             keyboard
         )
+        
+        # Track the assignment message
+        order["assignment_message_id"] = assignment_msg.message_id
         
         logger.info(f"Assignment buttons shown for order {order_id}")
         
@@ -823,7 +825,7 @@ def telegram_webhook():
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
                 
                 # ASSIGNMENT ACTIONS (UPC)
-                elif action in ["assign_me", "assign_user", "mark_delivered", "confirm_delivered", "delay_order", "call_restaurant", "select_restaurant"]:
+                elif action in ["assign_myself", "assign_submenu", "assign_me", "assign_user", "mark_delivered", "confirm_delivered", "delay_order", "delay_minutes", "delay_custom", "call_restaurant", "select_restaurant"]:
                     user_id = cq["from"]["id"]
                     await handle_assignment_callback(action, data, user_id)
                 
