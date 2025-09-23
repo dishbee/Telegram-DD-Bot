@@ -14,25 +14,29 @@ async def show_assignment_buttons(order_id: str):
     """Show assignment buttons in MDG when all vendors have confirmed"""
     try:
         order = STATE.get(order_id)
-        if not order or "mdg_message_id" not in order:
+        if not order:
             return
 
-        # Get assignment keyboard
+        # Get assignment keyboard (without "Mark as delivered" button)
         assign_keyboard = assignment_keyboard(order_id)
         if not assign_keyboard:
             return
 
-        # Update MDG message with assignment buttons
+        # Send separate confirmation message to MDG with assignment buttons
         import mdg
-        current_text = mdg.build_mdg_dispatch_text(order)
-        updated_text = current_text + "\n\n👤 **Ready for assignment!**"
+        confirmation_text = mdg.build_mdg_dispatch_text(order)
+        confirmation_text += "\n\n👤 **Ready for assignment!**"
 
-        await safe_edit_message(
+        # Send new message instead of editing the original
+        msg = await safe_send_message(
             DISPATCH_MAIN_CHAT_ID,
-            order["mdg_message_id"],
-            updated_text,
+            confirmation_text,
             assign_keyboard
         )
+
+        # Track the confirmation message ID for later cleanup
+        if msg:
+            order["confirmation_message_id"] = msg.message_id
 
         logger.info(f"Assignment buttons shown for order {order_id}")
 

@@ -57,12 +57,6 @@ def assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
                 callback_data=f"assign_user|{order_id}|{user_id}"
             )])
 
-        # "Mark as delivered" button for completed orders
-        buttons.append([InlineKeyboardButton(
-            "Mark as delivered",
-            callback_data=f"mark_delivered|{order_id}"
-        )])
-
         return InlineKeyboardMarkup(buttons) if buttons else None
 
     except Exception as e:
