@@ -28,7 +28,14 @@ WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
 DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
 VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
-COURIER_MAP: Dict[str, int] = json.loads(os.environ.get("COURIER_MAP", "{}"))  # Use COURIER_MAP instead of DRIVERS
+
+# Transform DRIVERS into COURIER_MAP format
+COURIER_MAP: Dict[int, Dict[str, Any]] = {}
+for username, user_id in DRIVERS.items():
+    COURIER_MAP[user_id] = {
+        "username": username,
+        "is_courier": True
+    }
 
 # --- CONSTANTS AND MAPPINGS ---
 RESTAURANT_SHORTCUTS = {
