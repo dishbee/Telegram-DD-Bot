@@ -449,6 +449,13 @@ def shopify_webhook():
             "vendor_expanded": {},
             "requested_time": None,
             "confirmed_time": None,
+            "vendor_confirmed_times": {},  # Track confirmed times per vendor
+            "assigned_to": None,
+            "assigned_at": None,
+            "assigned_by": None,
+            "assignment_messages": {},  # Track assignment messages per user
+            "delivered_at": None,
+            "delivered_by": None,
             "status": "new",
             "mdg_additional_messages": []  # Track additional MDG messages for cleanup
         }
