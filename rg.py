@@ -62,7 +62,7 @@ async def handle_rg_callback(action: str, data: list, cq=None):
 
         # Check if all vendors have confirmed - if so, show assignment buttons
         if check_all_vendors_confirmed(order_id):
-            keyboard = assignment_keyboard_with_me(order_id, cq["from"]["id"])
+            keyboard = assignment_keyboard_with_me(order_id, cq.from_user.id)
             await safe_edit_message(DISPATCH_MAIN_CHAT_ID, msg.message_id, status_msg, keyboard)
 
         elif action == "later":
@@ -95,7 +95,7 @@ async def handle_rg_callback(action: str, data: list, cq=None):
 
                 # Check if all vendors have confirmed - if so, show assignment buttons
                 if check_all_vendors_confirmed(order_id):
-                    keyboard = assignment_keyboard_with_me(order_id, cq["from"]["id"])
+                    keyboard = assignment_keyboard_with_me(order_id, cq.from_user.id)
                     await safe_edit_message(DISPATCH_MAIN_CHAT_ID, msg.message_id, status_msg, keyboard)
 
         elif action == "prepare":
@@ -126,7 +126,7 @@ async def handle_rg_callback(action: str, data: list, cq=None):
 
                 # Check if all vendors have confirmed - if so, show assignment buttons
                 if check_all_vendors_confirmed(order_id):
-                    keyboard = assignment_keyboard_with_me(order_id, cq["from"]["id"])
+                    keyboard = assignment_keyboard_with_me(order_id, cq.from_user.id)
                     await safe_edit_message(DISPATCH_MAIN_CHAT_ID, msg.message_id, status_msg, keyboard)
 
         elif action == "wrong":
