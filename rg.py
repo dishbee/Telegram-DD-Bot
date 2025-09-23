@@ -8,7 +8,7 @@ from utils import (
     STATE, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP,
     logger, safe_send_message, safe_edit_message
 )
-from upc import check_all_vendors_confirmed, assignment_keyboard
+from upc import check_all_vendors_confirmed, assignment_keyboard, assignment_keyboard_with_me
 
 async def show_assignment_buttons(order_id: str):
     """Show assignment buttons in MDG when all vendors have confirmed"""
@@ -43,7 +43,7 @@ async def show_assignment_buttons(order_id: str):
     except Exception as e:
         logger.error(f"Error showing assignment buttons: {e}")
 
-async def handle_rg_callback(action: str, data: list):
+async def handle_rg_callback(action: str, data: list, cq=None):
     """Handle Restaurant Group callback actions"""
     try:
         # VENDOR RESPONSES
@@ -56,13 +56,14 @@ async def handle_rg_callback(action: str, data: list):
                     order["vendor_confirmed_times"] = {}
                 order["vendor_confirmed_times"][vendor] = order.get("requested_time", "ASAP")
 
-            # Post status to MDG
-            status_msg = f"■ {vendor} replied: Works 👍 ■"
-            await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+        # Post status to MDG
+        status_msg = f"■ {vendor} replied: Works 👍 ■"
+        msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
 
-            # Check if all vendors have confirmed - if so, show assignment buttons
-            if order and check_all_vendors_confirmed(order_id):
-                await show_assignment_buttons(order_id)
+        # Check if all vendors have confirmed - if so, show assignment buttons
+        if check_all_vendors_confirmed(order_id):
+            keyboard = assignment_keyboard_with_me(order_id, cq["from"]["id"])
+            await safe_edit_message(DISPATCH_MAIN_CHAT_ID, msg.message_id, status_msg, keyboard)
 
         elif action == "later":
             order_id, vendor = data[1], data[2]
@@ -89,12 +90,13 @@ async def handle_rg_callback(action: str, data: list):
                     if vendor in order.get("vendor_messages", {}):
                         order["vendor_confirmed_times"][vendor] = selected_time
                         status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                        msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                         break
 
                 # Check if all vendors have confirmed - if so, show assignment buttons
                 if check_all_vendors_confirmed(order_id):
-                    await show_assignment_buttons(order_id)
+                    keyboard = assignment_keyboard_with_me(order_id, cq["from"]["id"])
+                    await safe_edit_message(DISPATCH_MAIN_CHAT_ID, msg.message_id, status_msg, keyboard)
 
         elif action == "prepare":
             order_id, vendor = data[1], data[2]
@@ -119,12 +121,13 @@ async def handle_rg_callback(action: str, data: list):
                     if vendor in order.get("vendor_messages", {}):
                         order["vendor_confirmed_times"][vendor] = selected_time
                         status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                        msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                         break
 
                 # Check if all vendors have confirmed - if so, show assignment buttons
                 if check_all_vendors_confirmed(order_id):
-                    await show_assignment_buttons(order_id)
+                    keyboard = assignment_keyboard_with_me(order_id, cq["from"]["id"])
+                    await safe_edit_message(DISPATCH_MAIN_CHAT_ID, msg.message_id, status_msg, keyboard)
 
         elif action == "wrong":
             order_id, vendor = data[1], data[2]
