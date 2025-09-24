@@ -43,7 +43,7 @@ async def show_assignment_buttons(order_id: str):
     except Exception as e:
         logger.error(f"Error showing assignment buttons: {e}")
 
-async def handle_rg_callback(action: str, data: list, cq=None):
+async def handle_rg_callback(action: str, data: list, cq):
     """Handle Restaurant Group callback actions"""
     try:
         # VENDOR RESPONSES

@@ -27,7 +27,7 @@ import requests  # Add this for synchronous HTTP calls
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from flask import Flask, request, jsonify
-from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.constants import ParseMode
 from telegram.request import HTTPXRequest
 from telegram.error import TelegramError, TimedOut, NetworkError
@@ -212,30 +212,30 @@ def health_check():
 def telegram_webhook():
     """Handle Telegram webhooks"""
     try:
-        upd = request.get_json(force=True)
-        if not upd:
+        update = Update.de_json(request.get_json(force=True), bot)
+        if not update:
             return "OK"
 
         # Log all incoming updates for spam detection
         logger.info(f"=== INCOMING UPDATE ===")
-        logger.info(f"Update ID: {upd.get('update_id')}")
+        logger.info(f"Update ID: {update.update_id}")
         logger.info(f"Timestamp: {datetime.now().isoformat()}")
 
         # Check for regular messages (potential spam source)
-        if "message" in upd:
-            msg = upd["message"]
-            from_user = msg.get("from", {})
-            chat = msg.get("chat", {})
-            text = msg.get("text", "")
+        if update.message:
+            msg = update.message
+            from_user = msg.from_user
+            chat = msg.chat
+            text = msg.text or ""
 
             logger.info(f"MESSAGE RECEIVED:")
-            logger.info(f"  Chat ID: {chat.get('id')}")
-            logger.info(f"  Chat Type: {chat.get('type')}")
-            logger.info(f"  Chat Title: {chat.get('title', 'N/A')}")
-            logger.info(f"  From User ID: {from_user.get('id')}")
-            logger.info(f"  From Username: {from_user.get('username', 'N/A')}")
-            logger.info(f"  From First Name: {from_user.get('first_name', 'N/A')}")
-            logger.info(f"  From Last Name: {from_user.get('last_name', 'N/A')}")
+            logger.info(f"  Chat ID: {chat.id}")
+            logger.info(f"  Chat Type: {chat.type}")
+            logger.info(f"  Chat Title: {chat.title or 'N/A'}")
+            logger.info(f"  From User ID: {from_user.id if from_user else 'N/A'}")
+            logger.info(f"  From Username: {from_user.username if from_user else 'N/A'}")
+            logger.info(f"  From First Name: {from_user.first_name if from_user else 'N/A'}")
+            logger.info(f"  From Last Name: {from_user.last_name if from_user else 'N/A'}")
             logger.info(f"  Message Text: {text[:200]}{'...' if len(text) > 200 else ''}")
             logger.info(f"  Message Length: {len(text)}")
 
@@ -243,7 +243,7 @@ def telegram_webhook():
             if "FOXY" in text.upper() or "airdrop" in text.lower() or "t.me/" in text:
                 logger.warning(f"🚨 POTENTIAL SPAM DETECTED: {text[:100]}...")
 
-        cq = upd.get("callback_query")
+        cq = update.callback_query
         if not cq:
             logger.info("=== NO CALLBACK QUERY - END UPDATE ===")
             return "OK"
@@ -252,7 +252,7 @@ def telegram_webhook():
         try:
             response = requests.post(
                 f"https://api.telegram.org/bot{BOT_TOKEN}/answerCallbackQuery",
-                json={"callback_query_id": cq["id"]},
+                json={"callback_query_id": cq.id},
                 timeout=5
             )
             if not response.ok:
@@ -262,12 +262,12 @@ def telegram_webhook():
         
         # Process the callback in background
         async def handle():
-            data = (cq.get("data") or "").split("|")
+            data = (cq.data or "").split("|")
             if not data:
                 return
             
             action = data[0]
-            logger.info(f"Raw callback data: {cq.get('data')}")
+            logger.info(f"Raw callback data: {cq.data}")
             logger.info(f"Parsed callback data: {data}")
             logger.info(f"Processing callback: {action}")
             
@@ -279,11 +279,11 @@ def telegram_webhook():
 
                 # DELEGATE RG CALLBACKS TO RG MODULE
                 elif action in ["works", "later", "later_time", "prepare", "prepare_time", "wrong", "wrong_unavailable", "wrong_canceled", "wrong_technical", "wrong_other", "wrong_delay", "delay_time"]:
-                    await rg.handle_rg_callback(action, data)
+                    await rg.handle_rg_callback(action, data, cq)
 
                 # DELEGATE UPC CALLBACKS TO UPC MODULE
                 elif action in ["assign_user", "mark_delivered", "assign_me", "delay_order", "call_restaurant", "select_restaurant", "confirm_delivered", "delay_minutes", "delay_custom"]:
-                    user_id = cq["from"]["id"]
+                    user_id = cq.from_user.id
                     await upc.handle_assignment_callback(action, data, user_id)
 
             except Exception as e:

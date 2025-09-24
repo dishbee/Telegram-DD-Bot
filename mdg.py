@@ -578,7 +578,7 @@ def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
         logger.error(f"Error building exact hour keyboard: {e}")
         return InlineKeyboardMarkup([])
 
-async def handle_mdg_callback(action: str, data: list, cq: dict):
+async def handle_mdg_callback(action: str, data: list, cq):
     """Handle Main Dispatching Group callback actions"""
     try:
         # VENDOR SELECTION (for multi-vendor orders)
@@ -994,8 +994,8 @@ async def handle_mdg_callback(action: str, data: list, cq: dict):
             logger.info(f"Processing exact hour {hour} for order {order_id}")
 
             # Edit the current message to show minute picker
-            chat_id = cq["message"]["chat"]["id"]
-            message_id = cq["message"]["message_id"]
+            chat_id = cq.message.chat.id
+            message_id = cq.message.message_id
 
             await safe_edit_message(
                 chat_id,
@@ -1037,8 +1037,8 @@ async def handle_mdg_callback(action: str, data: list, cq: dict):
             )
 
             # Delete the time picker message
-            chat_id = cq["message"]["chat"]["id"]
-            message_id = cq["message"]["message_id"]
+            chat_id = cq.message.chat.id
+            message_id = cq.message.message_id
             await safe_delete_message(chat_id, message_id)
 
             # Clean up additional MDG messages
@@ -1049,8 +1049,8 @@ async def handle_mdg_callback(action: str, data: list, cq: dict):
             logger.info(f"Going back to hours for order {order_id}")
 
             # Edit current message back to hour picker
-            chat_id = cq["message"]["chat"]["id"]
-            message_id = cq["message"]["message_id"]
+            chat_id = cq.message.chat.id
+            message_id = cq.message.message_id
 
             await safe_edit_message(
                 chat_id,
@@ -1064,8 +1064,8 @@ async def handle_mdg_callback(action: str, data: list, cq: dict):
             logger.info(f"Hiding exact time picker for order {order_id}")
 
             # Delete the exact time picker message
-            chat_id = cq["message"]["chat"]["id"]
-            message_id = cq["message"]["message_id"]
+            chat_id = cq.message.chat.id
+            message_id = cq.message.message_id
 
             await safe_delete_message(chat_id, message_id)
 
