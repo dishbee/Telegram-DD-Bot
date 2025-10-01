@@ -1,243 +1,186 @@
-# rg.py - Restaurant Group functions for Telegram Dispatch Bot
+"""RG (Restaurant Group) helpers."""# rg.py - Restaurant Group functions for Telegram Dispatch Bot
 
-import asyncio
-from datetime import datetime, timedelta
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
-from utils import (
-    STATE, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP,
-    logger, safe_send_message, safe_edit_message
-)
-from upc import check_all_vendors_confirmed, assignment_keyboard, assignment_keyboard_with_me
 
-async def show_assignment_buttons(order_id: str):
-    """Show assignment buttons in MDG when all vendors have confirmed"""
-    try:
-        order = STATE.get(order_id)
-        if not order:
-            return
+import logging# Currently, most RG logic is handled in the webhook handler
 
-        # Get assignment keyboard (without "Mark as delivered" button)
-        assign_keyboard = assignment_keyboard(order_id)
-        if not assign_keyboard:
-            return
+from datetime import datetime# This file is prepared for future RG-specific functions
 
-        # Send separate confirmation message to MDG with assignment buttons
-        import mdg
-        confirmation_text = mdg.build_mdg_dispatch_text(order)
-        confirmation_text += "\n\n👤 **Ready for assignment!**"
+from typing import Any, Dict, List
 
-        # Send new message instead of editing the original
-        msg = await safe_send_message(
-            DISPATCH_MAIN_CHAT_ID,
-            confirmation_text,
-            assign_keyboard
-        )
+from utils import logger
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-        # Track the confirmation message ID for later cleanup
-        if msg:
-            order["confirmation_message_id"] = msg.message_id
+logger = logging.getLogger(__name__)
 
-        logger.info(f"Assignment buttons shown for order {order_id}")
 
-    except Exception as e:
-        logger.error(f"Error showing assignment buttons: {e}")
+def build_vendor_summary_text(order: Dict[str, Any]) -> str:
+    """Build the vendor summary text for RG notifications."""
+    lines: List[str] = []
+    vendors = order.get("vendors", [])
+    customer = order.get("customer", {})
+    order_num = order.get("name", "")[-2:]
 
-async def handle_rg_callback(action: str, data: list, cq):
-    """Handle Restaurant Group callback actions"""
-    try:
-        # VENDOR RESPONSES
-        if action == "works":
-            order_id, vendor = data[1], data[2]
-            order = STATE.get(order_id)
-            if order:
-                # Track confirmed time per vendor
-                if "vendor_confirmed_times" not in order:
-                    order["vendor_confirmed_times"] = {}
-                order["vendor_confirmed_times"][vendor] = order.get("requested_time", "ASAP")
+    lines.append(f"Order #{order_num}")
+    if customer.get("address"):
+        lines.append(customer["address"])
 
-        # Post status to MDG
-        status_msg = f"■ {vendor} replied: Works 👍 ■"
-        msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+    for vendor in vendors:
+        lines.append(f"\n{vendor}:")
+        for item in order.get("vendor_items", {}).get(vendor, []):
+            clean_item = item.lstrip('- ').strip()
+            lines.append(clean_item)
 
-        # Check if all vendors have confirmed - if so, show assignment buttons
-        if check_all_vendors_confirmed(order_id):
-            keyboard = assignment_keyboard_with_me(order_id, cq.from_user.id)
-            await safe_edit_message(DISPATCH_MAIN_CHAT_ID, msg.message_id, status_msg, keyboard)
+    total = order.get("total")
+    if total:
+        lines.append(f"\nTotal: {total}")
 
-        elif action == "later":
-            order_id, vendor = data[1], data[2]
-            order = STATE.get(order_id)
-            requested = order.get("requested_time", "ASAP") if order else "ASAP"
+    return "\n".join(lines)
 
-            # Show time picker for vendor response
-            await safe_send_message(
-                VENDOR_GROUP_MAP[vendor],
-                f"Select later time:",
-                time_picker_keyboard(order_id, "later_time", requested)
-            )
 
-        elif action == "later_time":
-            order_id, selected_time = data[1], data[2]
-            order = STATE.get(order_id)
-            if order:
-                # Track confirmed time per vendor
-                if "vendor_confirmed_times" not in order:
-                    order["vendor_confirmed_times"] = {}
-                
-                # Find which vendor this is from
-                for vendor in order["vendors"]:
-                    if vendor in order.get("vendor_messages", {}):
-                        order["vendor_confirmed_times"][vendor] = selected_time
-                        status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
-                        msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                        break
+def build_vendor_details_text(order: Dict[str, Any]) -> str:
+    """Build detailed order text for RG interactions."""
+    customer = order.get("customer", {})
+    requested_time = order.get("requested_time")
+    confirmed_time = order.get("confirmed_time")
+    created_at = order.get("created_at")
 
-                # Check if all vendors have confirmed - if so, show assignment buttons
-                if check_all_vendors_confirmed(order_id):
-                    keyboard = assignment_keyboard_with_me(order_id, cq.from_user.id)
-                    await safe_edit_message(DISPATCH_MAIN_CHAT_ID, msg.message_id, status_msg, keyboard)
+    lines = [f"Customer: {customer.get('name', 'Unknown')}"]
 
-        elif action == "prepare":
-            order_id, vendor = data[1], data[2]
+    if requested_time:
+        lines.append(f"Requested Time: {requested_time}")
+    if confirmed_time:
+        lines.append(f"Confirmed Time: {confirmed_time}")
+    if created_at:
+        order_time = created_at.strftime("%H:%M") if isinstance(created_at, datetime) else str(created_at)
+        lines.append(f"Order Time: {order_time}")
 
-            # Show time picker for vendor response
-            await safe_send_message(
-                VENDOR_GROUP_MAP[vendor],
-                f"Select preparation time:",
-                time_picker_keyboard(order_id, "prepare_time", None)
-            )
+    phone = customer.get("phone")
+    if phone and phone != "N/A":
+        lines.append(f"Phone: {phone}")
 
-        elif action == "prepare_time":
-            order_id, selected_time = data[1], data[2]
-            order = STATE.get(order_id)
-            if order:
-                # Track confirmed time per vendor
-                if "vendor_confirmed_times" not in order:
-                    order["vendor_confirmed_times"] = {}
-                
-                # Find which vendor this is from
-                for vendor in order["vendors"]:
-                    if vendor in order.get("vendor_messages", {}):
-                        order["vendor_confirmed_times"][vendor] = selected_time
-                        status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
-                        msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
-                        break
+    address = customer.get("address")
+    if address:
+        lines.append(f"Address: {address}")
 
-                # Check if all vendors have confirmed - if so, show assignment buttons
-                if check_all_vendors_confirmed(order_id):
-                    keyboard = assignment_keyboard_with_me(order_id, cq.from_user.id)
-                    await safe_edit_message(DISPATCH_MAIN_CHAT_ID, msg.message_id, status_msg, keyboard)
+    note = order.get("note")
+    if note:
+        lines.append(f"Note: {note}")
 
-        elif action == "wrong":
-            order_id, vendor = data[1], data[2]
-            # Show "Something is wrong" submenu
-            wrong_buttons = [
-                [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}")],
-                [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
-                [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}")],
-                [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
-                [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")]
-            ]
+    tips = order.get("tips")
+    if tips and float(tips) > 0:
+        lines.append(f"Tip: {float(tips):.2f}€")
 
-            await safe_send_message(
-                VENDOR_GROUP_MAP[vendor],
-                "What's wrong?",
-                InlineKeyboardMarkup(wrong_buttons)
-            )
+    return "\n".join(lines)
 
-        elif action == "wrong_unavailable":
-            order_id, vendor = data[1], data[2]
-            order = STATE.get(order_id)
-            if order and order.get("order_type") == "shopify":
-                msg = f"■ {vendor}: Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee. ■"
+
+def vendor_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
+    """Build RG vendor time adjustment keyboard."""
+    """RG (Restaurant Group) helpers."""
+
+    import logging
+    from datetime import datetime
+    from typing import Any, Dict
+
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    logger = logging.getLogger(__name__)
+
+
+    def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
+        """Build vendor short summary (default collapsed state)."""
+        try:
+            order_type = order.get("order_type", "shopify")
+
+            if order_type == "shopify":
+                order_number = order['name'][-2:] if len(order['name']) >= 2 else order['name']
             else:
-                msg = f"■ {vendor}: Please call the customer and organize a replacement or a refund. ■"
-            await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
+                address_parts = order['customer']['address'].split(',')
+                order_number = address_parts[0] if address_parts else "Unknown"
 
-        elif action == "wrong_canceled":
-            order_id, vendor = data[1], data[2]
-            await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
+            vendor_items = order.get("vendor_items", {}).get(vendor, [])
+            if vendor_items:
+                items_text = "\n".join(vendor_items)
+            else:
+                items_text = order.get("items_text", "")
 
-        elif action in ["wrong_technical", "wrong_other"]:
-            order_id, vendor = data[1], data[2]
-            await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Write a message to dishbee and describe the issue ■")
+            note = order.get("note", "")
 
-        elif action == "wrong_delay":
-            order_id, vendor = data[1], data[2]
-            order = STATE.get(order_id)
-            agreed_time = order.get("confirmed_time") or order.get("requested_time", "ASAP") if order else "ASAP"
+            text = f"Order {order_number}\n"
+            text += f"{items_text}"
+            if note:
+                text += f"\nNote: {note}"
 
-            # Show delay time picker
-            try:
-                if agreed_time != "ASAP":
-                    hour, minute = map(int, agreed_time.split(':'))
-                    base_time = datetime.now().replace(hour=hour, minute=minute)
-                else:
-                    base_time = datetime.now()
+            return text
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("Error building vendor summary: %s", exc)
+            return f"Error formatting order for {vendor}"
 
-                delay_intervals = []
-                for minutes in [5, 10, 15, 20]:
-                    time_option = base_time + timedelta(minutes=minutes)
-                    delay_intervals.append(time_option.strftime("%H:%M"))
 
-                delay_buttons = []
-                for i in range(0, len(delay_intervals), 2):
-                    row = [InlineKeyboardButton(delay_intervals[i], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i]}")]
-                    if i + 1 < len(delay_intervals):
-                        row.append(InlineKeyboardButton(delay_intervals[i + 1], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i + 1]}"))
-                    delay_buttons.append(row)
+    def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
+        """Build vendor full details (expanded state)."""
+        try:
+            summary = build_vendor_summary_text(order, vendor)
 
-                await safe_send_message(
-                    VENDOR_GROUP_MAP[vendor],
-                    "Select delay time:",
-                    InlineKeyboardMarkup(delay_buttons)
-                )
-            except:
-                await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay ■")
+            customer_name = order['customer']['name']
+            phone = order['customer']['phone']
+            order_time = order.get('created_at', datetime.now()).strftime('%H:%M')
+            address = order['customer']['address']
 
-        elif action == "delay_time":
-            order_id, vendor, delay_time = data[1], data[2], data[3]
-            await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
+            details = f"{summary}\n\n"
+            details += f"Customer: {customer_name}\n"
+            details += f"Phone: {phone}\n"
+            details += f"Time of order: {order_time}\n"
+            details += f"Address: {address}"
 
-    except Exception as e:
-        logger.error(f"Error handling RG callback {action}: {e}")
+            return details
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("Error building vendor details: %s", exc)
+            return f"Error formatting details for {vendor}"
 
-def time_picker_keyboard(order_id: str, action: str, requested_time: str = None) -> InlineKeyboardMarkup:
-    """Build time picker for various actions"""
-    try:
-        current_time = datetime.now()
-        if requested_time:
-            # For vendor responses, base on requested time
-            try:
-                req_hour, req_min = map(int, requested_time.split(':'))
-                base_time = datetime.now().replace(hour=req_hour, minute=req_min)
-            except:
-                base_time = current_time
-        else:
-            base_time = current_time
 
-        # For "later" action, use requested time + 5,10,15,20
-        # For "prepare" action, use current time + 5,10,15,20
-        if action == "later_time":
-            intervals = []
-            for minutes in [5, 10, 15, 20]:
-                time_option = base_time + timedelta(minutes=minutes)
-                intervals.append(time_option.strftime("%H:%M"))
-        else:
-            intervals = []
-            for minutes in [5, 10, 15, 20]:
-                time_option = current_time + timedelta(minutes=minutes)
-                intervals.append(time_option.strftime("%H:%M"))
+    def vendor_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
+        """Build time request buttons for a specific vendor."""
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Request ASAP", callback_data=f"vendor_asap|{order_id}|{vendor}"),
+                InlineKeyboardButton("Request TIME", callback_data=f"vendor_time|{order_id}|{vendor}")
+            ]
+        ])
 
-        rows = []
-        for i in range(0, len(intervals), 2):
-            row = [InlineKeyboardButton(intervals[i], callback_data=f"{action}|{order_id}|{intervals[i]}")]
-            if i + 1 < len(intervals):
-                row.append(InlineKeyboardButton(intervals[i + 1], callback_data=f"{action}|{order_id}|{intervals[i + 1]}"))
-            rows.append(row)
 
-        return InlineKeyboardMarkup(rows)
-    except Exception as e:
-        logger.error(f"Error building time picker: {e}")
-        return InlineKeyboardMarkup([])
+    def vendor_keyboard(order_id: str, vendor: str, expanded: bool) -> InlineKeyboardMarkup:
+        """Build vendor toggle keyboard."""
+        try:
+            toggle_text = "◂ Hide" if expanded else "Details ▸"
+            return InlineKeyboardMarkup([
+                [InlineKeyboardButton(toggle_text, callback_data=f"toggle|{order_id}|{vendor}|{int(datetime.now().timestamp())}")]
+            ])
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("Error building vendor keyboard: %s", exc)
+            return InlineKeyboardMarkup([])
+
+
+    def restaurant_response_keyboard(request_type: str, order_id: str, vendor: str) -> InlineKeyboardMarkup:
+        """Build restaurant response buttons for time requests."""
+        try:
+            rows = []
+
+            if request_type == "ASAP":
+                rows.append([
+                    InlineKeyboardButton("Will prepare at", callback_data=f"prepare|{order_id}|{vendor}")
+                ])
+            else:
+                rows.append([
+                    InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}"),
+                    InlineKeyboardButton("Later at", callback_data=f"later|{order_id}|{vendor}")
+                ])
+
+            rows.append([
+                InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}")
+            ])
+
+            return InlineKeyboardMarkup(rows)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("Error building restaurant response keyboard: %s", exc)
+            return InlineKeyboardMarkup([])
