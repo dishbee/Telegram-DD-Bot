@@ -52,6 +52,8 @@ from rg import (
     vendor_keyboard,
     restaurant_response_keyboard,
 )
+import upc
+from upc import check_all_vendors_confirmed, mdg_assignment_keyboard, courier_selection_keyboard
 import uc  # noqa: F401  # UC placeholder for future assignment logic
 
 # Configure logging
@@ -823,13 +825,29 @@ def telegram_webhook():
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
                     if order:
-                        # Track confirmed time
-                        order["confirmed_time"] = order.get("requested_time", "ASAP")
+                        # Track confirmed time per vendor
+                        confirmed_time = order.get("requested_time", "ASAP")
+                        if "confirmed_times" not in order:
+                            order["confirmed_times"] = {}
+                        order["confirmed_times"][vendor] = confirmed_time
+                        order["confirmed_time"] = confirmed_time  # Keep for backward compatibility
                         order["confirmed_by"] = vendor
                     
                     # Post status to MDG
                     status_msg = f"■ {vendor} replied: Works 👍 ■"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                    
+                    # Check if all vendors confirmed - show assignment buttons
+                    if check_all_vendors_confirmed(order_id):
+                        assignment_msg = await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            f"✅ All vendors confirmed for order {order['name']}",
+                            mdg_assignment_keyboard(order_id)
+                        )
+                        # Track this message for potential cleanup
+                        if "mdg_additional_messages" not in order:
+                            order["mdg_additional_messages"] = []
+                        order["mdg_additional_messages"].append(assignment_msg.message_id)
                 
                 elif action == "later":
                     order_id, vendor = data[1], data[2]
@@ -847,14 +865,29 @@ def telegram_webhook():
                     order_id, selected_time = data[1], data[2]
                     order = STATE.get(order_id)
                     if order:
-                        # Track confirmed time
-                        order["confirmed_time"] = selected_time
+                        # Track confirmed time per vendor
+                        if "confirmed_times" not in order:
+                            order["confirmed_times"] = {}
                         
                         # Find which vendor this is from
                         for vendor in order["vendors"]:
                             if vendor in order.get("vendor_messages", {}):
+                                order["confirmed_times"][vendor] = selected_time
+                                order["confirmed_time"] = selected_time  # Keep for backward compatibility
                                 status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
                                 await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                                
+                                # Check if all vendors confirmed - show assignment buttons
+                                if check_all_vendors_confirmed(order_id):
+                                    assignment_msg = await safe_send_message(
+                                        DISPATCH_MAIN_CHAT_ID,
+                                        f"✅ All vendors confirmed for order {order['name']}",
+                                        mdg_assignment_keyboard(order_id)
+                                    )
+                                    # Track this message for potential cleanup
+                                    if "mdg_additional_messages" not in order:
+                                        order["mdg_additional_messages"] = []
+                                    order["mdg_additional_messages"].append(assignment_msg.message_id)
                                 break
                 
                 elif action == "prepare":
@@ -871,14 +904,29 @@ def telegram_webhook():
                     order_id, selected_time = data[1], data[2]
                     order = STATE.get(order_id)
                     if order:
-                        # Track confirmed time
-                        order["confirmed_time"] = selected_time
+                        # Track confirmed time per vendor
+                        if "confirmed_times" not in order:
+                            order["confirmed_times"] = {}
                         
                         # Find which vendor this is from
                         for vendor in order["vendors"]:
                             if vendor in order.get("vendor_messages", {}):
+                                order["confirmed_times"][vendor] = selected_time
+                                order["confirmed_time"] = selected_time  # Keep for backward compatibility
                                 status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
                                 await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                                
+                                # Check if all vendors confirmed - show assignment buttons
+                                if check_all_vendors_confirmed(order_id):
+                                    assignment_msg = await safe_send_message(
+                                        DISPATCH_MAIN_CHAT_ID,
+                                        f"✅ All vendors confirmed for order {order['name']}",
+                                        mdg_assignment_keyboard(order_id)
+                                    )
+                                    # Track this message for potential cleanup
+                                    if "mdg_additional_messages" not in order:
+                                        order["mdg_additional_messages"] = []
+                                    order["mdg_additional_messages"].append(assignment_msg.message_id)
                                 break
                 
                 elif action == "wrong":
@@ -951,6 +999,87 @@ def telegram_webhook():
                 elif action == "delay_time":
                     order_id, vendor, delay_time = data[1], data[2], data[3]
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
+                
+                # ASSIGNMENT ACTIONS
+                elif action == "assign_myself":
+                    order_id = data[1]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} assigning order {order_id} to themselves")
+                    
+                    # Send assignment to user's private chat
+                    await upc.send_assignment_to_private_chat(order_id, user_id)
+                    
+                    # Update MDG with assignment info
+                    await upc.update_mdg_with_assignment(order_id, user_id)
+                
+                elif action == "assign_to_menu":
+                    order_id = data[1]
+                    logger.info(f"Showing courier selection menu for order {order_id}")
+                    
+                    # Show courier selection menu
+                    menu_msg = await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        "Select courier:",
+                        courier_selection_keyboard(order_id)
+                    )
+                    
+                    # Track this message for cleanup
+                    order = STATE.get(order_id)
+                    if order:
+                        if "mdg_additional_messages" not in order:
+                            order["mdg_additional_messages"] = []
+                        order["mdg_additional_messages"].append(menu_msg.message_id)
+                
+                elif action == "assign_to_user":
+                    order_id, target_user_id = data[1], int(data[2])
+                    logger.info(f"Assigning order {order_id} to user {target_user_id}")
+                    
+                    # Send assignment to selected user's private chat
+                    await upc.send_assignment_to_private_chat(order_id, target_user_id)
+                    
+                    # Update MDG with assignment info
+                    await upc.update_mdg_with_assignment(order_id, target_user_id)
+                    
+                    # Clean up selection menu
+                    await cleanup_mdg_messages(order_id)
+                
+                # UPC CTA ACTIONS
+                elif action == "delay_order":
+                    order_id = data[1]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} requesting delay for order {order_id}")
+                    
+                    # Show delay time options
+                    await upc.show_delay_options(order_id, user_id)
+                
+                elif action == "delay_selected":
+                    order_id, new_time = data[1], data[2]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} selected delay time {new_time} for order {order_id}")
+                    
+                    # Send delay request to restaurants
+                    await upc.send_delay_request_to_restaurants(order_id, new_time, user_id)
+                
+                elif action == "call_restaurant":
+                    order_id, vendor = data[1], data[2]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} calling restaurant {vendor} for order {order_id}")
+                    
+                    await upc.initiate_restaurant_call(order_id, vendor, user_id)
+                
+                elif action == "select_restaurant":
+                    order_id = data[1]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} selecting restaurant to call for order {order_id}")
+                    
+                    await upc.show_restaurant_selection(order_id, user_id)
+                
+                elif action == "confirm_delivered":
+                    order_id = data[1]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} confirming delivery for order {order_id}")
+                    
+                    await upc.handle_delivery_completion(order_id, user_id)
                 
             except Exception as e:
                 logger.error(f"Callback processing error: {e}")
@@ -1114,6 +1243,7 @@ def shopify_webhook():
             "vendor_messages": {},
             "vendor_expanded": {},
             "requested_time": None,
+            "confirmed_times": {},  # Track confirmed time per vendor
             "confirmed_time": None,
             "status": "new",
             "mdg_additional_messages": []  # Track additional MDG messages for cleanup
