@@ -231,9 +231,10 @@ def build_assignment_message(order: dict) -> str:
         if payment.lower() == "cash on delivery":
             optional_section += f"❕ Cash on delivery: {total}\n"
         
-        # Phone number
+        # Phone numbers section
         phone = order['customer']['phone']
-        phone_section = f"\n📞 {phone}\n"
+        phone_section = f"\n☎️ Call customer: {phone}\n"
+        phone_section += "🍽 Call Restaurant: \n"  # Restaurant phone will be added later
         
         # Combine all sections
         message = header + restaurant_section + customer_section + optional_section + phone_section
@@ -254,36 +255,19 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
         buttons = []
         address = order['customer'].get('original_address', order['customer']['address'])
 
-        # Row 1: Navigate only (phone is clickable in message text)
+        # Row 1: Navigate (single button - phone numbers are in message text)
         # Google Maps navigation with cycling mode
         maps_url = f"https://www.google.com/maps/dir/?api=1&destination={address.replace(' ', '+')}&travelmode=bicycling"
         navigate = InlineKeyboardButton("🧭 Navigate", url=maps_url)
         
         buttons.append([navigate])
 
-        # Row 2: Delay order, Call restaurant
+        # Row 2: Delay order
         delay = InlineKeyboardButton(
             "⏰ Delay",
             callback_data=f"delay_order|{order_id}"
         )
-
-        vendors = order.get("vendors", [])
-        if len(vendors) == 1:
-            vendor = vendors[0]
-            # Get vendor shortcut for button
-            vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-            call_restaurant = InlineKeyboardButton(
-                f"🍽 Call {vendor_shortcut}",
-                callback_data=f"call_restaurant|{order_id}|{vendor}"
-            )
-            buttons.append([delay, call_restaurant])
-        else:
-            # Multi-vendor - show vendor selection
-            call_restaurant = InlineKeyboardButton(
-                "🍽 Call Restaurant",
-                callback_data=f"select_restaurant|{order_id}"
-            )
-            buttons.append([delay, call_restaurant])
+        buttons.append([delay])
 
         # Row 3: Mark delivered
         delivered = InlineKeyboardButton(
