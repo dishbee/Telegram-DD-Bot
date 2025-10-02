@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime, timedelta
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-from utils import logger, STATE, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, RESTAURANT_SHORTCUTS, safe_send_message, safe_edit_message
+from utils import logger, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, RESTAURANT_SHORTCUTS, safe_send_message, safe_edit_message
 
 # =============================================================================
 # ORDER ASSIGNMENT SYSTEM - UPC (User Private Chats)
@@ -12,6 +12,14 @@ from utils import logger, STATE, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROU
 # → User clicks "Assign to me" or "Assign to [user]" → order details sent to private chat
 # → Courier receives CTA buttons (call, navigate, delay, restaurant call, delivered)
 # =============================================================================
+
+# Module-level STATE reference (configured from main.py)
+STATE = None
+
+def configure(state_ref):
+    """Configure module-level STATE reference"""
+    global STATE
+    STATE = state_ref
 
 def check_all_vendors_confirmed(order_id: str) -> bool:
     """Check if ALL vendors have confirmed their times for an order"""

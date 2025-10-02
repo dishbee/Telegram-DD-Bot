@@ -102,6 +102,7 @@ STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
 
 configure_mdg(STATE, RESTAURANT_SHORTCUTS)
+upc.configure(STATE)  # Configure UPC module with STATE reference
 
 # Create event loop for async operations
 loop = asyncio.new_event_loop()
