@@ -252,20 +252,14 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
             return None
 
         buttons = []
-        phone = order['customer']['phone']
         address = order['customer'].get('original_address', order['customer']['address'])
 
-        # Row 1: Call customer (phone number as button text), Navigate
-        call_customer = InlineKeyboardButton(
-            f"📞 {phone}",  # Phone number AS the button text
-            url=f"tel:{phone}" if phone and phone != "N/A" else None
-        )
-        
+        # Row 1: Navigate only (phone is clickable in message text)
         # Google Maps navigation with cycling mode
         maps_url = f"https://www.google.com/maps/dir/?api=1&destination={address.replace(' ', '+')}&travelmode=bicycling"
         navigate = InlineKeyboardButton("🧭 Navigate", url=maps_url)
         
-        buttons.append([call_customer, navigate])
+        buttons.append([navigate])
 
         # Row 2: Delay order, Call restaurant
         delay = InlineKeyboardButton(
