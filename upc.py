@@ -17,21 +17,28 @@ def check_all_vendors_confirmed(order_id: str) -> bool:
     """Check if ALL vendors have confirmed their times for an order"""
     order = STATE.get(order_id)
     if not order:
+        logger.warning(f"DEBUG: Order {order_id} not found in STATE")
         return False
 
     vendors = order.get("vendors", [])
     if not vendors:
+        logger.warning(f"DEBUG: Order {order_id} has no vendors")
         return False
 
     confirmed_times = order.get("confirmed_times", {})
     
+    logger.info(f"DEBUG: Order {order_id} - Vendors: {vendors}")
+    logger.info(f"DEBUG: Order {order_id} - Confirmed times: {confirmed_times}")
+    
     # Check if all vendors have confirmed their time
     for vendor in vendors:
         if vendor not in confirmed_times:
-            logger.info(f"Order {order_id}: Vendor {vendor} has not confirmed time yet")
+            logger.info(f"DEBUG: Order {order_id} - Vendor {vendor} NOT in confirmed_times")
             return False
+        else:
+            logger.info(f"DEBUG: Order {order_id} - Vendor {vendor} confirmed at {confirmed_times[vendor]}")
 
-    logger.info(f"Order {order_id}: ALL vendors have confirmed - ready for assignment")
+    logger.info(f"DEBUG: Order {order_id} - ALL {len(vendors)} vendors have confirmed - ready for assignment")
     return True
 
 def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:

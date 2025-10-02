@@ -832,13 +832,17 @@ def telegram_webhook():
                         order["confirmed_times"][vendor] = confirmed_time
                         order["confirmed_time"] = confirmed_time  # Keep for backward compatibility
                         order["confirmed_by"] = vendor
+                        
+                        logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
                     
                     # Post status to MDG
                     status_msg = f"■ {vendor} replied: Works 👍 ■"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                     
                     # Check if all vendors confirmed - show assignment buttons
+                    logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
                     if check_all_vendors_confirmed(order_id):
+                        logger.info(f"DEBUG: All vendors confirmed! Sending assignment buttons")
                         assignment_msg = await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             f"✅ All vendors confirmed for order {order['name']}",
@@ -848,6 +852,8 @@ def telegram_webhook():
                         if "mdg_additional_messages" not in order:
                             order["mdg_additional_messages"] = []
                         order["mdg_additional_messages"].append(assignment_msg.message_id)
+                    else:
+                        logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
                 
                 elif action == "later":
                     order_id, vendor = data[1], data[2]
@@ -877,8 +883,12 @@ def telegram_webhook():
                                 status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
                                 await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                                 
+                                logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
+                                
                                 # Check if all vendors confirmed - show assignment buttons
+                                logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
                                 if check_all_vendors_confirmed(order_id):
+                                    logger.info(f"DEBUG: All vendors confirmed! Sending assignment buttons")
                                     assignment_msg = await safe_send_message(
                                         DISPATCH_MAIN_CHAT_ID,
                                         f"✅ All vendors confirmed for order {order['name']}",
@@ -888,6 +898,8 @@ def telegram_webhook():
                                     if "mdg_additional_messages" not in order:
                                         order["mdg_additional_messages"] = []
                                     order["mdg_additional_messages"].append(assignment_msg.message_id)
+                                else:
+                                    logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
                                 break
                 
                 elif action == "prepare":
@@ -916,8 +928,12 @@ def telegram_webhook():
                                 status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
                                 await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                                 
+                                logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
+                                
                                 # Check if all vendors confirmed - show assignment buttons
+                                logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
                                 if check_all_vendors_confirmed(order_id):
+                                    logger.info(f"DEBUG: All vendors confirmed! Sending assignment buttons")
                                     assignment_msg = await safe_send_message(
                                         DISPATCH_MAIN_CHAT_ID,
                                         f"✅ All vendors confirmed for order {order['name']}",
@@ -927,6 +943,8 @@ def telegram_webhook():
                                     if "mdg_additional_messages" not in order:
                                         order["mdg_additional_messages"] = []
                                     order["mdg_additional_messages"].append(assignment_msg.message_id)
+                                else:
+                                    logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
                                 break
                 
                 elif action == "wrong":
