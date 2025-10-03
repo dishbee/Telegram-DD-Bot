@@ -64,7 +64,7 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
         logger.error(f"Error building MDG assignment keyboard: {e}")
         return None
 
-async def get_mdg_couriers():
+async def get_mdg_couriers(bot):
     """Get actual courier list from MDG group members, fallback to COURIER_MAP"""
     try:
         if not bot:
@@ -109,11 +109,11 @@ def get_couriers_from_map():
     logger.info(f"DEBUG: Using COURIER_MAP fallback with {len(couriers)} couriers")
     return couriers
 
-async def courier_selection_keyboard(order_id: str) -> InlineKeyboardMarkup:
+async def courier_selection_keyboard(order_id: str, bot) -> InlineKeyboardMarkup:
     """Build courier selection menu from actual MDG members"""
     try:
         # Get couriers (live from MDG or fallback to COURIER_MAP)
-        couriers = await get_mdg_couriers()
+        couriers = await get_mdg_couriers(bot)
         
         if not couriers:
             logger.error("No couriers available from MDG or COURIER_MAP")
