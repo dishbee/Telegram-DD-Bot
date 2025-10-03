@@ -844,15 +844,11 @@ def telegram_webhook():
                     logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
                     if check_all_vendors_confirmed(order_id):
                         logger.info(f"DEBUG: All vendors confirmed! Sending assignment buttons")
-                        assignment_msg = await safe_send_message(
+                        await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             f"✅ All vendors confirmed for order {order['name']}",
                             mdg_assignment_keyboard(order_id)
                         )
-                        # Track this message for potential cleanup
-                        if "mdg_additional_messages" not in order:
-                            order["mdg_additional_messages"] = []
-                        order["mdg_additional_messages"].append(assignment_msg.message_id)
                     else:
                         logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
                 
@@ -890,15 +886,11 @@ def telegram_webhook():
                                 logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
                                 if check_all_vendors_confirmed(order_id):
                                     logger.info(f"DEBUG: All vendors confirmed! Sending assignment buttons")
-                                    assignment_msg = await safe_send_message(
+                                    await safe_send_message(
                                         DISPATCH_MAIN_CHAT_ID,
                                         f"✅ All vendors confirmed for order {order['name']}",
                                         mdg_assignment_keyboard(order_id)
                                     )
-                                    # Track this message for potential cleanup
-                                    if "mdg_additional_messages" not in order:
-                                        order["mdg_additional_messages"] = []
-                                    order["mdg_additional_messages"].append(assignment_msg.message_id)
                                 else:
                                     logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
                                 break
@@ -935,15 +927,11 @@ def telegram_webhook():
                                 logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
                                 if check_all_vendors_confirmed(order_id):
                                     logger.info(f"DEBUG: All vendors confirmed! Sending assignment buttons")
-                                    assignment_msg = await safe_send_message(
+                                    await safe_send_message(
                                         DISPATCH_MAIN_CHAT_ID,
                                         f"✅ All vendors confirmed for order {order['name']}",
                                         mdg_assignment_keyboard(order_id)
                                     )
-                                    # Track this message for potential cleanup
-                                    if "mdg_additional_messages" not in order:
-                                        order["mdg_additional_messages"] = []
-                                    order["mdg_additional_messages"].append(assignment_msg.message_id)
                                 else:
                                     logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
                                 break
