@@ -13,13 +13,16 @@ from utils import logger, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, 
 # → Courier receives CTA buttons (call, navigate, delay, restaurant call, delivered)
 # =============================================================================
 
-# Module-level STATE reference (configured from main.py)
+# Module-level STATE and bot reference (configured from main.py)
 STATE = None
+bot = None
 
-def configure(state_ref):
-    """Configure module-level STATE reference"""
-    global STATE
+def configure(state_ref, bot_ref=None):
+    """Configure module-level STATE and bot reference"""
+    global STATE, bot
     STATE = state_ref
+    if bot_ref:
+        bot = bot_ref
 
 def check_all_vendors_confirmed(order_id: str) -> bool:
     """Check if ALL vendors have confirmed their times for an order"""
@@ -61,49 +64,87 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
         logger.error(f"Error building MDG assignment keyboard: {e}")
         return None
 
-def courier_selection_keyboard(order_id: str) -> InlineKeyboardMarkup:
-    """Build courier selection menu for 'Assign to...' button"""
+async def get_mdg_couriers():
+    """Get actual courier list from MDG group members, fallback to COURIER_MAP"""
     try:
-        buttons = []
+        if not bot:
+            logger.warning("Bot instance not available, using COURIER_MAP fallback")
+            return get_couriers_from_map()
         
-        logger.info(f"DEBUG: Building courier selection keyboard. COURIER_MAP: {COURIER_MAP}")
+        # Get all members from MDG
+        chat_members = await bot.get_chat_administrators(DISPATCH_MAIN_CHAT_ID)
+        
+        couriers = []
+        for member in chat_members:
+            user = member.user
+            # Filter out bots
+            if not user.is_bot:
+                couriers.append({
+                    "user_id": user.id,
+                    "username": user.first_name or user.username or f"User{user.id}"
+                })
+        
+        logger.info(f"DEBUG: Found {len(couriers)} couriers from MDG group")
+        
+        # If no couriers found, fall back to COURIER_MAP
+        if not couriers:
+            logger.warning("No couriers found in MDG, using COURIER_MAP fallback")
+            return get_couriers_from_map()
+        
+        return couriers
+        
+    except Exception as e:
+        logger.error(f"Error getting MDG members: {e}, using COURIER_MAP fallback")
+        return get_couriers_from_map()
+
+def get_couriers_from_map():
+    """Get couriers from static COURIER_MAP (fallback)"""
+    couriers = []
+    for user_id_str, user_data in COURIER_MAP.items():
+        if isinstance(user_data, dict):
+            couriers.append({
+                "user_id": int(user_id_str),
+                "username": user_data.get("username", f"User{user_id_str}")
+            })
+    logger.info(f"DEBUG: Using COURIER_MAP fallback with {len(couriers)} couriers")
+    return couriers
+
+async def courier_selection_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build courier selection menu from actual MDG members"""
+    try:
+        # Get couriers (live from MDG or fallback to COURIER_MAP)
+        couriers = await get_mdg_couriers()
+        
+        if not couriers:
+            logger.error("No couriers available from MDG or COURIER_MAP")
+            return None
+        
+        buttons = []
         
         # Priority couriers (Bee 1, Bee 2, Bee 3) first
         priority_names = ["Bee 1", "Bee 2", "Bee 3"]
-        for courier_name in priority_names:
-            for user_id_str, user_data in COURIER_MAP.items():
-                if isinstance(user_data, dict):
-                    username = user_data.get("username", "")
-                    if username == courier_name:
-                        buttons.append([InlineKeyboardButton(
-                            courier_name,
-                            callback_data=f"assign_to_user|{order_id}|{user_id_str}"
-                        )])
-                        break
+        for priority_name in priority_names:
+            for courier in couriers:
+                if courier["username"] == priority_name:
+                    buttons.append([InlineKeyboardButton(
+                        courier["username"],
+                        callback_data=f"assign_to_user|{order_id}|{courier['user_id']}"
+                    )])
+                    break
         
         # Then other couriers
-        for user_id_str, user_data in COURIER_MAP.items():
-            if isinstance(user_data, dict):
-                username = user_data.get("username", "")
-                if username not in priority_names:
-                    buttons.append([InlineKeyboardButton(
-                        username,
-                        callback_data=f"assign_to_user|{order_id}|{user_id_str}"
-                    )])
+        for courier in couriers:
+            if courier["username"] not in priority_names:
+                buttons.append([InlineKeyboardButton(
+                    courier["username"],
+                    callback_data=f"assign_to_user|{order_id}|{courier['user_id']}"
+                )])
         
-        logger.info(f"DEBUG: Built {len(buttons)} courier buttons")
+        logger.info(f"DEBUG: Built {len(buttons)} courier buttons for selection")
         return InlineKeyboardMarkup(buttons) if buttons else None
+        
     except Exception as e:
         logger.error(f"Error building courier selection keyboard: {e}")
-        return None
-
-def assignment_keyboard_with_me(order_id: str, current_user_id: int) -> InlineKeyboardMarkup:
-    """Build assignment keyboard including 'Assign to me' for current user"""
-    try:
-        # This function is deprecated - use mdg_assignment_keyboard instead
-        return mdg_assignment_keyboard(order_id)
-    except Exception as e:
-        logger.error(f"Error building assignment keyboard with me: {e}")
         return None
 
 async def send_assignment_to_private_chat(order_id: str, user_id: int):

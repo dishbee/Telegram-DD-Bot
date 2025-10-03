@@ -102,7 +102,7 @@ STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
 
 configure_mdg(STATE, RESTAURANT_SHORTCUTS)
-upc.configure(STATE)  # Configure UPC module with STATE reference
+upc.configure(STATE, bot)  # Configure UPC module with STATE and bot reference
 
 # Create event loop for async operations
 loop = asyncio.new_event_loop()
@@ -1038,11 +1038,12 @@ def telegram_webhook():
                     order_id = data[1]
                     logger.info(f"Showing courier selection menu for order {order_id}")
                     
-                    # Show courier selection menu
+                    # Show courier selection menu (async call to get live MDG members)
+                    keyboard = await courier_selection_keyboard(order_id, bot)
                     menu_msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         "Select courier:",
-                        courier_selection_keyboard(order_id)
+                        keyboard
                     )
                     
                     # Track this message for cleanup
