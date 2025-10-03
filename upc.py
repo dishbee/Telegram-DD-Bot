@@ -154,12 +154,12 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
 
         updated_text = base_text + assignment_info
 
-        # Remove assignment buttons - show only status
+        # Keep vendor selection buttons visible
         await safe_edit_message(
             DISPATCH_MAIN_CHAT_ID,
             order["mdg_message_id"],
             updated_text,
-            None  # No keyboard - assignment complete
+            mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
         )
 
         logger.info(f"Updated MDG for order {order_id} - assigned to {assignee_name}")
@@ -345,12 +345,12 @@ async def update_mdg_assignment_status(order_id: str, assigned_user_id: int, ass
 
         updated_text = base_text + assignment_info
 
-        # Remove assignment buttons - show only status
+        # Keep vendor selection buttons visible
         await safe_edit_message(
             DISPATCH_MAIN_CHAT_ID,
             order["mdg_message_id"],
             updated_text,
-            None  # No keyboard - assignment complete
+            mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
         )
 
         logger.info(f"Updated MDG for order {order_id} - assigned to {assignee_name}")
@@ -388,7 +388,7 @@ async def handle_delivery_completion(order_id: str, user_id: int):
                 DISPATCH_MAIN_CHAT_ID,
                 order["mdg_message_id"],
                 updated_text,
-                None  # No keyboard
+                mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
             )
 
         # Update private chat message
