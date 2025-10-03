@@ -55,6 +55,7 @@ from rg import (
 import upc
 from upc import check_all_vendors_confirmed, mdg_assignment_keyboard, courier_selection_keyboard
 import uc  # noqa: F401  # UC placeholder for future assignment logic
+from utils import clean_product_name
 
 # Configure logging
 logging.basicConfig(
@@ -1211,7 +1212,10 @@ def shopify_webhook():
                     vendors.append(vendor)
                     vendor_items[vendor] = []
                 
-                item_line = f"- {item.get('quantity', 1)} x {item.get('name', 'Item')}"
+                # Clean product name using project rules
+                raw_name = item.get('name', 'Item')
+                cleaned_name = clean_product_name(raw_name)
+                item_line = f"- {item.get('quantity', 1)} x {cleaned_name}"
                 vendor_items[vendor].append(item_line)
         
         # Build items text

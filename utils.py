@@ -80,6 +80,108 @@ def validate_phone(phone: str) -> Optional[str]:
 
     return cleaned
 
+def clean_product_name(name: str) -> str:
+    """
+    Clean up product names according to project rules.
+    
+    Rules applied:
+    1. Remove burger prefixes and extract quoted text
+    2. Simplify pommes/fries variations
+    3. Remove pizza prefixes
+    4. Simplify spätzle dishes
+    5. Remove pasta prefixes
+    6. Simplify rolls
+    7. Remove salad prefixes
+    8. Remove prices and "Standard" suffixes
+    """
+    import re
+    
+    if not name or not name.strip():
+        return name
+    
+    # Remove brackets
+    name = name.strip('[]')
+    
+    # Rule 1, 14, 15: Burger names - extract text between quotes
+    if 'Bio-Burger' in name or 'Monats-Bio-Burger' in name or 'Veganer-Monats-Bio-Burger' in name:
+        # Match both " and „ quote styles
+        match = re.search(r'[„"]([^"„]+)[„"]', name)
+        if match:
+            return match.group(1)
+    
+    # Rule 2: Bio-Pommes -> Pommes
+    if name == 'Bio-Pommes':
+        return 'Pommes'
+    
+    # Rule 3: Chili-Cheese-Fries (+X€) -> Fries: Chili-Cheese-Style
+    if 'Chili-Cheese-Fries' in name:
+        return 'Fries: Chili-Cheese-Style'
+    
+    # Rule 4: Remove prices in brackets (do this early, affects multiple rules)
+    name = re.sub(r'\s*\(\+?[\d.]+€\)', '', name)
+    
+    # Rule 5: Chili-Cheese-Süßkartoffelpommes -> Süßkartoffel: Chili-Cheese-Style
+    if 'Chili-Cheese-Süßkartoffelpommes' in name:
+        return 'Süßkartoffel: Chili-Cheese-Style'
+    
+    # Rule 4 continued: Sloppy-Fries (price already removed)
+    if name.startswith('Sloppy-Fries'):
+        return 'Sloppy-Fries'
+    
+    # Rule 6: Sauerteig-Pizza X -> X
+    if name.startswith('Sauerteig-Pizza '):
+        return name.replace('Sauerteig-Pizza ', '')
+    
+    # Rule 16: Bergkäse-Spätzle - + Preiselbeere (X€) / Standard -> Bergkäse + Preiselbeere
+    if 'Bergkäse-Spätzle' in name and 'Preiselbeere' in name:
+        # Remove "/ Standard" suffix
+        name = re.sub(r'\s*/\s*Standard', '', name)
+        # Remove " - +" pattern
+        name = re.sub(r'\s*-\s*\+\s*', ' + ', name)
+        # Extract: Bergkäse + Preiselbeere
+        return 'Bergkäse + Preiselbeere'
+    
+    # Rule 7: Bergkäse-Spätzle -> Bergkäse (general spätzle removal)
+    if name.endswith('-Spätzle'):
+        return name.replace('-Spätzle', '')
+    
+    # Rule 8: Gemüse Curry & Spätzle -> Curry
+    if 'Gemüse Curry & Spätzle' in name:
+        return 'Curry'
+    
+    # Rule 9: Gulasch vom Rind & Spätzle -> Gulasch
+    if 'Gulasch vom Rind & Spätzle' in name:
+        return 'Gulasch'
+    
+    # Rule 10: Walnuss Pesto Spätzle -> Walnuss Pesto
+    if 'Walnuss Pesto Spätzle' in name:
+        return 'Walnuss Pesto'
+    
+    # General spätzle cleanup: X & Spätzle -> X
+    name = re.sub(r'\s*&\s*Spätzle', '', name)
+    name = re.sub(r'\s+Spätzle$', '', name)
+    
+    # Rule 11: Selbstgemachte Tagliatelle -> Tagliatelle
+    if name.startswith('Selbstgemachte '):
+        return name.replace('Selbstgemachte ', '')
+    
+    # Rule 12: Cinnamon roll - Classic -> Classic
+    if name.startswith('Cinnamon roll - '):
+        return name.replace('Cinnamon roll - ', '')
+    
+    # Rule 13: Special roll - Oreo -> Oreo
+    if name.startswith('Special roll - '):
+        return name.replace('Special roll - ', '')
+    
+    # Rule 17: Bio-Salat -> Salat
+    if name == 'Bio-Salat':
+        return 'Salat'
+    
+    # Final cleanup: remove "/ Standard" suffix if still present
+    name = re.sub(r'\s*/\s*Standard\s*$', '', name)
+    
+    return name.strip()
+
 def verify_webhook(raw: bytes, hmac_header: str) -> bool:
     """Verify Shopify webhook HMAC"""
     try:
