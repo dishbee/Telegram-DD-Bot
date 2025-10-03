@@ -204,6 +204,46 @@ async def safe_delete_message(chat_id: int, message_id: int):
     except Exception as e:
         logger.error(f"Error deleting message {message_id}: {e}")
 
+def build_assignment_confirmation_message(order: dict) -> str:
+    """Build assignment confirmation message with vendor details"""
+    vendors = order.get("vendors", [])
+    confirmed_times = order.get("confirmed_times", {})
+    vendor_items = order.get("vendor_items", {})
+    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+    
+    # Build vendor shortcuts string
+    vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors])
+    
+    # Header
+    message = f"🔖 #{order_num} - dishbee ({vendor_shortcuts})\n"
+    
+    # Title (singular/plural)
+    if len(vendors) > 1:
+        message += "✅ Restaurants confirmed:\n"
+    else:
+        message += "✅ Restaurant confirmed:\n"
+    
+    # Vendor details
+    for vendor in vendors:
+        pickup_time = confirmed_times.get(vendor, "ASAP")
+        
+        # Count products for this vendor
+        items = vendor_items.get(vendor, [])
+        product_count = 0
+        for item_line in items:
+            if ' x ' in item_line:
+                qty_part = item_line.split(' x ')[0].strip().lstrip('-').strip()
+                try:
+                    product_count += int(qty_part)
+                except ValueError:
+                    product_count += 1
+            else:
+                product_count += 1
+        
+        message += f"🏠 {vendor}: {pickup_time} 📦 {product_count}\n"
+    
+    return message
+
 async def cleanup_mdg_messages(order_id: str):
     """Clean up additional MDG messages, keeping only the original order message"""
     order = STATE.get(order_id)
@@ -847,7 +887,7 @@ def telegram_webhook():
                             logger.info(f"DEBUG: All vendors confirmed! Sending assignment buttons")
                             assignment_msg = await safe_send_message(
                                 DISPATCH_MAIN_CHAT_ID,
-                                f"✅ All vendors confirmed for order {order['name']}",
+                                build_assignment_confirmation_message(order),
                                 mdg_assignment_keyboard(order_id)
                             )
                             # Track this message for potential cleanup
@@ -895,7 +935,7 @@ def telegram_webhook():
                                     logger.info(f"DEBUG: All vendors confirmed! Sending assignment buttons")
                                     assignment_msg = await safe_send_message(
                                         DISPATCH_MAIN_CHAT_ID,
-                                        f"✅ All vendors confirmed for order {order['name']}",
+                                        build_assignment_confirmation_message(order),
                                         mdg_assignment_keyboard(order_id)
                                     )
                                     # Track this message for potential cleanup
@@ -940,7 +980,7 @@ def telegram_webhook():
                                     logger.info(f"DEBUG: All vendors confirmed! Sending assignment buttons")
                                     assignment_msg = await safe_send_message(
                                         DISPATCH_MAIN_CHAT_ID,
-                                        f"✅ All vendors confirmed for order {order['name']}",
+                                        build_assignment_confirmation_message(order),
                                         mdg_assignment_keyboard(order_id)
                                     )
                                     # Track this message for potential cleanup
