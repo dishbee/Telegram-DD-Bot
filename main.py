@@ -850,12 +850,12 @@ def telegram_webhook():
                                 f"✅ All vendors confirmed for order {order['name']}",
                                 mdg_assignment_keyboard(order_id)
                             )
+                            # Track this message for potential cleanup
+                            if "mdg_additional_messages" not in order:
+                                order["mdg_additional_messages"] = []
+                            order["mdg_additional_messages"].append(assignment_msg.message_id)
                         else:
                             logger.info(f"DEBUG: All vendors confirmed but order already assigned - skipping assignment buttons")
-                        # Track this message for potential cleanup
-                        if "mdg_additional_messages" not in order:
-                            order["mdg_additional_messages"] = []
-                        order["mdg_additional_messages"].append(assignment_msg.message_id)
                     else:
                         logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
                 

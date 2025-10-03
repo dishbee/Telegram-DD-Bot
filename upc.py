@@ -66,6 +66,8 @@ def courier_selection_keyboard(order_id: str) -> InlineKeyboardMarkup:
     try:
         buttons = []
         
+        logger.info(f"DEBUG: Building courier selection keyboard. COURIER_MAP: {COURIER_MAP}")
+        
         # Priority couriers (Bee 1, Bee 2, Bee 3) first
         priority_names = ["Bee 1", "Bee 2", "Bee 3"]
         for courier_name in priority_names:
@@ -89,6 +91,7 @@ def courier_selection_keyboard(order_id: str) -> InlineKeyboardMarkup:
                         callback_data=f"assign_to_user|{order_id}|{user_id_str}"
                     )])
         
+        logger.info(f"DEBUG: Built {len(buttons)} courier buttons")
         return InlineKeyboardMarkup(buttons) if buttons else None
     except Exception as e:
         logger.error(f"Error building courier selection keyboard: {e}")
