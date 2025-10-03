@@ -1062,9 +1062,6 @@ def telegram_webhook():
                     
                     # Update MDG with assignment info
                     await upc.update_mdg_with_assignment(order_id, target_user_id)
-                    
-                    # Clean up selection menu
-                    await cleanup_mdg_messages(order_id)
                 
                 # UPC CTA ACTIONS
                 elif action == "delay_order":
