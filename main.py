@@ -206,7 +206,35 @@ async def safe_delete_message(chat_id: int, message_id: int):
         logger.error(f"Error deleting message {message_id}: {e}")
 
 def build_assignment_confirmation_message(order: dict) -> str:
-    """Build assignment confirmation message with vendor details"""
+    """
+    Build assignment confirmation message showing all vendor confirmations.
+    
+    This message appears in MDG after all vendors have confirmed their times.
+    It replaces the old "✅ All vendors confirmed" message with detailed
+    vendor information including pickup times and product counts.
+    
+    Format for multi-vendor orders:
+        🔖 #58 - dishbee (JS+LR)
+        ✅ Restaurants confirmed:
+        🏠 Julis Spätzlerei: 12:50 📦 1
+        🏠 Leckerolls: 12:55 📦 3
+    
+    Format for single-vendor orders:
+        🔖 #58 - dishbee (LR)
+        ✅ Restaurant confirmed:
+        🏠 Leckerolls: 12:55 📦 3
+    
+    Product count logic:
+    - Parses vendor_items lines (format: "- X x Product Name")
+    - Extracts quantity from each line
+    - Sums total products per vendor
+    
+    Args:
+        order: Order dict from STATE with vendors, confirmed_times, vendor_items
+    
+    Returns:
+        Formatted message string for MDG display
+    """
     vendors = order.get("vendors", [])
     confirmed_times = order.get("confirmed_times", {})
     vendor_items = order.get("vendor_items", {})
@@ -286,6 +314,42 @@ def health_check():
     }), 200
 
 # --- TELEGRAM WEBHOOK ---
+# =============================================================================
+# ASSIGNMENT SYSTEM ARCHITECTURE
+# =============================================================================
+# The assignment system handles courier assignment and delivery workflow.
+# It consists of three main components working together:
+#
+# 1. ASSIGNMENT INITIATION (MDG → UPC):
+#    - After all vendors confirm times, MDG shows assignment buttons
+#    - Two options: "👈 Assign to myself" or "👉 Assign to..."
+#    - "Assign to myself" directly assigns to clicking user
+#    - "Assign to..." shows live courier selection menu
+#
+# 2. LIVE COURIER DETECTION:
+#    - Queries bot.get_chat_administrators() to get MDG members
+#    - Shows actual group members (no hardcoded list dependency)
+#    - Filters out bots, only shows human couriers
+#    - Falls back to COURIER_MAP environment variable if API fails
+#    - All couriers MUST be admins in MDG for detection to work
+#
+# 3. PRIVATE CHAT WORKFLOW (UPC):
+#    - Assigned courier receives DM with order details
+#    - Action buttons: 🧭 Navigate, ⏰ Delay, ✅ Delivered
+#    - MDG updated with assignment status and courier name
+#    - Delay requests sent to all vendors for confirmation
+#
+# STATE FIELDS USED:
+#    - order["status"]: "new" → "assigned" → "delivered"
+#    - order["assigned_to"]: user_id of assigned courier
+#    - order["confirmed_times"]: {vendor: time} mapping for multi-vendor
+#
+# CRITICAL PREVENTION:
+#    - Duplicate assignment buttons prevented by checking order["status"]
+#    - If status == "assigned", skip showing new assignment buttons
+#    - Prevents confusion when courier requests delay after assignment
+# =============================================================================
+
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
     """Handle Telegram webhooks"""
@@ -881,10 +945,13 @@ def telegram_webhook():
                     status_msg = f"■ {vendor} replied: Works 👍 ■"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                     
-                    # Check if all vendors confirmed - show assignment buttons (only if not already assigned)
+                    # Check if all vendors confirmed - show assignment buttons
+                    # CRITICAL: Only show buttons if order NOT already assigned
+                    # This prevents duplicate assignment buttons appearing after delay confirmations
                     logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
                     if check_all_vendors_confirmed(order_id):
                         if order.get("status") != "assigned":
+                            # Order ready for assignment - show assignment buttons
                             logger.info(f"DEBUG: All vendors confirmed! Sending assignment buttons")
                             assignment_msg = await safe_send_message(
                                 DISPATCH_MAIN_CHAT_ID,
@@ -896,6 +963,8 @@ def telegram_webhook():
                                 order["mdg_additional_messages"] = []
                             order["mdg_additional_messages"].append(assignment_msg.message_id)
                         else:
+                            # Order already assigned - skip duplicate buttons
+                            # This happens when courier requests delay and vendor confirms new time
                             logger.info(f"DEBUG: All vendors confirmed but order already assigned - skipping assignment buttons")
                     else:
                         logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
@@ -1065,6 +1134,18 @@ def telegram_webhook():
                 
                 # ASSIGNMENT ACTIONS
                 elif action == "assign_myself":
+                    """
+                    Handle "Assign to myself" button click.
+                    
+                    Flow:
+                    1. User clicks button in MDG
+                    2. Extract user_id from callback query
+                    3. Send order details to user's private chat (via UPC module)
+                    4. Update MDG message to show assignment status
+                    5. Mark order as "assigned" in STATE
+                    
+                    No cleanup: Assignment confirmation message stays in MDG permanently
+                    """
                     order_id = data[1]
                     user_id = cq["from"]["id"]
                     logger.info(f"User {user_id} assigning order {order_id} to themselves")
@@ -1076,6 +1157,19 @@ def telegram_webhook():
                     await upc.update_mdg_with_assignment(order_id, user_id)
                 
                 elif action == "assign_to_menu":
+                    """
+                    Handle "Assign to..." button click - shows courier selection menu.
+                    
+                    Flow:
+                    1. User clicks "Assign to..." in MDG
+                    2. Query Telegram API for live MDG administrators
+                    3. Build inline keyboard with one button per courier
+                    4. Send "Select courier:" message with buttons
+                    5. Track message for cleanup after selection
+                    
+                    Live detection ensures menu shows current group members.
+                    Requirement: All couriers must be promoted to admin in MDG.
+                    """
                     order_id = data[1]
                     logger.info(f"Showing courier selection menu for order {order_id}")
                     
@@ -1095,6 +1189,16 @@ def telegram_webhook():
                         order["mdg_additional_messages"].append(menu_msg.message_id)
                 
                 elif action == "assign_to_user":
+                    """
+                    Handle courier selection from "Assign to..." menu.
+                    
+                    Flow:
+                    1. Dispatcher selects courier from menu
+                    2. Extract target_user_id from callback data
+                    3. Send order details to selected courier's private chat
+                    4. Update MDG message to show assignment status
+                    5. Mark order as "assigned" in STATE
+                    """
                     order_id, target_user_id = data[1], int(data[2])
                     logger.info(f"Assigning order {order_id} to user {target_user_id}")
                     
@@ -1106,6 +1210,16 @@ def telegram_webhook():
                 
                 # UPC CTA ACTIONS
                 elif action == "delay_order":
+                    """
+                    Courier requests delay from private chat.
+                    
+                    Shows time picker with +5/+10/+15/+20 minute options based on
+                    latest confirmed time. Courier selects new time, which triggers
+                    delay request to all vendors.
+                    
+                    Critical: When vendors confirm new time, assignment buttons are
+                    NOT shown again because order["status"] == "assigned".
+                    """
                     order_id = data[1]
                     user_id = cq["from"]["id"]
                     logger.info(f"User {user_id} requesting delay for order {order_id}")
@@ -1114,6 +1228,12 @@ def telegram_webhook():
                     await upc.show_delay_options(order_id, user_id)
                 
                 elif action == "delay_selected":
+                    """
+                    Courier selected delay time - send to restaurants.
+                    
+                    Sends message to all vendors asking for confirmation of new time.
+                    Vendors see same response buttons as original time request.
+                    """
                     order_id, new_time = data[1], data[2]
                     user_id = cq["from"]["id"]
                     logger.info(f"User {user_id} selected delay time {new_time} for order {order_id}")
@@ -1122,6 +1242,9 @@ def telegram_webhook():
                     await upc.send_delay_request_to_restaurants(order_id, new_time, user_id)
                 
                 elif action == "call_restaurant":
+                    """
+                    Courier initiates call to restaurant (placeholder for future integration).
+                    """
                     order_id, vendor = data[1], data[2]
                     user_id = cq["from"]["id"]
                     logger.info(f"User {user_id} calling restaurant {vendor} for order {order_id}")
@@ -1129,6 +1252,9 @@ def telegram_webhook():
                     await upc.initiate_restaurant_call(order_id, vendor, user_id)
                 
                 elif action == "select_restaurant":
+                    """
+                    Show restaurant selection for multi-vendor call action.
+                    """
                     order_id = data[1]
                     user_id = cq["from"]["id"]
                     logger.info(f"User {user_id} selecting restaurant to call for order {order_id}")
@@ -1136,6 +1262,12 @@ def telegram_webhook():
                     await upc.show_restaurant_selection(order_id, user_id)
                 
                 elif action == "confirm_delivered":
+                    """
+                    Courier confirms order delivery completion.
+                    
+                    Final state: Order marked "delivered", MDG updated with completion status,
+                    courier receives confirmation message. No further actions possible.
+                    """
                     order_id = data[1]
                     user_id = cq["from"]["id"]
                     logger.info(f"User {user_id} confirming delivery for order {order_id}")

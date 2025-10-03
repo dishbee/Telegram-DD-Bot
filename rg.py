@@ -20,18 +20,26 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
             address_parts = order['customer']['address'].split(',')
             order_number = address_parts[0] if address_parts else "Unknown"
 
+        # Get vendor items and clean up formatting
         vendor_items = order.get("vendor_items", {}).get(vendor, [])
         if vendor_items:
-            items_text = "\n".join(vendor_items)
+            # Remove "- " prefix from each item line
+            cleaned_items = []
+            for item in vendor_items:
+                cleaned_item = item.lstrip('- ').strip()
+                cleaned_items.append(cleaned_item)
+            items_text = "\n".join(cleaned_items)
         else:
             items_text = order.get("items_text", "")
 
         note = order.get("note", "")
 
-        text = f"Order {order_number}\n"
-        text += f"{items_text}"
+        # Build message
+        text = f"🔖 Order #{order_number}\n\n"
+        text += f"🍽\n{items_text}"
+        
         if note:
-            text += f"\nNote: {note}"
+            text += f"\n\n❕ Note: {note}"
 
         return text
     except Exception as exc:  # pragma: no cover - defensive
@@ -47,13 +55,22 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
         customer_name = order['customer']['name']
         phone = order['customer']['phone']
         order_time = order.get('created_at', datetime.now()).strftime('%H:%M')
+        
+        # Format address: street + building (zip)
         address = order['customer']['address']
+        address_parts = address.split(',')
+        if len(address_parts) >= 2:
+            street_part = address_parts[0].strip()
+            # Removed zip code display as requested
+            formatted_address = street_part
+        else:
+            formatted_address = address.strip()
 
         details = f"{summary}\n\n"
-        details += f"Customer: {customer_name}\n"
-        details += f"Phone: {phone}\n"
-        details += f"Time of order: {order_time}\n"
-        details += f"Address: {address}"
+        details += f"🧑 {customer_name}\n"
+        details += f"🗺️ {formatted_address}\n"
+        details += f"📞 {phone}\n"
+        details += f"⏰ Ordered at: {order_time}"
 
         return details
     except Exception as exc:  # pragma: no cover - defensive

@@ -82,29 +82,49 @@ def validate_phone(phone: str) -> Optional[str]:
 
 def clean_product_name(name: str) -> str:
     """
-    Clean up product names according to project rules.
+    Clean up product names according to project-specific display rules.
     
-    Rules applied:
-    1. Remove burger prefixes and extract quoted text
-    2. Simplify pommes/fries variations
-    3. Remove pizza prefixes
-    4. Simplify spätzle dishes
-    5. Remove pasta prefixes
-    6. Simplify rolls
-    7. Remove salad prefixes
-    8. Remove prices and "Standard" suffixes
+    This function simplifies product names by removing unnecessary prefixes,
+    suffixes, and formatting to make them more readable in order messages.
+    Applied consistently across MDG, RG, and UPC displays.
+    
+    Rules implemented (17 total):
+    - Extract burger names from quotes, remove "Bio-Burger" prefix
+    - Simplify fries/pommes variations (Bio-Pommes → Pommes)
+    - Remove pizza prefixes (Sauerteig-Pizza → keep only name)
+    - Simplify Spätzle dishes (remove "& Spätzle" suffix)
+    - Remove pasta prefixes (Selbstgemachte → keep only type)
+    - Simplify rolls (remove roll type prefix)
+    - Remove prices in brackets: (+2.6€), (1.9€)
+    - Remove "/ Standard" suffixes
+    - Remove Bio- prefixes from salads
+    
+    Args:
+        name: Raw product name from Shopify line_items
+    
+    Returns:
+        Cleaned product name for display
+        
+    Example:
+        >>> clean_product_name('[Bio-Burger "Classic"]')
+        'Classic'
+        >>> clean_product_name('Chili-Cheese-Fries (+2.6€)')
+        'Fries: Chili-Cheese-Style'
+        >>> clean_product_name('Bergkäse-Spätzle')
+        'Bergkäse'
     """
     import re
     
     if not name or not name.strip():
         return name
     
-    # Remove brackets
+    # Remove brackets from product names
     name = name.strip('[]')
     
     # Rule 1, 14, 15: Burger names - extract text between quotes
+    # Handles: [Bio-Burger "X"], [Monats-Bio-Burger „X"], [Veganer-Monats-Bio-Burger „X"]
     if 'Bio-Burger' in name or 'Monats-Bio-Burger' in name or 'Veganer-Monats-Bio-Burger' in name:
-        # Match both " and „ quote styles
+        # Match both " and „ quote styles (German quotes)
         match = re.search(r'[„"]([^"„]+)[„"]', name)
         if match:
             return match.group(1)
@@ -240,7 +260,33 @@ async def safe_delete_message(chat_id: int, message_id: int):
         logger.error(f"Error deleting message {message_id}: {e}")
 
 async def cleanup_mdg_messages(order_id: str):
-    """Clean up additional MDG messages, keeping only the original order message"""
+    """
+    Clean up temporary MDG messages to prevent chat clutter.
+    
+    During order workflow, temporary messages are sent to MDG:
+    - Time picker keyboards ("+5 +10 +15 +20" buttons)
+    - "Same time as" order selection menus
+    - Exact time picker (hour/minute selection)
+    - Vendor selection menus (multi-vendor orders)
+    - Courier selection menus ("Assign to..." flow)
+    
+    These messages are tracked in order["mdg_additional_messages"] and
+    deleted when the workflow step completes to keep MDG chat clean.
+    
+    The original order message (order["mdg_message_id"]) is NEVER deleted
+    and remains as permanent record with assignment buttons.
+    
+    Args:
+        order_id: Order to clean up messages for
+        
+    Side effects:
+        - Deletes all messages in order["mdg_additional_messages"]
+        - Clears the mdg_additional_messages list after deletion
+        - Logs each deletion attempt (success or failure)
+    
+    Note: Uses retry logic (3 attempts) for each deletion to handle
+    network issues or rate limits.
+    """
     order = STATE.get(order_id)
     if not order:
         return

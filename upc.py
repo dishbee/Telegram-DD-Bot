@@ -65,7 +65,31 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
         return None
 
 async def get_mdg_couriers(bot):
-    """Get actual courier list from MDG group members, fallback to COURIER_MAP"""
+    """
+    Get list of couriers from MDG group with fallback to COURIER_MAP.
+    
+    This function queries the Telegram Bot API to get current administrators
+    of the Main Dispatch Group (MDG). This ensures the courier selection menu
+    always shows actual group members, even if they join/leave.
+    
+    Flow:
+    1. Query bot.get_chat_administrators() for MDG group
+    2. Filter out bot accounts (include only human users)
+    3. Extract user_id and username for each admin
+    4. Fallback to COURIER_MAP environment variable if API call fails
+    
+    Note: Only administrators are returned by Telegram API. All couriers
+    must be promoted to admin status in MDG for this to work correctly.
+    
+    Args:
+        bot: Telegram Bot instance for API calls
+    
+    Returns:
+        List of dicts: [{"user_id": int, "username": str}, ...]
+        
+    Raises:
+        Logs error and falls back to COURIER_MAP if API call fails
+    """
     try:
         if not bot:
             logger.warning("Bot instance not available, using COURIER_MAP fallback")
@@ -110,7 +134,26 @@ def get_couriers_from_map():
     return couriers
 
 async def courier_selection_keyboard(order_id: str, bot) -> InlineKeyboardMarkup:
-    """Build courier selection menu from actual MDG members"""
+    """
+    Build keyboard with buttons for each available courier.
+    
+    Dynamically generates courier selection buttons by querying live MDG
+    membership. Each button triggers assign_to_user callback with courier's
+    user_id, allowing dispatcher to assign order to any courier.
+    
+    Priority ordering:
+    1. Bee 1, Bee 2, Bee 3 (if present in MDG)
+    2. All other couriers alphabetically
+    
+    Args:
+        order_id: Shopify order ID for callback data
+        bot: Bot instance to query MDG members
+    
+    Returns:
+        InlineKeyboardMarkup with one button per courier, or None if no couriers
+        
+    Button format: [Courier Name] → assign_to_user|{order_id}|{user_id}
+    """
     try:
         # Get couriers (live from MDG or fallback to COURIER_MAP)
         couriers = await get_mdg_couriers(bot)
@@ -212,7 +255,35 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
         logger.error(f"Error updating MDG with assignment: {e}")
 
 def build_assignment_message(order: dict) -> str:
-    """Build the assignment message sent to courier's private chat"""
+    """
+    Build the assignment message sent to courier's private chat.
+    
+    This message contains all information the courier needs to complete the delivery:
+    - Order number and vendor shortcuts
+    - Each restaurant with pickup time and product count
+    - Customer name and formatted address
+    - Payment method and tip information
+    - Phone numbers for customer and restaurants
+    
+    Format example:
+        🔖 #58 - dishbee
+        🏠 Leckerolls: 12:55 📦 3
+        🏠 Julis Spätzlerei: 13:00 📦 2
+        
+        👤 John Doe
+        🔺 Hauptstraße 5 (80333)
+        
+        ❕ Tip: 2.50€
+        
+        ☎️ Call customer: +49...
+        🍽 Call Restaurant:
+    
+    Args:
+        order: Order dict from STATE with all order details
+        
+    Returns:
+        Formatted message string for private chat display
+    """
     try:
         order_type = order.get("order_type", "shopify")
         

@@ -343,6 +343,50 @@ Detected by "Abholung" in Shopify payload (case-insensitive). Special handling:
 - **No tests**: Manual validation via Telegram sandbox + Shopify webhook replay only
 - **Production deployment**: Render uses Gunicorn (`Procfile: web: gunicorn main:app`), Python 3.10.13 (`runtime.txt`)
 
+## Recent Major Additions (October 2025)
+
+### 1. Assignment System (UPC Module)
+Complete courier assignment and delivery workflow implemented:
+- **Live Courier Detection**: Queries `bot.get_chat_administrators()` to get actual MDG members
+- **Fallback to COURIER_MAP**: Uses environment variable if API call fails
+- **Assignment Buttons**: "👈 Assign to myself" or "👉 Assign to..." after all vendors confirm
+- **Private Chat Workflow**: Assigned courier receives DM with order details and CTA buttons
+- **Duplicate Prevention**: `order["status"]` check prevents duplicate assignment buttons after delays
+- **Delivery Confirmation**: "✅ Delivered" button marks order complete and updates MDG
+
+**Critical Requirement**: All couriers MUST be admins in MDG for live detection to work.
+
+### 2. Product Name Cleaning (`utils.py`)
+Centralized product name simplification with 17 rules:
+- Removes burger prefixes and extracts quoted text: `[Bio-Burger "Classic"]` → `Classic`
+- Simplifies fries/pommes: `Bio-Pommes` → `Pommes`, `Chili-Cheese-Fries (+2.6€)` → `Fries: Chili-Cheese-Style`
+- Removes pizza prefixes: `Sauerteig-Pizza Margherita` → `Margherita`
+- Simplifies Spätzle dishes: `Bergkäse-Spätzle` → `Bergkäse`
+- Removes pasta prefixes: `Selbstgemachte Tagliatelle` → `Tagliatelle`
+- Removes roll type prefixes: `Cinnamon roll - Classic` → `Classic`
+- Removes prices in brackets and "/ Standard" suffixes
+
+Applied at source in `main.py` Shopify webhook handler. All modules (MDG, RG, UPC) receive cleaned names.
+
+### 3. Assignment Confirmation Message Format
+Enhanced vendor confirmation message showing detailed breakdown:
+```
+🔖 #58 - dishbee (JS+LR)
+✅ Restaurants confirmed:
+🏠 Julis Spätzlerei: 12:50 📦 1
+🏠 Leckerolls: 12:55 📦 3
+```
+- Shows vendor shortcuts in header
+- Lists each vendor with confirmed time and product count
+- Singular/plural title based on vendor count
+
+### 4. Message Cleanup System
+Comprehensive temporary message tracking and deletion:
+- Tracks all temporary messages in `order["mdg_additional_messages"]`
+- Cleans up time pickers, vendor menus, courier selection menus
+- Preserves original order message (`order["mdg_message_id"]`) permanently
+- Retry logic (3 attempts) for network resilience
+
 ## Dependencies
 
 ```
