@@ -257,10 +257,14 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                 continue
             created_at = order_data.get("created_at")
             if created_at and created_at > one_hour_ago:
+                # Safe access to customer address
+                address = order_data.get('customer', {}).get('address', 'Unknown')
+                address_short = address.split(',')[0].strip() if ',' in address else address
+                
                 recent_orders.append({
                     "order_id": oid,
                     "confirmed_time": order_data["confirmed_time"],
-                    "address": order_data['customer']['address'].split(',')[0].strip(),
+                    "address": address_short,
                     "vendors": order_data.get("vendors", []),
                     "order_num": order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
                 })
