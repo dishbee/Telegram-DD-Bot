@@ -434,7 +434,7 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
         return InlineKeyboardMarkup([])
 
 
-def exact_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
+def exact_time_keyboard(order_id: str, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
     """Build exact time picker - shows hours."""
     try:
         current_hour = datetime.now().hour
@@ -446,9 +446,13 @@ def exact_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
             for j in range(4):
                 if i + j < len(hours):
                     hour_str = hours[i + j].split(':')[0]
+                    # Include vendor in callback if provided
+                    callback = f"exact_hour|{order_id}|{hour_str}"
+                    if vendor:
+                        callback += f"|{vendor}"
                     row.append(InlineKeyboardButton(
                         hours[i + j],
-                        callback_data=f"exact_hour|{order_id}|{hour_str}"
+                        callback_data=callback
                     ))
             if row:
                 rows.append(row)
@@ -460,7 +464,7 @@ def exact_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([])
 
 
-def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
+def exact_hour_keyboard(order_id: str, hour: int, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
     """Build minute picker for exact time - 3 minute intervals."""
     try:
         current_time = datetime.now()
@@ -477,14 +481,22 @@ def exact_hour_keyboard(order_id: str, hour: int) -> InlineKeyboardMarkup:
             for j in range(4):
                 if i + j < len(minutes_options):
                     time_str = minutes_options[i + j]
+                    # Include vendor in callback if provided
+                    callback = f"exact_selected|{order_id}|{time_str}"
+                    if vendor:
+                        callback += f"|{vendor}"
                     row.append(InlineKeyboardButton(
                         time_str,
-                        callback_data=f"exact_selected|{order_id}|{time_str}"
+                        callback_data=callback
                     ))
             if row:
                 rows.append(row)
 
-        rows.append([InlineKeyboardButton("← Back to hours", callback_data=f"exact_back_hours|{order_id}")])
+        # Include vendor in back button if provided
+        back_callback = f"exact_back_hours|{order_id}"
+        if vendor:
+            back_callback += f"|{vendor}"
+        rows.append([InlineKeyboardButton("← Back to hours", callback_data=back_callback)])
         return InlineKeyboardMarkup(rows)
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building exact hour keyboard: %s", exc)

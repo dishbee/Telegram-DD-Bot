@@ -500,12 +500,11 @@ def telegram_webhook():
                         logger.warning(f"Order {order_id} not found in state")
                         return
                     
-                    # Show TIME submenu for this vendor (same as single-vendor)
+                    # Show TIME submenu for this vendor
                     keyboard = mdg_time_submenu_keyboard(order_id, vendor)
-                    title_text = f"Lederergasse 15 ({RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +"
                     msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        title_text,
+                        "⏰",
                         keyboard
                     )
                     
@@ -951,13 +950,14 @@ def telegram_webhook():
                 
                 elif action == "req_exact":
                     order_id = data[1]
-                    logger.info(f"Processing REQUEST EXACT TIME for order {order_id}")
+                    vendor = data[2] if len(data) > 2 else None  # Extract vendor if provided
+                    logger.info(f"Processing REQUEST EXACT TIME for order {order_id}, vendor: {vendor}")
                     
                     # Show hour picker for exact time
                     msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         "🕒 Select hour:",
-                        exact_time_keyboard(order_id)
+                        exact_time_keyboard(order_id, vendor)
                     )
                     
                     # Track additional message for cleanup
@@ -1021,7 +1021,8 @@ def telegram_webhook():
                 # EXACT TIME ACTIONS
                 elif action == "exact_hour":
                     order_id, hour = data[1], data[2]
-                    logger.info(f"Processing exact hour {hour} for order {order_id}")
+                    vendor = data[3] if len(data) > 3 else None  # Extract vendor if provided
+                    logger.info(f"Processing exact hour {hour} for order {order_id}, vendor: {vendor}")
                     
                     # Edit the current message to show minute picker
                     chat_id = cq["message"]["chat"]["id"]
@@ -1031,18 +1032,29 @@ def telegram_webhook():
                         chat_id,
                         message_id,
                         f"🕒 Select exact time (hour {hour}):",
-                        exact_hour_keyboard(order_id, int(hour))
+                        exact_hour_keyboard(order_id, int(hour), vendor)
                     )
                 
                 elif action == "exact_selected":
                     order_id, selected_time = data[1], data[2]
+                    vendor = data[3] if len(data) > 3 else None  # Extract vendor if provided
                     order = STATE.get(order_id)
                     if not order:
                         return
                     
-                    # Send time request to vendors
-                    for vendor in order["vendors"]:
-                        vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                    # Determine which vendors to send to
+                    if vendor:
+                        # Single vendor specified - send only to that vendor
+                        target_vendors = [vendor]
+                        logger.info(f"Sending time request to single vendor: {vendor}")
+                    else:
+                        # No vendor specified - send to all vendors (single-vendor orders)
+                        target_vendors = order["vendors"]
+                        logger.info(f"Sending time request to all vendors: {target_vendors}")
+                    
+                    # Send time request to target vendors
+                    for v in target_vendors:
+                        vendor_chat = VENDOR_GROUP_MAP.get(v)
                         if vendor_chat:
                             if order["order_type"] == "shopify":
                                 msg = f"#{order['name'][-2:]} at {selected_time}?"
@@ -1053,7 +1065,7 @@ def telegram_webhook():
                             await safe_send_message(
                                 vendor_chat,
                                 msg,
-                                restaurant_response_keyboard(selected_time, order_id, vendor)
+                                restaurant_response_keyboard(selected_time, order_id, v)
                             )
                     
                     # Update MDG
@@ -1076,7 +1088,8 @@ def telegram_webhook():
                 
                 elif action == "exact_back_hours":
                     order_id = data[1]
-                    logger.info(f"Going back to hours for order {order_id}")
+                    vendor = data[2] if len(data) > 2 else None  # Extract vendor if provided
+                    logger.info(f"Going back to hours for order {order_id}, vendor: {vendor}")
                     
                     # Edit current message back to hour picker
                     chat_id = cq["message"]["chat"]["id"]
@@ -1086,7 +1099,7 @@ def telegram_webhook():
                         chat_id,
                         message_id,
                         "🕒 Select hour:",
-                        exact_time_keyboard(order_id)
+                        exact_time_keyboard(order_id, vendor)
                     )
                 
                 elif action == "exact_hide":
