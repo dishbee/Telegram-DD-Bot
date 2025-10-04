@@ -504,7 +504,7 @@ def telegram_webhook():
                     keyboard = mdg_time_submenu_keyboard(order_id, vendor)
                     msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        "⏰",
+                        "Select scheduled order:",
                         keyboard
                     )
                     

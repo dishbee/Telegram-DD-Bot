@@ -248,39 +248,34 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
         one_hour_ago = datetime.now() - timedelta(hours=1)
         recent_orders: List[Dict[str, Any]] = []
         
-        logger.debug(f"mdg_time_submenu_keyboard: Searching for recent orders (current order: {order_id})")
-        logger.debug(f"mdg_time_submenu_keyboard: One hour ago cutoff: {one_hour_ago}")
+        logger.info(f"BTN-TIME: Searching for recent orders (current order: {order_id}, vendor: {vendor})")
+        logger.info(f"BTN-TIME: One hour ago cutoff: {one_hour_ago}")
+        logger.info(f"BTN-TIME: Total orders in STATE: {len(STATE)}")
 
         for oid, order_data in STATE.items():
-            logger.debug(f"mdg_time_submenu_keyboard: Checking order {oid}")
-            
             if oid == order_id:
-                logger.debug(f"mdg_time_submenu_keyboard: Skipping current order {oid}")
                 continue
                 
             confirmed_time = order_data.get("confirmed_time")
-            logger.debug(f"mdg_time_submenu_keyboard: Order {oid} confirmed_time: {confirmed_time}")
+            status = order_data.get("status")
+            created_at = order_data.get("created_at")
+            
+            logger.info(f"BTN-TIME: Order {oid} - confirmed_time={confirmed_time}, status={status}, created_at={created_at}")
             
             if not confirmed_time:
-                logger.debug(f"mdg_time_submenu_keyboard: Order {oid} has no confirmed_time, skipping")
+                logger.info(f"BTN-TIME: Order {oid} - SKIP: no confirmed_time")
                 continue
                 
-            status = order_data.get("status")
-            logger.debug(f"mdg_time_submenu_keyboard: Order {oid} status: {status}")
-            
             if status == "delivered":
-                logger.debug(f"mdg_time_submenu_keyboard: Order {oid} is delivered, skipping")
+                logger.info(f"BTN-TIME: Order {oid} - SKIP: status is delivered")
                 continue
                 
-            created_at = order_data.get("created_at")
-            logger.debug(f"mdg_time_submenu_keyboard: Order {oid} created_at: {created_at}")
-            
             if created_at and created_at > one_hour_ago:
                 # Safe access to customer address
                 address = order_data.get('customer', {}).get('address', 'Unknown')
                 address_short = address.split(',')[0].strip() if ',' in address else address
                 
-                logger.debug(f"mdg_time_submenu_keyboard: Order {oid} PASSED all filters, adding to list")
+                logger.info(f"BTN-TIME: Order {oid} - PASSED all filters, adding to list")
                 
                 recent_orders.append({
                     "order_id": oid,
@@ -290,9 +285,9 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                     "order_num": order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
                 })
             else:
-                logger.debug(f"mdg_time_submenu_keyboard: Order {oid} failed time check (created_at: {created_at}, cutoff: {one_hour_ago})")
+                logger.info(f"BTN-TIME: Order {oid} - SKIP: created_at check failed (created_at: {created_at}, cutoff: {one_hour_ago})")
 
-        logger.debug(f"mdg_time_submenu_keyboard: Found {len(recent_orders)} recent confirmed orders")
+        logger.info(f"BTN-TIME: Found {len(recent_orders)} recent confirmed orders")
         buttons: List[List[InlineKeyboardButton]] = []
 
         # If we have recent orders, show them
