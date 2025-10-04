@@ -138,7 +138,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         note_line = ""
         note = order.get("note", "")
         if note:
-            note_line = f"Note: {note}\n"
+            note_line = f"❕ Note: {note}\n"
 
         tips_line = ""
         tips = order.get("tips", 0.0)
@@ -238,46 +238,106 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
 
 def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
-    """Build TIME submenu per assignment: title + 4 buttons + Same as + Exact time."""
+    """Build TIME submenu: show recent confirmed orders (not delivered, <1hr) or just EXACT TIME button."""
     try:
         order = STATE.get(order_id)
         if not order:
             return InlineKeyboardMarkup([])
 
-        address = order['customer']['address'].split(',')[0]
-        if vendor:
-            vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-        else:
-            vendor_shortcut = RESTAURANT_SHORTCUTS.get(order['vendors'][0], order['vendors'][0][:2].upper())
-        order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
-        current_time = datetime.now().strftime("%H:%M")
+        # Get all confirmed orders (not delivered) from last 1 hour
+        one_hour_ago = datetime.now() - timedelta(hours=1)
+        recent_orders: List[Dict[str, Any]] = []
 
+        for oid, order_data in STATE.items():
+            if oid == order_id:
+                continue
+            if not order_data.get("confirmed_time"):
+                continue
+            if order_data.get("status") == "delivered":
+                continue
+            created_at = order_data.get("created_at")
+            if created_at and created_at > one_hour_ago:
+                recent_orders.append({
+                    "order_id": oid,
+                    "confirmed_time": order_data["confirmed_time"],
+                    "address": order_data['customer']['address'].split(',')[0].strip(),
+                    "vendors": order_data.get("vendors", []),
+                    "order_num": order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
+                })
+
+        buttons: List[List[InlineKeyboardButton]] = []
+
+        # If we have recent orders, show them
+        if recent_orders:
+            for recent in recent_orders:
+                # Build button text: "20:46 - Lederergasse 15 (LR, #59)"
+                vendor_shortcuts = ", ".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in recent["vendors"]])
+                button_text = f"{recent['confirmed_time']} - {recent['address']} ({vendor_shortcuts}, #{recent['order_num']})"
+                
+                # Store vendor info in callback for later matching
+                vendors_str = ",".join(recent["vendors"])
+                callback_data = f"order_ref|{order_id}|{recent['order_id']}|{recent['confirmed_time']}|{vendors_str}"
+                if vendor:
+                    callback_data += f"|{vendor}"
+                
+                buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+
+        # Always show EXACT TIME button at bottom
         vendor_param = f"|{vendor}" if vendor else ""
-        buttons = [
-            [
-                InlineKeyboardButton("+5 mins", callback_data=f"time_plus|{order_id}|5{vendor_param}"),
-                InlineKeyboardButton("+10 mins", callback_data=f"time_plus|{order_id}|10{vendor_param}")
-            ],
-            [
-                InlineKeyboardButton("+15 mins", callback_data=f"time_plus|{order_id}|15{vendor_param}"),
-                InlineKeyboardButton("+20 mins", callback_data=f"time_plus|{order_id}|20{vendor_param}")
-            ]
-        ]
-
-        confirmed_orders = get_recent_orders_for_same_time(order_id)
-        has_confirmed = any(order_data.get("confirmed_time") for order_data in STATE.values() if order_data.get("confirmed_time"))
-
-        if has_confirmed:
-            buttons.append([InlineKeyboardButton("Same as", callback_data=f"req_same|{order_id}")])
-        else:
-            buttons.append([InlineKeyboardButton("Same as (no recent orders)", callback_data="no_recent")])
-
-        buttons.append([InlineKeyboardButton("Request exact time:", callback_data=f"req_exact|{order_id}")])
+        buttons.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}{vendor_param}")])
 
         return InlineKeyboardMarkup(buttons)
 
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building TIME submenu keyboard: %s", exc)
+        return InlineKeyboardMarkup([])
+
+
+def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, ref_time: str, ref_vendors_str: str, current_vendor: Optional[str] = None) -> InlineKeyboardMarkup:
+    """Build Same / +5 / +10 / +15 / +20 keyboard after user selects a reference order."""
+    try:
+        ref_vendors = ref_vendors_str.split(",")
+        
+        # Calculate +5, +10, +15, +20 times from reference time
+        ref_hour, ref_min = map(int, ref_time.split(':'))
+        ref_datetime = datetime.now().replace(hour=ref_hour, minute=ref_min, second=0, microsecond=0)
+        
+        buttons: List[List[InlineKeyboardButton]] = []
+        
+        # First row: Same button
+        # Check if current vendor matches any vendor in reference order
+        if current_vendor:
+            # Multi-vendor order - only show "Same" if vendor matches
+            if current_vendor in ref_vendors:
+                same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}|{current_vendor}"
+                buttons.append([InlineKeyboardButton("Same", callback_data=same_callback)])
+        else:
+            # Single vendor order
+            order = STATE.get(current_order_id)
+            if order:
+                current_vendors = order.get("vendors", [])
+                # Check if any current vendor matches ref vendors
+                if any(v in ref_vendors for v in current_vendors):
+                    same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}"
+                    buttons.append([InlineKeyboardButton("Same", callback_data=same_callback)])
+        
+        # Build +5, +10, +15, +20 buttons (2 per row)
+        time_buttons = []
+        for minutes in [5, 10, 15, 20]:
+            new_time = ref_datetime + timedelta(minutes=minutes)
+            time_str = new_time.strftime("%H:%M")
+            vendor_param = f"|{current_vendor}" if current_vendor else ""
+            callback = f"time_relative|{current_order_id}|{time_str}|{ref_order_id}{vendor_param}"
+            time_buttons.append(InlineKeyboardButton(f"+{minutes}", callback_data=callback))
+        
+        # Add time buttons in rows of 2
+        buttons.append([time_buttons[0], time_buttons[1]])
+        buttons.append([time_buttons[2], time_buttons[3]])
+        
+        return InlineKeyboardMarkup(buttons)
+    
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("Error building order reference options keyboard: %s", exc)
         return InlineKeyboardMarkup([])
 
 

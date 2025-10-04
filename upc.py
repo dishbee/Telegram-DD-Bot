@@ -332,11 +332,16 @@ def build_assignment_message(order: dict) -> str:
         else:
             formatted_address = address.strip()
         
-        customer_section = f"\n� {customer_name}\n"
-        customer_section += f"🔺 {formatted_address}\n"
+        customer_section = f"\n👤 {customer_name}\n"
+        customer_section += f"� {formatted_address}\n"
         
-        # Optional info (tips, cash on delivery)
+        # Optional info (note, tips, cash on delivery)
         optional_section = ""
+        
+        note = order.get("note", "")
+        if note:
+            optional_section += f"\n❕ Note: {note}\n"
+        
         tips = order.get("tips", 0.0)
         if tips and float(tips) > 0:
             optional_section += f"\n❕ Tip: {float(tips):.2f}€\n"

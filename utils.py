@@ -88,6 +88,9 @@ def clean_product_name(name: str) -> str:
     suffixes, and formatting to make them more readable in order messages.
     Applied consistently across MDG, RG, and UPC displays.
     
+    Handles compound products (e.g., "Burger - Pommes") by splitting on " - "
+    and cleaning each part separately. Removes duplicates (e.g., "Prosciutto - Prosciutto" → "Prosciutto").
+    
     Rules implemented (17 total):
     - Extract burger names from quotes, remove "Bio-Burger" prefix
     - Simplify fries/pommes variations (Bio-Pommes → Pommes)
@@ -108,15 +111,39 @@ def clean_product_name(name: str) -> str:
     Example:
         >>> clean_product_name('[Bio-Burger "Classic"]')
         'Classic'
-        >>> clean_product_name('Chili-Cheese-Fries (+2.6€)')
-        'Fries: Chili-Cheese-Style'
-        >>> clean_product_name('Bergkäse-Spätzle')
-        'Bergkäse'
+        >>> clean_product_name('Veganer-Monats-Bio-Burger „BBQ Oyster" - Bio-Pommes')
+        'BBQ Oyster - Pommes'
+        >>> clean_product_name('Sauerteig-Pizza Prosciutto - Prosciutto')
+        'Prosciutto'
     """
     import re
     
     if not name or not name.strip():
         return name
+    
+    # Debug logging
+    logger.debug(f"clean_product_name input: '{name}'")
+    
+    # Handle compound products: "Burger - Side" - split and clean each part
+    if ' - ' in name:
+        parts = name.split(' - ')
+        logger.debug(f"Splitting compound product into parts: {parts}")
+        cleaned_parts = []
+        for part in parts:
+            cleaned = clean_product_name(part.strip())  # Recursive call
+            logger.debug(f"Cleaned '{part}' → '{cleaned}'")
+            if cleaned and cleaned.strip():
+                cleaned_parts.append(cleaned)
+        
+        # Remove duplicates: "Prosciutto - Prosciutto" -> "Prosciutto"
+        if len(cleaned_parts) == 2 and cleaned_parts[0] == cleaned_parts[1]:
+            result = cleaned_parts[0]
+            logger.debug(f"Removed duplicate: {cleaned_parts} → '{result}'")
+            return result
+        
+        result = ' - '.join(cleaned_parts) if cleaned_parts else name
+        logger.debug(f"Compound product result: '{result}'")
+        return result
     
     # Remove brackets from product names
     name = name.strip('[]')
@@ -162,8 +189,18 @@ def clean_product_name(name: str) -> str:
         return 'Bergkäse + Preiselbeere'
     
     # Rule 7: Bergkäse-Spätzle -> Bergkäse (general spätzle removal)
-    if name.endswith('-Spätzle'):
-        return name.replace('-Spätzle', '')
+    # Handle various spellings: Spätzle, Spaetzle, with or without space before hyphen
+    if 'Spätzle' in name or 'Spaetzle' in name or 'spätzle' in name or 'spaetzle' in name:
+        # Remove hyphen + optional space + Spätzle/Spaetzle (case insensitive)
+        result = re.sub(r'\s*-\s*[Ss][pä][aeä]tzle', '', name, flags=re.IGNORECASE)
+        logger.debug(f"Rule 7 (Spätzle removal): '{name}' → '{result}'")
+        return result
+    
+    # Rule 18: Remove " - Classic" variant suffix
+    if name.endswith(' - Classic') or name.endswith('-Classic'):
+        result = re.sub(r'\s*-\s*Classic$', '', name)
+        logger.debug(f"Rule 18 (Classic removal): '{name}' → '{result}'")
+        return result
     
     # Rule 8: Gemüse Curry & Spätzle -> Curry
     if 'Gemüse Curry & Spätzle' in name:

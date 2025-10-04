@@ -37,6 +37,7 @@ from mdg import (
     build_mdg_dispatch_text,
     mdg_time_request_keyboard,
     mdg_time_submenu_keyboard,
+    order_reference_options_keyboard,
     same_time_keyboard,
     time_picker_keyboard,
     exact_time_keyboard,
@@ -384,6 +385,33 @@ def telegram_webhook():
             # Flag potential spam
             if "FOXY" in text.upper() or "airdrop" in text.lower() or "t.me/" in text:
                 logger.warning(f"🚨 POTENTIAL SPAM DETECTED: {text[:100]}...")
+            
+            # Check if this is a vendor responding with issue description
+            chat_id = chat.get('id')
+            if text and chat_id in VENDOR_GROUP_MAP.values():
+                # Find which vendor this chat belongs to
+                vendor_name = None
+                for vendor, group_id in VENDOR_GROUP_MAP.items():
+                    if group_id == chat_id:
+                        vendor_name = vendor
+                        break
+                
+                if vendor_name:
+                    # Check all orders waiting for issue description from this vendor
+                    for order_id, order_data in STATE.items():
+                        if order_data.get("waiting_for_issue_description") == vendor_name:
+                            # Get order number
+                            order_num = order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
+                            
+                            # Send formatted message to MDG
+                            issue_msg = f"{vendor_name}: Issue with 🔖 #{order_num}: \"{text}\""
+                            run_async(safe_send_message(DISPATCH_MAIN_CHAT_ID, issue_msg))
+                            
+                            # Clear the waiting flag
+                            del order_data["waiting_for_issue_description"]
+                            
+                            logger.info(f"Forwarded issue description from {vendor_name} for order {order_id} to MDG")
+                            break
 
         cq = upd.get("callback_query")
         if not cq:
@@ -737,6 +765,175 @@ def telegram_webhook():
                         order = STATE.get(order_id)
                         if order:
                             order["mdg_additional_messages"].append(msg.message_id)
+                
+                elif action == "order_ref":
+                    # User clicked on a reference order from the list
+                    order_id = data[1]
+                    ref_order_id = data[2]
+                    ref_time = data[3]
+                    ref_vendors_str = data[4]
+                    current_vendor = data[5] if len(data) > 5 else None
+                    
+                    logger.info(f"User selected reference order {ref_order_id} (time: {ref_time}) for order {order_id}")
+                    
+                    order = STATE.get(order_id)
+                    ref_order = STATE.get(ref_order_id)
+                    if not order or not ref_order:
+                        logger.error(f"Order {order_id} or reference order {ref_order_id} not found")
+                        return
+                    
+                    # Build Same / +5 / +10 / +15 / +20 keyboard
+                    keyboard = order_reference_options_keyboard(
+                        order_id, 
+                        ref_order_id, 
+                        ref_time, 
+                        ref_vendors_str, 
+                        current_vendor
+                    )
+                    
+                    # Show the options below the selected order
+                    ref_num = ref_order['name'][-2:] if len(ref_order['name']) >= 2 else ref_order['name']
+                    msg = await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"⏰ Reference time: {ref_time} (#{ref_num})\nSelect option:",
+                        keyboard
+                    )
+                    
+                    # Track for cleanup
+                    order["mdg_additional_messages"].append(msg.message_id)
+                
+                elif action == "time_same":
+                    # User clicked "Same" - send "together with" message to matching vendor
+                    order_id = data[1]
+                    ref_order_id = data[2]
+                    ref_time = data[3]
+                    current_vendor = data[4] if len(data) > 4 else None
+                    
+                    logger.info(f"Processing SAME time request for order {order_id} with reference {ref_order_id}")
+                    
+                    order = STATE.get(order_id)
+                    ref_order = STATE.get(ref_order_id)
+                    if not order or not ref_order:
+                        return
+                    
+                    order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
+                    ref_num = ref_order['name'][-2:] if len(ref_order['name']) >= 2 else ref_order['name']
+                    
+                    # Determine which vendor(s) to send to
+                    if current_vendor:
+                        # Multi-vendor: send only to matching vendor
+                        vendors_to_notify = [current_vendor]
+                    else:
+                        # Single vendor: send to matching vendor(s)
+                        ref_vendors = ref_order.get("vendors", [])
+                        current_vendors = order.get("vendors", [])
+                        vendors_to_notify = [v for v in current_vendors if v in ref_vendors]
+                    
+                    # Send "together with" message to each matching vendor
+                    for vendor in vendors_to_notify:
+                        vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_chat:
+                            msg = f"Can you also prepare 🔖 #{order_num} at {ref_time} together with 🔖 #{ref_num}?"
+                            
+                            await safe_send_message(
+                                vendor_chat,
+                                msg,
+                                restaurant_response_keyboard(ref_time, order_id, vendor)
+                            )
+                            
+                            logger.info(f"Sent 'together with' request to {vendor} for order {order_id}")
+                    
+                    # Update MDG
+                    order["requested_time"] = ref_time
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {ref_time}"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_time_request_keyboard(order_id)
+                    )
+                    
+                    # Clean up additional MDG messages
+                    await cleanup_mdg_messages(order_id)
+                    
+                    # Send confirmation to MDG
+                    vendor_names = ", ".join([RESTAURANT_SHORTCUTS.get(v, v) for v in vendors_to_notify])
+                    confirmation_msg = await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"✅ Time request ({ref_time}) sent to {vendor_names}"
+                    )
+                    
+                    # Auto-delete confirmation after 10 seconds
+                    await asyncio.sleep(10)
+                    await safe_delete_message(DISPATCH_MAIN_CHAT_ID, confirmation_msg.message_id)
+                
+                elif action == "time_relative":
+                    # User clicked +5, +10, +15, or +20
+                    order_id = data[1]
+                    requested_time = data[2]
+                    ref_order_id = data[3]
+                    current_vendor = data[4] if len(data) > 4 else None
+                    
+                    logger.info(f"Processing RELATIVE time request ({requested_time}) for order {order_id}")
+                    
+                    order = STATE.get(order_id)
+                    ref_order = STATE.get(ref_order_id)
+                    if not order or not ref_order:
+                        return
+                    
+                    order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
+                    
+                    # Determine which vendor(s) to send to
+                    if current_vendor:
+                        # Multi-vendor: send only to specified vendor
+                        ref_vendors = ref_order.get("vendors", [])
+                        if current_vendor in ref_vendors:
+                            vendors_to_notify = [current_vendor]
+                        else:
+                            vendors_to_notify = []
+                    else:
+                        # Single vendor: send to matching vendor(s) from reference order
+                        ref_vendors = ref_order.get("vendors", [])
+                        current_vendors = order.get("vendors", [])
+                        vendors_to_notify = [v for v in current_vendors if v in ref_vendors]
+                    
+                    # Send time request to each matching vendor
+                    for vendor in vendors_to_notify:
+                        vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_chat:
+                            msg = f"Can you prepare 🔖 #{order_num} at {requested_time}?"
+                            
+                            await safe_send_message(
+                                vendor_chat,
+                                msg,
+                                restaurant_response_keyboard(requested_time, order_id, vendor)
+                            )
+                            
+                            logger.info(f"Sent time request ({requested_time}) to {vendor} for order {order_id}")
+                    
+                    # Update MDG
+                    order["requested_time"] = requested_time
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {requested_time}"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_time_request_keyboard(order_id)
+                    )
+                    
+                    # Clean up additional MDG messages
+                    await cleanup_mdg_messages(order_id)
+                    
+                    # Send confirmation to MDG
+                    vendor_names = ", ".join([RESTAURANT_SHORTCUTS.get(v, v) for v in vendors_to_notify])
+                    confirmation_msg = await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"✅ Time request ({requested_time}) sent to {vendor_names}"
+                    )
+                    
+                    # Auto-delete confirmation after 10 seconds
+                    await asyncio.sleep(10)
+                    await safe_delete_message(DISPATCH_MAIN_CHAT_ID, confirmation_msg.message_id)
                 
                 elif action == "no_recent":
                     # Handle click on disabled "Same as" button
@@ -1093,18 +1290,31 @@ def telegram_webhook():
                 
                 elif action in ["wrong_technical", "wrong_other"]:
                     order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Write a message to dishbee and describe the issue ■")
+                    # Set state to wait for vendor's issue description
+                    order = STATE.get(order_id)
+                    if order:
+                        order["waiting_for_issue_description"] = vendor
+                    
+                    # Send instruction to vendor group (NOT to MDG)
+                    await safe_send_message(
+                        VENDOR_GROUP_MAP[vendor],
+                        "Please write a message describing the issue and we will forward it to dishbee."
+                    )
                 
                 elif action == "wrong_delay":
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
-                    agreed_time = order.get("confirmed_time") or order.get("requested_time", "ASAP") if order else "ASAP"
                     
-                    # Show delay time picker
-                    try:
-                        if agreed_time != "ASAP":
-                            hour, minute = map(int, agreed_time.split(':'))
-                            base_time = datetime.now().replace(hour=hour, minute=minute)
+                    if order:
+                        agreed_time = order.get("confirmed_time") or order.get("requested_time")
+                        
+                        # Always show delay time picker - no fallback without time
+                        if agreed_time and agreed_time != "ASAP":
+                            try:
+                                hour, minute = map(int, agreed_time.split(':'))
+                                base_time = datetime.now().replace(hour=hour, minute=minute)
+                            except:
+                                base_time = datetime.now()
                         else:
                             base_time = datetime.now()
                         
@@ -1125,8 +1335,6 @@ def telegram_webhook():
                             "Select delay time:",
                             InlineKeyboardMarkup(delay_buttons)
                         )
-                    except:
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay ■")
                 
                 elif action == "delay_time":
                     order_id, vendor, delay_time = data[1], data[2], data[3]

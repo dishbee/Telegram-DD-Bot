@@ -36,7 +36,7 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
 
         # Build message
         text = f"🔖 Order #{order_number}\n\n"
-        text += f"🍽\n{items_text}"
+        text += items_text
         
         if note:
             text += f"\n\n❕ Note: {note}"
