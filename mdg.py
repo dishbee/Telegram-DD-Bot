@@ -247,28 +247,52 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
         # Get all confirmed orders (not delivered) from last 1 hour
         one_hour_ago = datetime.now() - timedelta(hours=1)
         recent_orders: List[Dict[str, Any]] = []
+        
+        logger.debug(f"mdg_time_submenu_keyboard: Searching for recent orders (current order: {order_id})")
+        logger.debug(f"mdg_time_submenu_keyboard: One hour ago cutoff: {one_hour_ago}")
 
         for oid, order_data in STATE.items():
+            logger.debug(f"mdg_time_submenu_keyboard: Checking order {oid}")
+            
             if oid == order_id:
+                logger.debug(f"mdg_time_submenu_keyboard: Skipping current order {oid}")
                 continue
-            if not order_data.get("confirmed_time"):
+                
+            confirmed_time = order_data.get("confirmed_time")
+            logger.debug(f"mdg_time_submenu_keyboard: Order {oid} confirmed_time: {confirmed_time}")
+            
+            if not confirmed_time:
+                logger.debug(f"mdg_time_submenu_keyboard: Order {oid} has no confirmed_time, skipping")
                 continue
-            if order_data.get("status") == "delivered":
+                
+            status = order_data.get("status")
+            logger.debug(f"mdg_time_submenu_keyboard: Order {oid} status: {status}")
+            
+            if status == "delivered":
+                logger.debug(f"mdg_time_submenu_keyboard: Order {oid} is delivered, skipping")
                 continue
+                
             created_at = order_data.get("created_at")
+            logger.debug(f"mdg_time_submenu_keyboard: Order {oid} created_at: {created_at}")
+            
             if created_at and created_at > one_hour_ago:
                 # Safe access to customer address
                 address = order_data.get('customer', {}).get('address', 'Unknown')
                 address_short = address.split(',')[0].strip() if ',' in address else address
                 
+                logger.debug(f"mdg_time_submenu_keyboard: Order {oid} PASSED all filters, adding to list")
+                
                 recent_orders.append({
                     "order_id": oid,
-                    "confirmed_time": order_data["confirmed_time"],
+                    "confirmed_time": confirmed_time,
                     "address": address_short,
                     "vendors": order_data.get("vendors", []),
                     "order_num": order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
                 })
+            else:
+                logger.debug(f"mdg_time_submenu_keyboard: Order {oid} failed time check (created_at: {created_at}, cutoff: {one_hour_ago})")
 
+        logger.debug(f"mdg_time_submenu_keyboard: Found {len(recent_orders)} recent confirmed orders")
         buttons: List[List[InlineKeyboardButton]] = []
 
         # If we have recent orders, show them
@@ -365,7 +389,7 @@ def same_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([])
 
 
-def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[str] = None) -> InlineKeyboardMarkup:
+def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[str] = None, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
     """Build time picker for various actions."""
     try:
         current_time = datetime.now()
@@ -390,9 +414,18 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
 
         rows: List[List[InlineKeyboardButton]] = []
         for i in range(0, len(intervals), 2):
-            row = [InlineKeyboardButton(intervals[i], callback_data=f"{action}|{order_id}|{intervals[i]}")]
+            # Include vendor in callback if provided (for prepare_time and later_time actions)
+            if vendor:
+                callback = f"{action}|{order_id}|{intervals[i]}|{vendor}"
+            else:
+                callback = f"{action}|{order_id}|{intervals[i]}"
+            row = [InlineKeyboardButton(intervals[i], callback_data=callback)]
             if i + 1 < len(intervals):
-                row.append(InlineKeyboardButton(intervals[i + 1], callback_data=f"{action}|{order_id}|{intervals[i + 1]}"))
+                if vendor:
+                    callback2 = f"{action}|{order_id}|{intervals[i + 1]}|{vendor}"
+                else:
+                    callback2 = f"{action}|{order_id}|{intervals[i + 1]}"
+                row.append(InlineKeyboardButton(intervals[i + 1], callback_data=callback2))
             rows.append(row)
 
         return InlineKeyboardMarkup(rows)

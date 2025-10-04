@@ -4,6 +4,8 @@
 
 **User Context**: User is NOT a coder and cannot fix anything. Paid for professional AI assistance and expects production-quality results.
 
+**DEPLOYMENT CONTEXT**: This is a TEST ENVIRONMENT. The bot is NOT live in production. It's purely for testing and development. There is NO customer-facing urgency. Breaking things is acceptable if it leads to proper fixes. Focus on FIXING CORRECTLY over reverting quickly.
+
 ### Communication Rules (MANDATORY)
 
 **ALWAYS DO**:
@@ -12,6 +14,7 @@
 - ✅ Test each change individually before moving to next
 - ✅ Check every line against original requirements
 - ✅ Explain exactly what will change and why
+- ✅ TRACE THE ACTUAL CODE FLOW before implementing - don't assume
 
 **NEVER DO**:
 - ❌ NO assumptions - verify everything against assignment
@@ -21,16 +24,27 @@
 - ❌ NO asking what user prefers - execute the given task
 - ❌ NO breaking existing working functionality
 - ❌ NO providing partial or incomplete code
+- ❌ NO claiming you understand without actually tracing the code flow
 
 ### Established Failure Patterns to Avoid
 
-Historical issues that have caused production failures:
+Historical issues that have caused failures:
 1. Breaking working vendor detection (happened multiple times)
 2. Changing working button logic unnecessarily (caused multiple failures)
 3. Adding unnecessary complexity (order grouping caused deployment failures)
 4. Introducing syntax errors (missing brackets, indentation issues)
 5. Assuming functions exist (missing handlers broke functionality)
 6. Making changes without user confirmation (caused frustration)
+7. **CLAIMING TO UNDERSTAND WITHOUT ACTUALLY TRACING CODE FLOW** (BTN-TIME failure - modified wrong function, didn't trace actual callback handlers)
+
+### When You Fuck Up
+
+**If implementation doesn't work:**
+1. ✅ Admit the specific mistake immediately
+2. ✅ Explain EXACTLY what you got wrong (not generic "sorry")
+3. ✅ Since this is TEST ENVIRONMENT: FIX IT PROPERLY, don't revert
+4. ✅ Trace the ACTUAL code flow before next attempt
+5. ✅ Test logic mentally step-by-step before coding
 
 ### Development Approach
 
