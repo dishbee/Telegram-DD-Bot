@@ -1,8 +1,8 @@
 """RG (Restaurant Group) helpers."""
 
 import logging
-from datetime import datetime
-from typing import Any, Dict
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -122,4 +122,51 @@ def restaurant_response_keyboard(request_type: str, order_id: str, vendor: str) 
         return InlineKeyboardMarkup(rows)
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building restaurant response keyboard: %s", exc)
+        return InlineKeyboardMarkup([])
+
+
+def vendor_exact_time_keyboard(order_id: str, vendor: str, action: str) -> InlineKeyboardMarkup:
+    """Build exact time picker for vendors - shows hours."""
+    try:
+        current_hour = datetime.now().hour
+        rows: List[List[InlineKeyboardButton]] = []
+        hours: List[str] = [f"{hour:02d}:XX" for hour in range(current_hour, 24)]
+
+        # Build hour buttons (3 per row)
+        for i in range(0, len(hours), 3):
+            row = []
+            for j in range(i, min(i + 3, len(hours))):
+                hour_value = str(current_hour + (j - i) + (i // 3) * 3)
+                callback_data = f"vendor_exact_hour|{order_id}|{hour_value}|{vendor}|{action}"
+                row.append(InlineKeyboardButton(hours[j], callback_data=callback_data))
+            rows.append(row)
+
+        return InlineKeyboardMarkup(rows)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("Error building vendor exact time keyboard: %s", exc)
+        return InlineKeyboardMarkup([])
+
+
+def vendor_exact_hour_keyboard(order_id: str, hour: int, vendor: str, action: str) -> InlineKeyboardMarkup:
+    """Build minute picker for vendors after hour selection."""
+    try:
+        rows: List[List[InlineKeyboardButton]] = []
+        minutes: List[str] = [f"{minute:02d}" for minute in range(0, 60, 3)]
+
+        # Build minute buttons (4 per row)
+        for i in range(0, len(minutes), 4):
+            row = []
+            for j in range(i, min(i + 4, len(minutes))):
+                time_str = f"{hour:02d}:{minutes[j]}"
+                callback_data = f"vendor_exact_selected|{order_id}|{time_str}|{vendor}|{action}"
+                row.append(InlineKeyboardButton(minutes[j], callback_data=callback_data))
+            rows.append(row)
+
+        # Add back button
+        back_callback = f"vendor_exact_back|{order_id}|{vendor}|{action}"
+        rows.append([InlineKeyboardButton("◂ Back to hours", callback_data=back_callback)])
+
+        return InlineKeyboardMarkup(rows)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("Error building vendor exact hour keyboard: %s", exc)
         return InlineKeyboardMarkup([])

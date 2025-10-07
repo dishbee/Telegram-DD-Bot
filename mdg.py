@@ -356,7 +356,7 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
             if current_vendor_full in ref_vendors:
                 # Use full vendor name in callback
                 same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}|{current_vendor_full}"
-                buttons.append([InlineKeyboardButton("Same", callback_data=same_callback)])
+                buttons.append([InlineKeyboardButton("Same time", callback_data=same_callback)])
         else:
             # Single vendor order
             order = STATE.get(current_order_id)
@@ -365,7 +365,7 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
                 # Check if any current vendor matches ref vendors
                 if any(v in ref_vendors for v in current_vendors):
                     same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}"
-                    buttons.append([InlineKeyboardButton("Same", callback_data=same_callback)])
+                    buttons.append([InlineKeyboardButton("Same time", callback_data=same_callback)])
         
         # Build +5, +10, +15, +20 buttons (2 per row)
         time_buttons = []
@@ -375,7 +375,7 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
             # Use full vendor name in callback
             vendor_param = f"|{current_vendor_full}" if current_vendor_full else ""
             callback = f"time_relative|{current_order_id}|{time_str}|{ref_order_id}{vendor_param}"
-            time_buttons.append(InlineKeyboardButton(f"+{minutes}", callback_data=callback))
+            time_buttons.append(InlineKeyboardButton(f"+{minutes} mins", callback_data=callback))
         
         # Add time buttons in rows of 2
         buttons.append([time_buttons[0], time_buttons[1]])
@@ -422,30 +422,44 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
             base_time = current_time
 
         intervals: List[str] = []
+        minute_increments = [5, 10, 15, 20]
+        
         if action == "later_time":
-            for minutes in [5, 10, 15, 20]:
+            for minutes in minute_increments:
                 time_option = base_time + timedelta(minutes=minutes)
                 intervals.append(time_option.strftime("%H:%M"))
         else:
-            for minutes in [5, 10, 15, 20]:
+            for minutes in minute_increments:
                 time_option = current_time + timedelta(minutes=minutes)
                 intervals.append(time_option.strftime("%H:%M"))
 
         rows: List[List[InlineKeyboardButton]] = []
         for i in range(0, len(intervals), 2):
+            # Add minute increment label to button text
+            button_text = f"{intervals[i]} ({minute_increments[i]} mins)"
+            
             # Include vendor in callback if provided (for prepare_time and later_time actions)
             if vendor:
                 callback = f"{action}|{order_id}|{intervals[i]}|{vendor}"
             else:
                 callback = f"{action}|{order_id}|{intervals[i]}"
-            row = [InlineKeyboardButton(intervals[i], callback_data=callback)]
+            row = [InlineKeyboardButton(button_text, callback_data=callback)]
+            
             if i + 1 < len(intervals):
+                button_text2 = f"{intervals[i + 1]} ({minute_increments[i + 1]} mins)"
                 if vendor:
                     callback2 = f"{action}|{order_id}|{intervals[i + 1]}|{vendor}"
                 else:
                     callback2 = f"{action}|{order_id}|{intervals[i + 1]}"
-                row.append(InlineKeyboardButton(intervals[i + 1], callback_data=callback2))
+                row.append(InlineKeyboardButton(button_text2, callback_data=callback2))
             rows.append(row)
+        
+        # Add EXACT TIME button at the bottom
+        if vendor:
+            exact_callback = f"vendor_exact_time|{order_id}|{vendor}|{action}"
+        else:
+            exact_callback = f"exact_time|{order_id}|{action}"
+        rows.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=exact_callback)])
 
         return InlineKeyboardMarkup(rows)
     except Exception as exc:  # pragma: no cover - defensive

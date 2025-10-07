@@ -53,6 +53,8 @@ from rg import (
     vendor_time_keyboard,
     vendor_keyboard,
     restaurant_response_keyboard,
+    vendor_exact_time_keyboard,
+    vendor_exact_hour_keyboard,
 )
 import upc
 from upc import check_all_vendors_confirmed, mdg_assignment_keyboard, courier_selection_keyboard
@@ -404,7 +406,7 @@ def telegram_webhook():
                             # Get order number
                             order_num = order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
                             
-                            # Send formatted message to MDG
+                            # ST-WRITE format from CHEAT-SHEET
                             issue_msg = f"{vendor_name}: Issue with 🔖 #{order_num}: \"{text}\""
                             run_async(safe_send_message(DISPATCH_MAIN_CHAT_ID, issue_msg))
                             
@@ -1163,9 +1165,12 @@ def telegram_webhook():
                         order["confirmed_by"] = vendor
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
+                        
+                        # Get order number for display
+                        order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
                     
                     # Post status to MDG
-                    status_msg = f"■ {vendor} replied: Works 👍 ■"
+                    status_msg = f"{vendor} replied: {confirmed_time} for 🔖 #{order_num} works 👍"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                     
                     # Check if all vendors confirmed - show assignment buttons
@@ -1216,7 +1221,11 @@ def telegram_webhook():
                         # Store time for the correct vendor
                         order["confirmed_times"][vendor] = selected_time
                         order["confirmed_time"] = selected_time  # Keep for backward compatibility
-                        status_msg = f"■ {vendor} replied: Later at {selected_time} ■"
+                        
+                        # Get order number for display
+                        order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
+                        
+                        status_msg = f"{vendor} replied: Will prepare 🔖 #{order_num} later at {selected_time} 👍"
                         await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
@@ -1236,6 +1245,11 @@ def telegram_webhook():
                             order["mdg_additional_messages"].append(assignment_msg.message_id)
                         else:
                             logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
+                    
+                    # Delete the time picker message (cleanup)
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                    await safe_delete_message(chat_id, message_id)
                 
                 elif action == "prepare":
                     order_id, vendor = data[1], data[2]
@@ -1259,8 +1273,17 @@ def telegram_webhook():
                         # Store time for the correct vendor
                         order["confirmed_times"][vendor] = selected_time
                         order["confirmed_time"] = selected_time  # Keep for backward compatibility
-                        status_msg = f"■ {vendor} replied: Will prepare at {selected_time} ■"
+                        
+                        # Get order number for display
+                        order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
+                        
+                        status_msg = f"{vendor} replied: Will prepare 🔖 #{order_num} at {selected_time} 👍"
                         await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                        
+                        # Delete the time picker message (cleanup)
+                        chat_id = cq["message"]["chat"]["id"]
+                        message_id = cq["message"]["message_id"]
+                        await safe_delete_message(chat_id, message_id)
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
                         
@@ -1300,15 +1323,19 @@ def telegram_webhook():
                 elif action == "wrong_unavailable":
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
-                    if order and order.get("order_type") == "shopify":
-                        msg = f"■ {vendor}: Please call the customer and organize a replacement. If no replacement is possible, write a message to dishbee. ■"
-                    else:
-                        msg = f"■ {vendor}: Please call the customer and organize a replacement or a refund. ■"
+                    order_num = order['name'][-2:] if order and len(order.get('name', '')) >= 2 else order.get('name', '') if order else order_id
+                    
+                    # ST-CALL format from CHEAT-SHEET
+                    msg = f"{vendor}: Please call customer for 🔖 #{order_num} (replacement/refund)"
                     await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
                 
                 elif action == "wrong_canceled":
                     order_id, vendor = data[1], data[2]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: Order is canceled ■")
+                    order = STATE.get(order_id)
+                    order_num = order['name'][-2:] if order and len(order.get('name', '')) >= 2 else order.get('name', '') if order else order_id
+                    
+                    # ST-CANCEL format from CHEAT-SHEET
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"{vendor}: Order 🔖 #{order_num} is canceled")
                 
                 elif action in ["wrong_technical", "wrong_other"]:
                     order_id, vendor = data[1], data[2]
@@ -1360,7 +1387,118 @@ def telegram_webhook():
                 
                 elif action == "delay_time":
                     order_id, vendor, delay_time = data[1], data[2], data[3]
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"■ {vendor}: We have a delay - new time {delay_time} ■")
+                    order = STATE.get(order_id)
+                    order_num = order['name'][-2:] if order and len(order.get('name', '')) >= 2 else order.get('name', '') if order else order_id
+                    
+                    # ST-DELAY format from CHEAT-SHEET
+                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"{vendor}: We have a delay for 🔖 #{order_num} - new time {delay_time}")
+                    
+                    # Delete the delay time picker message (cleanup)
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                    await safe_delete_message(chat_id, message_id)
+                
+                # VENDOR EXACT TIME SELECTION
+                elif action == "vendor_exact_time":
+                    order_id, vendor, original_action = data[1], data[2], data[3]
+                    logger.info(f"Vendor {vendor} requesting exact time for order {order_id} (action: {original_action})")
+                    
+                    # Get the message that needs to be edited (time picker message)
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                    
+                    # Show hour picker
+                    await safe_edit_message(
+                        chat_id,
+                        message_id,
+                        "🕒 Select hour:",
+                        vendor_exact_time_keyboard(order_id, vendor, original_action)
+                    )
+                
+                elif action == "vendor_exact_hour":
+                    order_id, hour, vendor, original_action = data[1], data[2], data[3], data[4]
+                    logger.info(f"Vendor {vendor} selected hour {hour} for order {order_id}")
+                    
+                    # Edit message to show minute picker
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                    
+                    await safe_edit_message(
+                        chat_id,
+                        message_id,
+                        f"🕒 Select exact time (hour {hour}):",
+                        vendor_exact_hour_keyboard(order_id, int(hour), vendor, original_action)
+                    )
+                
+                elif action == "vendor_exact_selected":
+                    order_id, selected_time, vendor, original_action = data[1], data[2], data[3], data[4]
+                    logger.info(f"Vendor {vendor} selected exact time {selected_time} for order {order_id} (action: {original_action})")
+                    
+                    order = STATE.get(order_id)
+                    if order:
+                        # Track confirmed time per vendor
+                        if "confirmed_times" not in order:
+                            order["confirmed_times"] = {}
+                        
+                        # Store time for the correct vendor
+                        order["confirmed_times"][vendor] = selected_time
+                        order["confirmed_time"] = selected_time  # Keep for backward compatibility
+                        
+                        # Get order number for display
+                        order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
+                        
+                        # Send appropriate status message to MDG based on original action
+                        if original_action == "later_time":
+                            status_msg = f"{vendor} replied: Will prepare 🔖 #{order_num} later at {selected_time} 👍"
+                        elif original_action == "prepare_time":
+                            status_msg = f"{vendor} replied: Will prepare 🔖 #{order_num} at {selected_time} 👍"
+                        elif original_action == "delay_time":
+                            status_msg = f"{vendor}: We have a delay for 🔖 #{order_num} - new time {selected_time}"
+                        else:
+                            status_msg = f"{vendor} confirmed: {selected_time} for 🔖 #{order_num}"
+                        
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                        
+                        logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
+                        
+                        # Check if all vendors confirmed - show assignment buttons
+                        logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
+                        if check_all_vendors_confirmed(order_id):
+                            if order.get("status") != "assigned":
+                                logger.info(f"DEBUG: All vendors confirmed! Sending assignment buttons")
+                                assignment_msg = await safe_send_message(
+                                    DISPATCH_MAIN_CHAT_ID,
+                                    build_assignment_confirmation_message(order),
+                                    mdg_assignment_keyboard(order_id)
+                                )
+                                # Track this message for potential cleanup
+                                if "mdg_additional_messages" not in order:
+                                    order["mdg_additional_messages"] = []
+                                order["mdg_additional_messages"].append(assignment_msg.message_id)
+                            else:
+                                logger.info(f"DEBUG: All vendors confirmed but order already assigned - skipping assignment buttons")
+                        else:
+                            logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
+                    
+                    # Delete the time picker message (cleanup)
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                    await safe_delete_message(chat_id, message_id)
+                
+                elif action == "vendor_exact_back":
+                    order_id, vendor, original_action = data[1], data[2], data[3]
+                    logger.info(f"Vendor {vendor} going back to hour selection for order {order_id}")
+                    
+                    # Edit message back to hour picker
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                    
+                    await safe_edit_message(
+                        chat_id,
+                        message_id,
+                        "🕒 Select hour:",
+                        vendor_exact_time_keyboard(order_id, vendor, original_action)
+                    )
                 
                 # ASSIGNMENT ACTIONS
                 elif action == "assign_myself":

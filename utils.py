@@ -129,10 +129,15 @@ def clean_product_name(name: str) -> str:
     # Debug logging
     logger.debug(f"clean_product_name input: '{name}'")
     
-    # Rule 0: Special case for Curry dishes - must be BEFORE compound splitting
+    # Rule 0a: Special case for Curry dishes - must be BEFORE compound splitting
     if 'Curry' in name and 'Spätzle' in name:
-        logger.debug(f"Rule 0 (Curry special): detected Curry+Spätzle → 'Curry'")
+        logger.debug(f"Rule 0a (Curry special): detected Curry+Spätzle → 'Curry'")
         return 'Curry'
+    
+    # Rule 0b: Special case for Gulasch dishes - must be BEFORE compound splitting
+    if 'Gulasch' in name and 'Spätzle' in name:
+        logger.debug(f"Rule 0b (Gulasch special): detected Gulasch+Spätzle → 'Gulasch'")
+        return 'Gulasch'
     
     # Rule 1: Remove " - Classic" suffix FIRST (before compound splitting)
     if ' - Classic' in name:
@@ -195,10 +200,12 @@ def clean_product_name(name: str) -> str:
             return match.group(1)
     
     # Rule 4: Remove ANY roll type prefix BEFORE other processing
-    # Matches: "Special roll - X", "Cinnamon roll - X", "Oreo roll - X", etc.
-    roll_pattern = r'^([A-Za-zäöüÄÖÜß]+\s+roll)\s*-\s*'
-    if re.search(roll_pattern, name, re.IGNORECASE):
-        name = re.sub(roll_pattern, '', name, flags=re.IGNORECASE)
+    # Matches: "Special roll - X", "Cinnamon roll - X", "Lotus roll X", etc.
+    # Handles both "roll - Product" and "roll Product" formats
+    roll_pattern = r'^([A-Za-zäöüÄÖÜß]+\s+roll)[\s\-]+(.+)$'
+    roll_match = re.match(roll_pattern, name, re.IGNORECASE)
+    if roll_match:
+        name = roll_match.group(2).strip()
         logger.debug(f"Rule 4 (Roll prefix removal): removed roll prefix → '{name}'")
     
     # Rule 5: Remove "Bio-" prefix from any product
