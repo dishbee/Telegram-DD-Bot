@@ -28,8 +28,8 @@ def shortcut_to_vendor(shortcut: str) -> Optional[str]:
 
 
 def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
-    """Get recent CONFIRMED orders (last 1 hour) for 'same time as' functionality."""
-    one_hour_ago = datetime.now() - timedelta(hours=1)
+    """Get recent CONFIRMED orders (last 5 hours) for 'same time as' functionality."""
+    one_hour_ago = datetime.now() - timedelta(hours=5)
     recent: List[Dict[str, str]] = []
 
     for order_id, order_data in STATE.items():
@@ -252,8 +252,8 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
         if not order:
             return InlineKeyboardMarkup([])
 
-        # Get all confirmed orders (not delivered) from last 1 hour
-        one_hour_ago = datetime.now() - timedelta(hours=1)
+        # Get all confirmed orders (not delivered) from last 5 hours
+        one_hour_ago = datetime.now() - timedelta(hours=5)
         recent_orders: List[Dict[str, Any]] = []
         
         logger.info(f"BTN-TIME: Searching for recent orders (current order: {order_id}, vendor: {vendor})")
@@ -380,7 +380,9 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
             # Use full vendor name in callback
             vendor_param = f"|{current_vendor_full}" if current_vendor_full else ""
             callback = f"time_relative|{current_order_id}|{time_str}|{ref_order_id}{vendor_param}"
-            time_buttons.append(InlineKeyboardButton(f"+{minutes} mins", callback_data=callback))
+            # Show both increment and calculated time: "+5m (19:35)"
+            button_text = f"+{minutes}m ({time_str})"
+            time_buttons.append(InlineKeyboardButton(button_text, callback_data=callback))
         
         # Add time buttons in rows of 2
         buttons.append([time_buttons[0], time_buttons[1]])

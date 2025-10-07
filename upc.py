@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime, timedelta
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-from utils import logger, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, RESTAURANT_SHORTCUTS, safe_send_message, safe_edit_message
+from utils import logger, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, RESTAURANT_SHORTCUTS, safe_send_message, safe_edit_message, safe_delete_message
 
 # =============================================================================
 # ORDER ASSIGNMENT SYSTEM - UPC (User Private Chats)
@@ -494,6 +494,12 @@ async def handle_delivery_completion(order_id: str, user_id: int):
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
         delivered_msg = f"Order #{order_num} was delivered."
         await safe_send_message(DISPATCH_MAIN_CHAT_ID, delivered_msg)
+        
+        # Delete MDG-CONF and other temporary messages
+        if "mdg_additional_messages" in order:
+            for msg_id in order["mdg_additional_messages"]:
+                await safe_delete_message(DISPATCH_MAIN_CHAT_ID, msg_id)
+            order["mdg_additional_messages"] = []
         
         # Update MDG original order message with "✅ Delivered" status
         if "mdg_message_id" in order:

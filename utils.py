@@ -194,8 +194,9 @@ def clean_product_name(name: str) -> str:
     
     # Rule 3: Burger names - extract text between quotes (ANY burger type)
     # Handles: [Bio-Burger "X"], [Monats-Bio-Burger „X"], [Veganer-Monats-Bio-Burger „X"]
+    # Supports all quote types: „" "" "" and straight "
     if 'Burger' in name:
-        match = re.search(r'[„"]([^"„]+)[„"]', name)
+        match = re.search(r'[„""""]([^„""""]+)[„""""]', name)
         if match:
             return match.group(1)
     
