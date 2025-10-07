@@ -56,12 +56,21 @@ BTN-TOGGLE      = Details ▸ / ◂ Hide (on RG-SUM/RG-DET)
 
 --- On RG-TIME-REQ (TIME request) ---
 BTN-WORKS       = Works 👍
-BTN-LATER       = Later at... (time picker)
+BTN-LATER       = Later at... (time picker with labels)
+  └─ Shows: "09:52 (5 mins)", "09:57 (10 mins)", "10:02 (15 mins)", "10:07 (20 mins)"
+  └─ Plus: EXACT TIME ⏰ button at bottom
 BTN-WRONG       = Something is wrong
 
 --- On RG-TIME-REQ (ASAP request) ---
-BTN-PREP        = Will prepare at... (time picker)
+BTN-PREP        = Will prepare at... (time picker with labels)
+  └─ Shows: "09:52 (5 mins)", "09:57 (10 mins)", "10:02 (15 mins)", "10:07 (20 mins)"
+  └─ Plus: EXACT TIME ⏰ button at bottom
 BTN-WRONG       = Something is wrong
+
+--- On BTN-EXACT (Vendor exact time flow) ---
+BTN-HOUR        = Hour selection (12:XX, 13:XX, 14:XX...)
+  └─ BTN-MINUTE = Minute selection (00, 03, 06... in 3-min intervals)
+     └─ BTN-BACK = ◂ Back to hours
 
 --- On BTN-WRONG submenu ---
 BTN-UNAVAIL     = Product not available
@@ -78,7 +87,7 @@ BTN-DELAY-ORD   = ⏰ Delay
 BTN-DELIVERED   = ✅ Delivered
 ```
 
-## STATUS UPDATES (Auto-delete after 10 seconds)
+## STATUS UPDATES (Auto-delete after 20 seconds)
 
 ### From RG (Vendor responses)
 ```
