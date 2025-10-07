@@ -57,7 +57,7 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
     try:
         buttons = [
             [InlineKeyboardButton("👈 Assign to myself", callback_data=f"assign_myself|{order_id}")],
-            [InlineKeyboardButton("👉 Assign to...", callback_data=f"assign_to_menu|{order_id}")]
+            [InlineKeyboardButton("Assign to 👉", callback_data=f"assign_to_menu|{order_id}")]
         ]
         return InlineKeyboardMarkup(buttons)
     except Exception as e:

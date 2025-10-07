@@ -665,10 +665,9 @@ def telegram_webhook():
                     if len(vendors) <= 1:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
                         keyboard = mdg_time_submenu_keyboard(order_id)
-                        title_text = f"{order['customer']['address'].split(',')[0]} ({RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper())}, #{order['name'][-2:] if len(order['name']) >= 2 else order['name']}, {datetime.now().strftime('%H:%M')}) +"
                         msg = await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
-                            title_text,
+                            "Select scheduled order:",
                             keyboard
                         )
                         
@@ -802,7 +801,7 @@ def telegram_webhook():
                     order["mdg_additional_messages"].append(msg.message_id)
                 
                 elif action == "time_same":
-                    # User clicked "Same" - send "together with" message to matching vendor
+                    # User clicked "Same" - send "together with" message to current order's vendors
                     order_id = data[1]
                     ref_order_id = data[2]
                     ref_time = data[3]
@@ -813,22 +812,21 @@ def telegram_webhook():
                     order = STATE.get(order_id)
                     ref_order = STATE.get(ref_order_id)
                     if not order or not ref_order:
+                        logger.error(f"Order {order_id} or reference order {ref_order_id} not found")
                         return
                     
                     order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
                     ref_num = ref_order['name'][-2:] if len(ref_order['name']) >= 2 else ref_order['name']
                     
-                    # Determine which vendor(s) to send to
+                    # Determine which vendor(s) to send to - CURRENT order's vendors, not reference order's
                     if current_vendor:
-                        # Multi-vendor: send only to matching vendor
+                        # Multi-vendor: send only to specified vendor
                         vendors_to_notify = [current_vendor]
                     else:
-                        # Single vendor: send to matching vendor(s)
-                        ref_vendors = ref_order.get("vendors", [])
-                        current_vendors = order.get("vendors", [])
-                        vendors_to_notify = [v for v in current_vendors if v in ref_vendors]
+                        # Single vendor: send to ALL vendors of current order
+                        vendors_to_notify = order.get("vendors", [])
                     
-                    # Send "together with" message to each matching vendor
+                    # Send "together with" message to each vendor
                     for vendor in vendors_to_notify:
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
@@ -841,6 +839,8 @@ def telegram_webhook():
                             )
                             
                             logger.info(f"Sent 'together with' request to {vendor} for order {order_id}")
+                        else:
+                            logger.warning(f"Vendor {vendor} not found in VENDOR_GROUP_MAP")
                     
                     # Update MDG
                     order["requested_time"] = ref_time
@@ -876,27 +876,21 @@ def telegram_webhook():
                     logger.info(f"Processing RELATIVE time request ({requested_time}) for order {order_id}")
                     
                     order = STATE.get(order_id)
-                    ref_order = STATE.get(ref_order_id)
-                    if not order or not ref_order:
+                    if not order:
+                        logger.error(f"Order {order_id} not found in STATE")
                         return
                     
                     order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
                     
-                    # Determine which vendor(s) to send to
+                    # Determine which vendor(s) to send to - CURRENT order's vendors, not reference order's
                     if current_vendor:
                         # Multi-vendor: send only to specified vendor
-                        ref_vendors = ref_order.get("vendors", [])
-                        if current_vendor in ref_vendors:
-                            vendors_to_notify = [current_vendor]
-                        else:
-                            vendors_to_notify = []
+                        vendors_to_notify = [current_vendor]
                     else:
-                        # Single vendor: send to matching vendor(s) from reference order
-                        ref_vendors = ref_order.get("vendors", [])
-                        current_vendors = order.get("vendors", [])
-                        vendors_to_notify = [v for v in current_vendors if v in ref_vendors]
+                        # Single vendor: send to ALL vendors of current order
+                        vendors_to_notify = order.get("vendors", [])
                     
-                    # Send time request to each matching vendor
+                    # Send time request to each vendor
                     for vendor in vendors_to_notify:
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
@@ -909,6 +903,8 @@ def telegram_webhook():
                             )
                             
                             logger.info(f"Sent time request ({requested_time}) to {vendor} for order {order_id}")
+                        else:
+                            logger.warning(f"Vendor {vendor} not found in VENDOR_GROUP_MAP")
                     
                     # Update MDG
                     order["requested_time"] = requested_time

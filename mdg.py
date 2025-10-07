@@ -327,7 +327,7 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
         
         buttons: List[List[InlineKeyboardButton]] = []
         
-        # First row: Same button
+        # First row: Same button - only show if vendor matches
         # Check if current vendor matches any vendor in reference order
         if current_vendor:
             # Multi-vendor order - only show "Same" if vendor matches
