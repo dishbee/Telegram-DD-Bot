@@ -55,6 +55,7 @@ from rg import (
     restaurant_response_keyboard,
     vendor_exact_time_keyboard,
     vendor_exact_hour_keyboard,
+    SHORTCUT_TO_VENDOR,
 )
 import upc
 from upc import check_all_vendors_confirmed, mdg_assignment_keyboard, courier_selection_keyboard
@@ -208,6 +209,35 @@ async def safe_delete_message(chat_id: int, message_id: int):
         logger.info(f"Successfully deleted message {message_id}")
     except Exception as e:
         logger.error(f"Error deleting message {message_id}: {e}")
+
+async def send_status_message(chat_id: int, text: str, auto_delete_after: int = 20):
+    """
+    Send a status message that auto-deletes after specified seconds.
+    
+    Used for temporary status updates like:
+    - Vendor confirmations: "Vendor replied: Will prepare #90 at 14:57 👍"
+    - ASAP/TIME requests sent: "✅ ASAP request sent to Vendor"
+    - Delays: "Vendor: We have a delay for #90 - new time 15:00"
+    
+    Args:
+        chat_id: Chat to send message to
+        text: Message text
+        auto_delete_after: Seconds to wait before deletion (default: 20)
+    """
+    try:
+        msg = await safe_send_message(chat_id, text)
+        # Schedule deletion in background
+        asyncio.create_task(_delete_after_delay(chat_id, msg.message_id, auto_delete_after))
+    except Exception as e:
+        logger.error(f"Error in send_status_message: {e}")
+
+async def _delete_after_delay(chat_id: int, message_id: int, delay: int):
+    """Helper to delete message after delay"""
+    try:
+        await asyncio.sleep(delay)
+        await safe_delete_message(chat_id, message_id)
+    except Exception as e:
+        logger.error(f"Error in _delete_after_delay: {e}")
 
 def build_assignment_confirmation_message(order: dict) -> str:
     """
@@ -487,9 +517,10 @@ def telegram_webhook():
                         )
                     
                     # Update MDG status
-                    status_msg = await safe_send_message(
+                    await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"✅ ASAP request sent to {vendor}"
+                        f"✅ ASAP request sent to {vendor}",
+                        auto_delete_after=20
                     )
                     
                     # Clean up additional MDG messages
@@ -604,9 +635,10 @@ def telegram_webhook():
                     
                     # Update state and MDG
                     order["requested_time"] = selected_time
-                    status_msg = await safe_send_message(
+                    await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"✅ Time request ({selected_time}) sent to {vendor if vendor != 'all' else 'vendors'}"
+                        f"✅ Time request ({selected_time}) sent to {vendor if vendor != 'all' else 'vendors'}",
+                        auto_delete_after=20
                     )
                     
                     # Clean up additional MDG messages
@@ -873,14 +905,11 @@ def telegram_webhook():
                     
                     # Send confirmation to MDG
                     vendor_names = ", ".join([RESTAURANT_SHORTCUTS.get(v, v) for v in vendors_to_notify])
-                    confirmation_msg = await safe_send_message(
+                    await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"✅ Time request ({ref_time}) sent to {vendor_names}"
+                        f"✅ Time request ({ref_time}) sent to {vendor_names}",
+                        auto_delete_after=20
                     )
-                    
-                    # Auto-delete confirmation after 10 seconds
-                    await asyncio.sleep(10)
-                    await safe_delete_message(DISPATCH_MAIN_CHAT_ID, confirmation_msg.message_id)
                 
                 elif action == "time_relative":
                     # User clicked +5, +10, +15, or +20
@@ -940,14 +969,11 @@ def telegram_webhook():
                     
                     # Send confirmation to MDG
                     vendor_names = ", ".join([RESTAURANT_SHORTCUTS.get(v, v) for v in vendors_to_notify])
-                    confirmation_msg = await safe_send_message(
+                    await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"✅ Time request ({requested_time}) sent to {vendor_names}"
+                        f"✅ Time request ({requested_time}) sent to {vendor_names}",
+                        auto_delete_after=20
                     )
-                    
-                    # Auto-delete confirmation after 10 seconds
-                    await asyncio.sleep(10)
-                    await safe_delete_message(DISPATCH_MAIN_CHAT_ID, confirmation_msg.message_id)
                 
                 elif action == "no_recent":
                     # Handle click on disabled "Same as" button
@@ -1171,7 +1197,7 @@ def telegram_webhook():
                     
                     # Post status to MDG
                     status_msg = f"{vendor} replied: {confirmed_time} for 🔖 #{order_num} works 👍"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                    await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
                     
                     # Check if all vendors confirmed - show assignment buttons
                     # CRITICAL: Only show buttons if order NOT already assigned
@@ -1226,7 +1252,7 @@ def telegram_webhook():
                         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
                         
                         status_msg = f"{vendor} replied: Will prepare 🔖 #{order_num} later at {selected_time} 👍"
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                        await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
                         
@@ -1278,7 +1304,7 @@ def telegram_webhook():
                         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
                         
                         status_msg = f"{vendor} replied: Will prepare 🔖 #{order_num} at {selected_time} 👍"
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                        await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
                         
                         # Delete the time picker message (cleanup)
                         chat_id = cq["message"]["chat"]["id"]
@@ -1391,7 +1417,7 @@ def telegram_webhook():
                     order_num = order['name'][-2:] if order and len(order.get('name', '')) >= 2 else order.get('name', '') if order else order_id
                     
                     # ST-DELAY format from CHEAT-SHEET
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"{vendor}: We have a delay for 🔖 #{order_num} - new time {delay_time}")
+                    await send_status_message(DISPATCH_MAIN_CHAT_ID, f"{vendor}: We have a delay for 🔖 #{order_num} - new time {delay_time}", auto_delete_after=20)
                     
                     # Delete the delay time picker message (cleanup)
                     chat_id = cq["message"]["chat"]["id"]
@@ -1416,7 +1442,9 @@ def telegram_webhook():
                     )
                 
                 elif action == "vendor_exact_hour":
-                    order_id, hour, vendor, original_action = data[1], data[2], data[3], data[4]
+                    order_id, hour, vendor_short, original_action = data[1], data[2], data[3], data[4]
+                    # Decode vendor shortcut
+                    vendor = SHORTCUT_TO_VENDOR.get(vendor_short, vendor_short)
                     logger.info(f"Vendor {vendor} selected hour {hour} for order {order_id}")
                     
                     # Edit message to show minute picker
@@ -1431,7 +1459,9 @@ def telegram_webhook():
                     )
                 
                 elif action == "vendor_exact_selected":
-                    order_id, selected_time, vendor, original_action = data[1], data[2], data[3], data[4]
+                    order_id, selected_time, vendor_short, original_action = data[1], data[2], data[3], data[4]
+                    # Decode vendor shortcut
+                    vendor = SHORTCUT_TO_VENDOR.get(vendor_short, vendor_short)
                     logger.info(f"Vendor {vendor} selected exact time {selected_time} for order {order_id} (action: {original_action})")
                     
                     order = STATE.get(order_id)
@@ -1457,7 +1487,7 @@ def telegram_webhook():
                         else:
                             status_msg = f"{vendor} confirmed: {selected_time} for 🔖 #{order_num}"
                         
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, status_msg)
+                        await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
                         
@@ -1486,7 +1516,9 @@ def telegram_webhook():
                     await safe_delete_message(chat_id, message_id)
                 
                 elif action == "vendor_exact_back":
-                    order_id, vendor, original_action = data[1], data[2], data[3]
+                    order_id, vendor_short, original_action = data[1], data[2], data[3]
+                    # Decode vendor shortcut
+                    vendor = SHORTCUT_TO_VENDOR.get(vendor_short, vendor_short)
                     logger.info(f"Vendor {vendor} going back to hour selection for order {order_id}")
                     
                     # Edit message back to hour picker

@@ -8,6 +8,21 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 logger = logging.getLogger(__name__)
 
+# Restaurant shortcut mapping for callback data compression
+RESTAURANT_SHORTCUTS = {
+    "Julis Spätzlerei": "JS",
+    "Zweite Heimat": "ZH",
+    "Kahaani": "KA",
+    "i Sapori della Toscana": "SA",
+    "Leckerolls": "LR",
+    "dean & david": "DD",
+    "Pommes Freunde": "PF",
+    "Wittelsbacher Apotheke": "AP"
+}
+
+# Reverse mapping for decoding
+SHORTCUT_TO_VENDOR = {v: k for k, v in RESTAURANT_SHORTCUTS.items()}
+
 
 def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
     """Build vendor short summary (default collapsed state)."""
@@ -132,12 +147,15 @@ def vendor_exact_time_keyboard(order_id: str, vendor: str, action: str) -> Inlin
         rows: List[List[InlineKeyboardButton]] = []
         hours: List[str] = [f"{hour:02d}:XX" for hour in range(current_hour, 24)]
 
+        # Use shortcut to compress callback data
+        vendor_short = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2])
+        
         # Build hour buttons (3 per row)
         for i in range(0, len(hours), 3):
             row = []
             for j in range(i, min(i + 3, len(hours))):
                 hour_value = str(current_hour + (j - i) + (i // 3) * 3)
-                callback_data = f"vendor_exact_hour|{order_id}|{hour_value}|{vendor}|{action}"
+                callback_data = f"vendor_exact_hour|{order_id}|{hour_value}|{vendor_short}|{action}"
                 row.append(InlineKeyboardButton(hours[j], callback_data=callback_data))
             rows.append(row)
 
@@ -153,17 +171,20 @@ def vendor_exact_hour_keyboard(order_id: str, hour: int, vendor: str, action: st
         rows: List[List[InlineKeyboardButton]] = []
         minutes: List[str] = [f"{minute:02d}" for minute in range(0, 60, 3)]
 
+        # Use shortcut to compress callback data
+        vendor_short = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2])
+        
         # Build minute buttons (4 per row)
         for i in range(0, len(minutes), 4):
             row = []
             for j in range(i, min(i + 4, len(minutes))):
                 time_str = f"{hour:02d}:{minutes[j]}"
-                callback_data = f"vendor_exact_selected|{order_id}|{time_str}|{vendor}|{action}"
+                callback_data = f"vendor_exact_selected|{order_id}|{time_str}|{vendor_short}|{action}"
                 row.append(InlineKeyboardButton(minutes[j], callback_data=callback_data))
             rows.append(row)
 
         # Add back button
-        back_callback = f"vendor_exact_back|{order_id}|{vendor}|{action}"
+        back_callback = f"vendor_exact_back|{order_id}|{vendor_short}|{action}"
         rows.append([InlineKeyboardButton("◂ Back to hours", callback_data=back_callback)])
 
         return InlineKeyboardMarkup(rows)

@@ -312,6 +312,28 @@ async def safe_delete_message(chat_id: int, message_id: int):
     except Exception as e:
         logger.error(f"Error deleting message {message_id}: {e}")
 
+async def send_status_message(chat_id: int, text: str, auto_delete_after: int = 20):
+    """
+    Send a status message that auto-deletes after specified seconds.
+    
+    Used for temporary status updates like:
+    - Vendor confirmations: "Vendor replied: Will prepare #90 at 14:57 👍"
+    - ASAP/TIME requests sent: "✅ ASAP request sent to Vendor"
+    - Delays: "Vendor: We have a delay for #90 - new time 15:00"
+    
+    Args:
+        chat_id: Chat to send message to
+        text: Message text
+        auto_delete_after: Seconds to wait before deletion (default: 20)
+    """
+    try:
+        msg = await safe_send_message(chat_id, text)
+        # Schedule deletion
+        await asyncio.sleep(auto_delete_after)
+        await safe_delete_message(chat_id, msg.message_id)
+    except Exception as e:
+        logger.error(f"Error in send_status_message: {e}")
+
 async def cleanup_mdg_messages(order_id: str):
     """
     Clean up temporary MDG messages to prevent chat clutter.
