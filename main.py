@@ -537,18 +537,29 @@ def telegram_webhook():
                     # Show TIME submenu for this vendor
                     keyboard = mdg_time_submenu_keyboard(order_id, vendor)
                     
-                    # Check if keyboard has BTN-TIME buttons (recent orders available)
-                    has_recent_orders = len(keyboard.inline_keyboard) > 1  # More than just EXACT TIME button
-                    message_text = "Select scheduled order:" if has_recent_orders else "Request exact time:"
-                    
-                    msg = await safe_send_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        message_text,
-                        keyboard
-                    )
-                    
-                    # Track additional message for cleanup
-                    order["mdg_additional_messages"].append(msg.message_id)
+                    # If keyboard is None, no recent orders - show hour picker directly
+                    if keyboard is None:
+                        logger.info(f"No recent orders found for {vendor} - showing hour picker directly")
+                        msg = await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "🕒 Select hour:",
+                            exact_time_keyboard(order_id, vendor)
+                        )
+                        # Track additional message for cleanup
+                        order["mdg_additional_messages"].append(msg.message_id)
+                    else:
+                        # Has recent orders - show them with EXACT TIME button
+                        has_recent_orders = len(keyboard.inline_keyboard) > 1  # More than just EXACT TIME button
+                        message_text = "Select scheduled order:" if has_recent_orders else "Request exact time:"
+                        
+                        msg = await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            message_text,
+                            keyboard
+                        )
+                        
+                        # Track additional message for cleanup
+                        order["mdg_additional_messages"].append(msg.message_id)
                 
                 elif action == "vendor_same":
                     logger.info("VENDOR_SAME: Starting handler")
@@ -706,18 +717,29 @@ def telegram_webhook():
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
                         keyboard = mdg_time_submenu_keyboard(order_id)
                         
-                        # Check if keyboard has BTN-TIME buttons (recent orders available)
-                        has_recent_orders = len(keyboard.inline_keyboard) > 1  # More than just EXACT TIME button
-                        message_text = "Select scheduled order:" if has_recent_orders else "Request exact time:"
-                        
-                        msg = await safe_send_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            message_text,
-                            keyboard
-                        )
-                        
-                        # Track additional message for cleanup
-                        order["mdg_additional_messages"].append(msg.message_id)
+                        # If keyboard is None, no recent orders - show hour picker directly
+                        if keyboard is None:
+                            logger.info(f"No recent orders found - showing hour picker directly")
+                            msg = await safe_send_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                "🕒 Select hour:",
+                                exact_time_keyboard(order_id)
+                            )
+                            # Track additional message for cleanup
+                            order["mdg_additional_messages"].append(msg.message_id)
+                        else:
+                            # Has recent orders - show them with EXACT TIME button
+                            has_recent_orders = len(keyboard.inline_keyboard) > 1  # More than just EXACT TIME button
+                            message_text = "Select scheduled order:" if has_recent_orders else "Request exact time:"
+                            
+                            msg = await safe_send_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                message_text,
+                                keyboard
+                            )
+                            
+                            # Track additional message for cleanup
+                            order["mdg_additional_messages"].append(msg.message_id)
                     else:
                         # For multi-vendor, this shouldn't happen as they have vendor buttons
                         logger.warning(f"Unexpected req_time for multi-vendor order {order_id}")

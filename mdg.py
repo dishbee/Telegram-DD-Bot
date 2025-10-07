@@ -298,7 +298,7 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
         logger.info(f"BTN-TIME: Found {len(recent_orders)} recent confirmed orders")
         buttons: List[List[InlineKeyboardButton]] = []
 
-        # If we have recent orders, show them
+        # If we have recent orders, show them + EXACT TIME button
         if recent_orders:
             for recent in recent_orders:
                 # Build button text: "20:46 - Lederergasse 15 (LR, #59)"
@@ -316,9 +316,14 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                 
                 buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
 
-        # Always show EXACT TIME button at bottom
-        vendor_param = f"|{vendor}" if vendor else ""
-        buttons.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}{vendor_param}")])
+            # Show EXACT TIME button at bottom when there are recent orders
+            vendor_param = f"|{vendor}" if vendor else ""
+            buttons.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}{vendor_param}")])
+        
+        # If NO recent orders, return None to signal that hour picker should be shown directly
+        # The handler in main.py will detect this and show exact_time_keyboard() immediately
+        else:
+            return None
 
         return InlineKeyboardMarkup(buttons)
 
