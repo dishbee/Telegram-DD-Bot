@@ -19,6 +19,14 @@ def configure(state_ref: Dict[str, Dict[str, Any]], restaurant_shortcuts: Dict[s
     RESTAURANT_SHORTCUTS = restaurant_shortcuts
 
 
+def shortcut_to_vendor(shortcut: str) -> Optional[str]:
+    """Convert vendor shortcut back to full vendor name."""
+    for full_name, short in RESTAURANT_SHORTCUTS.items():
+        if short == shortcut:
+            return full_name
+    return None
+
+
 def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
     """Get recent CONFIRMED orders (last 1 hour) for 'same time as' functionality."""
     one_hour_ago = datetime.now() - timedelta(hours=1)
@@ -297,11 +305,14 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                 vendor_shortcuts = ", ".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in recent["vendors"]])
                 button_text = f"{recent['confirmed_time']} - {recent['address']} ({vendor_shortcuts}, #{recent['order_num']})"
                 
-                # Store vendor info in callback for later matching
-                vendors_str = ",".join(recent["vendors"])
-                callback_data = f"order_ref|{order_id}|{recent['order_id']}|{recent['confirmed_time']}|{vendors_str}"
+                # Store vendor SHORTCUTS in callback (not full names) to avoid 64-byte limit
+                # Use shortcuts: "LR,SA" instead of "Leckerolls,i Sapori della Toscana"
+                vendor_shortcuts_str = ",".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in recent["vendors"]])
+                callback_data = f"order_ref|{order_id}|{recent['order_id']}|{recent['confirmed_time']}|{vendor_shortcuts_str}"
                 if vendor:
-                    callback_data += f"|{vendor}"
+                    # Add current vendor shortcut
+                    vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                    callback_data += f"|{vendor_shortcut}"
                 
                 buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
 
@@ -317,9 +328,20 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
 
 
 def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, ref_time: str, ref_vendors_str: str, current_vendor: Optional[str] = None) -> InlineKeyboardMarkup:
-    """Build Same / +5 / +10 / +15 / +20 keyboard after user selects a reference order."""
+    """
+    Build Same / +5 / +10 / +15 / +20 keyboard after user selects a reference order.
+    
+    Args:
+        ref_vendors_str: Comma-separated vendor SHORTCUTS (e.g., "LR,SA")
+        current_vendor: Current vendor SHORTCUT if multi-vendor order
+    """
     try:
-        ref_vendors = ref_vendors_str.split(",")
+        # Convert shortcuts back to full vendor names
+        ref_vendor_shortcuts = ref_vendors_str.split(",")
+        ref_vendors = [shortcut_to_vendor(s) or s for s in ref_vendor_shortcuts]
+        
+        # Convert current_vendor shortcut to full name if provided
+        current_vendor_full = shortcut_to_vendor(current_vendor) if current_vendor else None
         
         # Calculate +5, +10, +15, +20 times from reference time
         ref_hour, ref_min = map(int, ref_time.split(':'))
@@ -329,10 +351,11 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
         
         # First row: Same button - only show if vendor matches
         # Check if current vendor matches any vendor in reference order
-        if current_vendor:
+        if current_vendor_full:
             # Multi-vendor order - only show "Same" if vendor matches
-            if current_vendor in ref_vendors:
-                same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}|{current_vendor}"
+            if current_vendor_full in ref_vendors:
+                # Use full vendor name in callback
+                same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}|{current_vendor_full}"
                 buttons.append([InlineKeyboardButton("Same", callback_data=same_callback)])
         else:
             # Single vendor order
@@ -349,7 +372,8 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
         for minutes in [5, 10, 15, 20]:
             new_time = ref_datetime + timedelta(minutes=minutes)
             time_str = new_time.strftime("%H:%M")
-            vendor_param = f"|{current_vendor}" if current_vendor else ""
+            # Use full vendor name in callback
+            vendor_param = f"|{current_vendor_full}" if current_vendor_full else ""
             callback = f"time_relative|{current_order_id}|{time_str}|{ref_order_id}{vendor_param}"
             time_buttons.append(InlineKeyboardButton(f"+{minutes}", callback_data=callback))
         

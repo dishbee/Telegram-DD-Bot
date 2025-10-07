@@ -45,6 +45,7 @@ from mdg import (
     build_smart_time_suggestions,
     get_recent_orders_for_same_time,
     get_last_confirmed_order,
+    shortcut_to_vendor,
 )
 from rg import (
     build_vendor_summary_text,
@@ -805,7 +806,10 @@ def telegram_webhook():
                     order_id = data[1]
                     ref_order_id = data[2]
                     ref_time = data[3]
-                    current_vendor = data[4] if len(data) > 4 else None
+                    current_vendor_shortcut = data[4] if len(data) > 4 else None
+                    
+                    # Convert shortcut to full vendor name if provided
+                    current_vendor = shortcut_to_vendor(current_vendor_shortcut) if current_vendor_shortcut else None
                     
                     logger.info(f"Processing SAME time request for order {order_id} with reference {ref_order_id}")
                     
@@ -871,7 +875,10 @@ def telegram_webhook():
                     order_id = data[1]
                     requested_time = data[2]
                     ref_order_id = data[3]
-                    current_vendor = data[4] if len(data) > 4 else None
+                    current_vendor_shortcut = data[4] if len(data) > 4 else None
+                    
+                    # Convert shortcut to full vendor name if provided
+                    current_vendor = shortcut_to_vendor(current_vendor_shortcut) if current_vendor_shortcut else None
                     
                     logger.info(f"Processing RELATIVE time request ({requested_time}) for order {order_id}")
                     
