@@ -503,9 +503,14 @@ def telegram_webhook():
                     
                     # Show TIME submenu for this vendor
                     keyboard = mdg_time_submenu_keyboard(order_id, vendor)
+                    
+                    # Check if keyboard has BTN-TIME buttons (recent orders available)
+                    has_recent_orders = len(keyboard.inline_keyboard) > 1  # More than just EXACT TIME button
+                    message_text = "Select scheduled order:" if has_recent_orders else "Request exact time:"
+                    
                     msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        "Select scheduled order:",
+                        message_text,
                         keyboard
                     )
                     
@@ -666,9 +671,14 @@ def telegram_webhook():
                     if len(vendors) <= 1:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
                         keyboard = mdg_time_submenu_keyboard(order_id)
+                        
+                        # Check if keyboard has BTN-TIME buttons (recent orders available)
+                        has_recent_orders = len(keyboard.inline_keyboard) > 1  # More than just EXACT TIME button
+                        message_text = "Select scheduled order:" if has_recent_orders else "Request exact time:"
+                        
                         msg = await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
-                            "Select scheduled order:",
+                            message_text,
                             keyboard
                         )
                         
