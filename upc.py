@@ -212,6 +212,7 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int):
         order["assigned_to"] = user_id
         order["assigned_at"] = datetime.now()
         order["status"] = "assigned"
+        order["upc_assignment_message_id"] = msg.message_id  # Track for group updates
 
         # Track assignment message
         if "assignment_messages" not in order:
@@ -287,6 +288,20 @@ def build_assignment_message(order: dict) -> str:
     try:
         order_type = order.get("order_type", "shopify")
         
+        # Group indicator (if order is in a group)
+        group_header = ""
+        if order.get("group_id"):
+            group_color = order.get("group_color", "🟠")
+            group_position = order.get("group_position", 1)
+            
+            # Calculate total orders in group
+            group_id = order["group_id"]
+            from main import GROUPS
+            group = GROUPS.get(group_id)
+            if group:
+                group_total = len(group["order_ids"])
+                group_header = f"{group_color} Group: {group_position}/{group_total}\n\n"
+        
         # Header: 🔖 #34 - dishbee (without vendor shortcut)
         if order_type == "shopify":
             order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
@@ -356,8 +371,8 @@ def build_assignment_message(order: dict) -> str:
         phone_section = f"\n☎️ Call customer: {phone}\n"
         phone_section += "🍽 Call Restaurant: \n"  # Restaurant phone will be added later
         
-        # Combine all sections
-        message = header + restaurant_section + customer_section + optional_section + phone_section
+        # Combine all sections (group_header first if present)
+        message = group_header + header + restaurant_section + customer_section + optional_section + phone_section
         
         return message
 
@@ -522,9 +537,80 @@ async def handle_delivery_completion(order_id: str, user_id: int):
         await safe_send_message(user_id, completion_msg)
 
         logger.info(f"Order {order_id} marked as delivered by user {user_id}")
+        
+        # Handle group updates if order was part of a group
+        if order.get("group_id"):
+            await update_group_on_delivery(order_id)
 
     except Exception as e:
         logger.error(f"Error handling delivery completion: {e}")
+
+
+async def update_group_on_delivery(delivered_order_id: str):
+    """
+    Update group when an order is delivered.
+    Removes order from group, recalculates positions, and updates remaining orders' UPC messages.
+    """
+    try:
+        delivered_order = STATE.get(delivered_order_id)
+        if not delivered_order:
+            return
+        
+        group_id = delivered_order.get("group_id")
+        if not group_id:
+            return
+        
+        # Import GROUPS from main
+        from main import GROUPS
+        
+        group = GROUPS.get(group_id)
+        if not group:
+            logger.warning(f"Group {group_id} not found in GROUPS dict")
+            return
+        
+        # Remove delivered order from group
+        if delivered_order_id in group["order_ids"]:
+            group["order_ids"].remove(delivered_order_id)
+            logger.info(f"Removed order {delivered_order_id} from group {group_id}")
+        
+        # Clear group fields from delivered order
+        delivered_order["group_id"] = None
+        delivered_order["group_color"] = None
+        delivered_order["group_position"] = None
+        
+        # If group is now empty, delete it
+        if not group["order_ids"]:
+            del GROUPS[group_id]
+            logger.info(f"Group {group_id} is empty, deleted")
+            return
+        
+        # Recalculate positions for remaining orders
+        new_total = len(group["order_ids"])
+        for position, order_id in enumerate(group["order_ids"], start=1):
+            order = STATE.get(order_id)
+            if order:
+                order["group_position"] = position
+                
+                # Update UPC message if order is assigned
+                if order.get("status") == "assigned" and order.get("upc_assignment_message_id"):
+                    assigned_user_id = order.get("assigned_to")
+                    if assigned_user_id:
+                        # Rebuild assignment message with updated group position
+                        updated_text = build_assignment_message(order)
+                        
+                        await safe_edit_message(
+                            assigned_user_id,
+                            order["upc_assignment_message_id"],
+                            updated_text,
+                            assignment_cta_keyboard(order_id)
+                        )
+                        
+                        logger.info(f"Updated UPC message for order {order_id} - new position {position}/{new_total}")
+        
+        logger.info(f"Group {group_id} updated - {new_total} orders remaining")
+    
+    except Exception as e:
+        logger.error(f"Error updating group on delivery: {e}")
 
 async def show_delay_options(order_id: str, user_id: int):
     """Show delay options for the assigned courier - based on confirmed time"""

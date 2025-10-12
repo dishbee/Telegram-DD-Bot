@@ -38,6 +38,7 @@ from mdg import (
     mdg_time_request_keyboard,
     mdg_time_submenu_keyboard,
     order_reference_options_keyboard,
+    group_time_adjustment_keyboard,
     same_time_keyboard,
     time_picker_keyboard,
     exact_time_keyboard,
@@ -107,6 +108,11 @@ bot = Bot(token=BOT_TOKEN, request=request_cfg)
 STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
 
+# --- ORDER GROUPING STATE ---
+GROUPS: Dict[str, Dict[str, Any]] = {}  # {group_id: {color, order_ids[], created_at}}
+GROUP_COLORS = ["🟠", "🔵", "🟣", "🟤", "⚫", "⚪"]
+NEXT_GROUP_COLOR_INDEX = 0
+
 configure_mdg(STATE, RESTAURANT_SHORTCUTS)
 upc.configure(STATE, bot)  # Configure UPC module with STATE and bot reference
 
@@ -164,6 +170,71 @@ def fmt_address(addr: Dict[str, Any]) -> str:
     except Exception as exc:
         logger.error(f"Address formatting error: {exc}")
         return "Address formatting error"
+
+def create_or_join_group(order_id: str, ref_order_id: str) -> None:
+    """
+    Create a new group or join an existing group when orders are grouped together.
+    Called after vendor confirms time for orders grouped via BTN-SAME or BTN-GROUP.
+    
+    Args:
+        order_id: Current order being grouped
+        ref_order_id: Reference order to group with
+    """
+    global NEXT_GROUP_COLOR_INDEX
+    
+    order = STATE.get(order_id)
+    ref_order = STATE.get(ref_order_id)
+    
+    if not order or not ref_order:
+        logger.error(f"Cannot group: order {order_id} or reference {ref_order_id} not found")
+        return
+    
+    # Check if reference order is already in a group
+    if ref_order.get("group_id"):
+        # Join existing group
+        group_id = ref_order["group_id"]
+        group = GROUPS.get(group_id)
+        
+        if group:
+            # Add current order to existing group
+            group["order_ids"].append(order_id)
+            
+            # Update current order's group fields
+            order["group_id"] = group_id
+            order["group_color"] = group["color"]
+            order["group_position"] = len(group["order_ids"])
+            
+            logger.info(f"Order {order_id} joined existing group {group_id} at position {order['group_position']}")
+        else:
+            logger.error(f"Group {group_id} not found in GROUPS dict")
+    else:
+        # Create new group with both orders
+        # Get next color
+        color = GROUP_COLORS[NEXT_GROUP_COLOR_INDEX]
+        NEXT_GROUP_COLOR_INDEX = (NEXT_GROUP_COLOR_INDEX + 1) % len(GROUP_COLORS)
+        
+        # Generate unique group ID
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        group_id = f"group_{color}_{timestamp}"
+        
+        # Create group
+        GROUPS[group_id] = {
+            "color": color,
+            "order_ids": [ref_order_id, order_id],
+            "created_at": datetime.now()
+        }
+        
+        # Update reference order
+        ref_order["group_id"] = group_id
+        ref_order["group_color"] = color
+        ref_order["group_position"] = 1
+        
+        # Update current order
+        order["group_id"] = group_id
+        order["group_color"] = color
+        order["group_position"] = 2
+        
+        logger.info(f"Created new group {group_id} with orders {ref_order_id} (1/2) and {order_id} (2/2)")
 
 # --- ASYNC UTILITY FUNCTIONS ---
 async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
@@ -932,6 +1003,107 @@ def telegram_webhook():
                         f"✅ Time request ({ref_time}) sent to {vendor_names}",
                         auto_delete_after=20
                     )
+                    
+                    # Mark order for grouping after vendor confirms
+                    order["grouped_via"] = "same"
+                    order["group_reference_order"] = ref_order_id
+                
+                elif action == "show_group_menu":
+                    # User clicked "Group" button - show time adjustment menu (±3m/±5m)
+                    order_id = data[1]
+                    ref_order_id = data[2]
+                    ref_time = data[3]
+                    current_vendor = data[4] if len(data) > 4 else None
+                    
+                    logger.info(f"Showing group menu for order {order_id} with reference {ref_order_id}")
+                    
+                    order = STATE.get(order_id)
+                    ref_order = STATE.get(ref_order_id)
+                    if not order or not ref_order:
+                        logger.error(f"Order {order_id} or reference order {ref_order_id} not found")
+                        return
+                    
+                    # Delete the previous message (with "Group" button)
+                    await safe_delete_message(DISPATCH_MAIN_CHAT_ID, call.message.message_id)
+                    
+                    # Show time adjustment menu
+                    ref_num = ref_order['name'][-2:] if len(ref_order['name']) >= 2 else ref_order['name']
+                    keyboard = group_time_adjustment_keyboard(order_id, ref_order_id, ref_time, current_vendor)
+                    
+                    msg = await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"⏰ Adjust time for grouping with #{ref_num} ({ref_time}):",
+                        keyboard
+                    )
+                    
+                    # Track for cleanup
+                    order["mdg_additional_messages"].append(msg.message_id)
+                
+                elif action == "time_group":
+                    # User selected adjusted time from group menu (±3m/±5m)
+                    order_id = data[1]
+                    adjusted_time = data[2]
+                    ref_order_id = data[3]
+                    current_vendor_shortcut = data[4] if len(data) > 4 else None
+                    
+                    # Convert shortcut to full vendor name if provided
+                    current_vendor = shortcut_to_vendor(current_vendor_shortcut) if current_vendor_shortcut else None
+                    
+                    logger.info(f"Processing GROUP time request ({adjusted_time}) for order {order_id} with reference {ref_order_id}")
+                    
+                    order = STATE.get(order_id)
+                    if not order:
+                        logger.error(f"Order {order_id} not found in STATE")
+                        return
+                    
+                    order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
+                    
+                    # Determine which vendor(s) to send to - CURRENT order's vendors
+                    if current_vendor:
+                        vendors_to_notify = [current_vendor]
+                    else:
+                        vendors_to_notify = order.get("vendors", [])
+                    
+                    # Send time request to vendor(s)
+                    for vendor in vendors_to_notify:
+                        vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_chat:
+                            msg = f"Can you prepare 🔖 #{order_num} at {adjusted_time}?"
+                            
+                            await safe_send_message(
+                                vendor_chat,
+                                msg,
+                                restaurant_response_keyboard(adjusted_time, order_id, vendor)
+                            )
+                            
+                            logger.info(f"Sent group time request ({adjusted_time}) to {vendor} for order {order_id}")
+                        else:
+                            logger.warning(f"Vendor {vendor} not found in VENDOR_GROUP_MAP")
+                    
+                    # Update MDG
+                    order["requested_time"] = adjusted_time
+                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {adjusted_time}"
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_time_request_keyboard(order_id)
+                    )
+                    
+                    # Clean up additional MDG messages
+                    await cleanup_mdg_messages(order_id)
+                    
+                    # Send confirmation to MDG
+                    vendor_names = ", ".join([RESTAURANT_SHORTCUTS.get(v, v) for v in vendors_to_notify])
+                    await send_status_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"✅ Time request ({adjusted_time}) sent to {vendor_names}",
+                        auto_delete_after=20
+                    )
+                    
+                    # Mark order for grouping after vendor confirms
+                    order["grouped_via"] = "group"
+                    order["group_reference_order"] = ref_order_id
                 
                 elif action == "time_relative":
                     # User clicked +5, +10, +15, or +20
@@ -1221,6 +1393,18 @@ def telegram_webhook():
                     status_msg = f"{vendor} replied: {confirmed_time} for 🔖 #{order_num} works 👍"
                     await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
                     
+                    # Check for pending grouping - if all vendors confirmed, create/join group
+                    if check_all_vendors_confirmed(order_id):
+                        if order.get("grouped_via") and order.get("group_reference_order"):
+                            # This order was marked for grouping via BTN-SAME or BTN-GROUP
+                            ref_order_id = order["group_reference_order"]
+                            logger.info(f"Auto-grouping order {order_id} with reference {ref_order_id} (via {order['grouped_via']})")
+                            create_or_join_group(order_id, ref_order_id)
+                            
+                            # Clear grouping markers
+                            order["grouped_via"] = None
+                            order["group_reference_order"] = None
+                    
                     # Check if all vendors confirmed - show assignment buttons
                     # CRITICAL: Only show buttons if order NOT already assigned
                     # This prevents duplicate assignment buttons appearing after delay confirmations
@@ -1278,6 +1462,18 @@ def telegram_webhook():
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
                         
+                        # Check for pending grouping - if all vendors confirmed, create/join group
+                        if check_all_vendors_confirmed(order_id):
+                            if order.get("grouped_via") and order.get("group_reference_order"):
+                                # This order was marked for grouping via BTN-SAME or BTN-GROUP
+                                ref_order_id = order["group_reference_order"]
+                                logger.info(f"Auto-grouping order {order_id} with reference {ref_order_id} (via {order['grouped_via']})")
+                                create_or_join_group(order_id, ref_order_id)
+                                
+                                # Clear grouping markers
+                                order["grouped_via"] = None
+                                order["group_reference_order"] = None
+                        
                         # Check if all vendors confirmed - show assignment buttons
                         logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
                         if check_all_vendors_confirmed(order_id):
@@ -1334,6 +1530,18 @@ def telegram_webhook():
                         await safe_delete_message(chat_id, message_id)
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
+                        
+                        # Check for pending grouping - if all vendors confirmed, create/join group
+                        if check_all_vendors_confirmed(order_id):
+                            if order.get("grouped_via") and order.get("group_reference_order"):
+                                # This order was marked for grouping via BTN-SAME or BTN-GROUP
+                                ref_order_id = order["group_reference_order"]
+                                logger.info(f"Auto-grouping order {order_id} with reference {ref_order_id} (via {order['grouped_via']})")
+                                create_or_join_group(order_id, ref_order_id)
+                                
+                                # Clear grouping markers
+                                order["grouped_via"] = None
+                                order["group_reference_order"] = None
                         
                         # Check if all vendors confirmed - show assignment buttons
                         logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
@@ -1864,7 +2072,14 @@ def shopify_webhook():
             "confirmed_times": {},  # Track confirmed time per vendor
             "confirmed_time": None,
             "status": "new",
-            "mdg_additional_messages": []  # Track additional MDG messages for cleanup
+            "mdg_additional_messages": [],  # Track additional MDG messages for cleanup
+            # Order grouping fields
+            "group_id": None,  # Group identifier (e.g., "group_orange_001")
+            "group_color": None,  # Group color emoji (e.g., "🟠")
+            "group_position": None,  # Position in group (1-indexed)
+            "upc_assignment_message_id": None,  # Message ID in courier's private chat
+            "grouped_via": None,  # "same" or "group" (tracking grouping method)
+            "group_reference_order": None  # Reference order ID used for grouping
         }
         
         # Save order to STATE first

@@ -354,23 +354,32 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
         
         buttons: List[List[InlineKeyboardButton]] = []
         
-        # First row: Same button - only show if vendor matches
-        # Check if current vendor matches any vendor in reference order
+        # Determine if vendors match between current and reference orders
+        vendor_matches = False
         if current_vendor_full:
-            # Multi-vendor order - only show "Same" if vendor matches
-            if current_vendor_full in ref_vendors:
-                # Use full vendor name in callback
-                same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}|{current_vendor_full}"
-                buttons.append([InlineKeyboardButton("Same time", callback_data=same_callback)])
+            # Multi-vendor order - check if current vendor matches any ref vendor
+            vendor_matches = current_vendor_full in ref_vendors
         else:
-            # Single vendor order
+            # Single vendor order - check if any current vendor matches ref vendors
             order = STATE.get(current_order_id)
             if order:
                 current_vendors = order.get("vendors", [])
-                # Check if any current vendor matches ref vendors
-                if any(v in ref_vendors for v in current_vendors):
-                    same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}"
-                    buttons.append([InlineKeyboardButton("Same time", callback_data=same_callback)])
+                vendor_matches = any(v in ref_vendors for v in current_vendors)
+        
+        # First row: Show BTN-SAME if vendors match, BTN-GROUP if different vendors
+        if vendor_matches:
+            # Same vendor - show "Same time" button (existing behavior)
+            if current_vendor_full:
+                same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}|{current_vendor_full}"
+            else:
+                same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}"
+            buttons.append([InlineKeyboardButton("Same time", callback_data=same_callback)])
+        else:
+            # Different vendors - show "Group" button (opens time adjustment menu)
+            group_callback = f"show_group_menu|{current_order_id}|{ref_order_id}|{ref_time}"
+            if current_vendor_full:
+                group_callback += f"|{current_vendor_full}"
+            buttons.append([InlineKeyboardButton("Group", callback_data=group_callback)])
         
         # Build +5, +10, +15, +20 buttons (2 per row)
         time_buttons = []
@@ -392,6 +401,62 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
     
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building order reference options keyboard: %s", exc)
+        return InlineKeyboardMarkup([])
+
+
+def group_time_adjustment_keyboard(current_order_id: str, ref_order_id: str, ref_time: str, current_vendor: Optional[str] = None) -> InlineKeyboardMarkup:
+    """
+    Build time adjustment menu for grouping orders with DIFFERENT vendors.
+    Shows ±3m and ±5m options relative to reference order time.
+    
+    Args:
+        current_order_id: Current order being grouped
+        ref_order_id: Reference order ID
+        ref_time: Reference order time (HH:MM)
+        current_vendor: Current vendor SHORTCUT if multi-vendor order
+    """
+    try:
+        # Parse reference time
+        ref_hour, ref_min = map(int, ref_time.split(':'))
+        ref_datetime = datetime.now().replace(hour=ref_hour, minute=ref_min, second=0, microsecond=0)
+        
+        buttons: List[List[InlineKeyboardButton]] = []
+        
+        # Build time adjustment buttons: +3m, +5m, -3m, -5m
+        adjustments = [
+            (3, "+3m"),
+            (5, "+5m"),
+            (-3, "-3m"),
+            (-5, "-5m")
+        ]
+        
+        row1 = []  # +3m, +5m
+        row2 = []  # -3m, -5m
+        
+        for minutes, label in adjustments:
+            adjusted_time = ref_datetime + timedelta(minutes=minutes)
+            time_str = adjusted_time.strftime("%H:%M")
+            
+            # Build callback with vendor if multi-vendor order
+            vendor_param = f"|{current_vendor}" if current_vendor else ""
+            callback = f"time_group|{current_order_id}|{time_str}|{ref_order_id}{vendor_param}"
+            
+            # Button text: "+3m (19:33)"
+            button_text = f"{label} ({time_str})"
+            button = InlineKeyboardButton(button_text, callback_data=callback)
+            
+            if minutes > 0:
+                row1.append(button)
+            else:
+                row2.append(button)
+        
+        buttons.append(row1)  # [+3m, +5m]
+        buttons.append(row2)  # [-3m, -5m]
+        
+        return InlineKeyboardMarkup(buttons)
+    
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("Error building group time adjustment keyboard: %s", exc)
         return InlineKeyboardMarkup([])
 
 
