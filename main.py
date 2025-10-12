@@ -80,6 +80,10 @@ DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
 VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
 
+# Placeholder for restaurant accounts (to be added later)
+# Format: {"Restaurant Name": user_id} - user_id of restaurant's Telegram account
+RESTAURANT_ACCOUNTS: Dict[str, int] = json.loads(os.environ.get("RESTAURANT_ACCOUNTS", "{}"))
+
 # --- CONSTANTS AND MAPPINGS ---
 # Restaurant shortcut mapping (per assignment in Doc)
 RESTAURANT_SHORTCUTS = {
@@ -112,6 +116,11 @@ RECENT_ORDERS: List[Dict[str, Any]] = []
 GROUPS: Dict[str, Dict[str, Any]] = {}  # {group_id: {color, order_ids[], created_at}}
 GROUP_COLORS = ["🟠", "🔵", "🟣", "🟤", "⚫", "⚪"]
 NEXT_GROUP_COLOR_INDEX = 0
+
+# --- RESTAURANT COMMUNICATION TRACKING ---
+# Track forwarded messages from restaurants to MDG for reply functionality
+# Format: {mdg_message_id: {"vendor": "Restaurant Name", "rg_chat_id": -1234567890}}
+RESTAURANT_FORWARDED_MESSAGES: Dict[int, Dict[str, Any]] = {}
 
 configure_mdg(STATE, RESTAURANT_SHORTCUTS)
 upc.configure(STATE, bot)  # Configure UPC module with STATE and bot reference
@@ -407,6 +416,110 @@ async def cleanup_mdg_messages(order_id: str):
     # Clear the list after cleanup
     order["mdg_additional_messages"] = []
 
+
+# =============================================================================
+# RESTAURANT COMMUNICATION FUNCTIONS
+# =============================================================================
+# Handles two-way communication between restaurants and MDG:
+# 1. Restaurant → MDG: Forward manual messages from restaurant accounts
+# 2. MDG → Restaurant: Forward replies to restaurant messages
+# All messages auto-delete after 10 minutes
+# =============================================================================
+
+async def forward_restaurant_message_to_mdg(vendor_name: str, message_text: str, rg_chat_id: int, original_msg_id: int):
+    """
+    Forward a manual message from restaurant to MDG.
+    
+    Args:
+        vendor_name: Name of the restaurant (e.g., "Zweite Heimat")
+        message_text: The text message from restaurant
+        rg_chat_id: Restaurant group chat ID
+        original_msg_id: Original message ID in RG (for tracking)
+    """
+    try:
+        # Format: "Vendor says: message text"
+        forwarded_text = f"{vendor_name} says: {message_text}"
+        
+        # Send to MDG
+        msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, forwarded_text)
+        
+        if msg:
+            mdg_message_id = msg.message_id
+            
+            # Track this forwarded message for reply functionality
+            RESTAURANT_FORWARDED_MESSAGES[mdg_message_id] = {
+                "vendor": vendor_name,
+                "rg_chat_id": rg_chat_id,
+                "original_msg_id": original_msg_id
+            }
+            
+            logger.info(f"Forwarded message from {vendor_name} to MDG (MDG msg_id: {mdg_message_id})")
+            
+            # Schedule auto-delete after 10 minutes
+            await asyncio.sleep(600)  # 10 minutes = 600 seconds
+            await safe_delete_message(DISPATCH_MAIN_CHAT_ID, mdg_message_id)
+            
+            # Clean up tracking
+            if mdg_message_id in RESTAURANT_FORWARDED_MESSAGES:
+                del RESTAURANT_FORWARDED_MESSAGES[mdg_message_id]
+            
+            logger.info(f"Auto-deleted restaurant message {mdg_message_id} from MDG after 10 minutes")
+    
+    except Exception as e:
+        logger.error(f"Error forwarding restaurant message to MDG: {e}")
+
+
+async def forward_mdg_reply_to_restaurant(from_user: Dict[str, Any], reply_text: str, replied_to_msg_id: int):
+    """
+    Forward a reply from MDG back to the restaurant group.
+    
+    Args:
+        from_user: User who sent the reply in MDG
+        reply_text: The reply text
+        replied_to_msg_id: Message ID in MDG that was replied to
+    """
+    try:
+        # Get the restaurant info from tracking
+        restaurant_info = RESTAURANT_FORWARDED_MESSAGES.get(replied_to_msg_id)
+        if not restaurant_info:
+            logger.warning(f"Reply to message {replied_to_msg_id} but no restaurant tracking found")
+            return
+        
+        vendor_name = restaurant_info["vendor"]
+        rg_chat_id = restaurant_info["rg_chat_id"]
+        user_id = from_user.get('id')
+        
+        # Get user name from COURIER_MAP (DRIVERS)
+        courier_name = None
+        for name, cid in DRIVERS.items():
+            if cid == user_id:
+                courier_name = name
+                break
+        
+        # Fallback to first name if not in COURIER_MAP
+        if not courier_name:
+            courier_name = from_user.get('first_name', 'User')
+        
+        # Format: "Courier Name says: reply text"
+        reply_message = f"{courier_name} says: {reply_text}"
+        
+        # Send to restaurant group
+        msg = await safe_send_message(rg_chat_id, reply_message)
+        
+        if msg:
+            rg_message_id = msg.message_id
+            logger.info(f"Forwarded reply from {courier_name} to {vendor_name} (RG msg_id: {rg_message_id})")
+            
+            # Schedule auto-delete after 10 minutes
+            await asyncio.sleep(600)  # 10 minutes = 600 seconds
+            await safe_delete_message(rg_chat_id, rg_message_id)
+            
+            logger.info(f"Auto-deleted reply message {rg_message_id} from {vendor_name} RG after 10 minutes")
+    
+    except Exception as e:
+        logger.error(f"Error forwarding MDG reply to restaurant: {e}")
+
+
 # --- WEBHOOK ENDPOINTS ---
 @app.route("/", methods=["GET"])
 def health_check():
@@ -516,6 +629,21 @@ def telegram_webhook():
                             
                             logger.info(f"Forwarded issue description from {vendor_name} for order {order_id} to MDG")
                             break
+                    
+                    # RESTAURANT COMMUNICATION: Forward manual messages from restaurant to MDG
+                    # Check if message is from a restaurant account (not bot-generated)
+                    user_id = from_user.get('id')
+                    if user_id in RESTAURANT_ACCOUNTS.values() and not from_user.get('is_bot', False):
+                        logger.info(f"Restaurant message detected from {vendor_name} (user_id: {user_id})")
+                        run_async(forward_restaurant_message_to_mdg(vendor_name, text, chat_id, msg.get('message_id')))
+            
+            # RESTAURANT COMMUNICATION: Handle replies in MDG to restaurant messages
+            # Check if this is a reply to a forwarded restaurant message in MDG
+            if chat_id == DISPATCH_MAIN_CHAT_ID and msg.get('reply_to_message') and text:
+                replied_to_msg_id = msg['reply_to_message']['message_id']
+                if replied_to_msg_id in RESTAURANT_FORWARDED_MESSAGES:
+                    logger.info(f"Reply detected in MDG to restaurant message {replied_to_msg_id}")
+                    run_async(forward_mdg_reply_to_restaurant(from_user, text, replied_to_msg_id))
 
         cq = upd.get("callback_query")
         if not cq:
