@@ -1024,7 +1024,7 @@ def telegram_webhook():
                         return
                     
                     # Delete the previous message (with "Group" button)
-                    await safe_delete_message(DISPATCH_MAIN_CHAT_ID, call.message.message_id)
+                    await safe_delete_message(DISPATCH_MAIN_CHAT_ID, cq["message"]["message_id"])
                     
                     # Show time adjustment menu
                     ref_num = ref_order['name'][-2:] if len(ref_order['name']) >= 2 else ref_order['name']
@@ -1442,8 +1442,15 @@ def telegram_webhook():
                     )
                 
                 elif action == "later_time":
-                    # Extract vendor from callback data (format: later_time|order_id|time|vendor)
-                    order_id, selected_time, vendor = data[1], data[2], data[3]
+                    # Extract vendor SHORTCUT from callback data (format: later_time|order_id|time|vendor_shortcut)
+                    order_id, selected_time, vendor_shortcut = data[1], data[2], data[3]
+                    
+                    # Convert shortcut back to full vendor name
+                    vendor = shortcut_to_vendor(vendor_shortcut)
+                    if not vendor:
+                        logger.error(f"Could not convert vendor shortcut '{vendor_shortcut}' to full name")
+                        return
+                    
                     order = STATE.get(order_id)
                     if order:
                         # Track confirmed time per vendor
@@ -1506,8 +1513,15 @@ def telegram_webhook():
                     )
                 
                 elif action == "prepare_time":
-                    # Extract vendor from callback data (format: prepare_time|order_id|time|vendor)
-                    order_id, selected_time, vendor = data[1], data[2], data[3]
+                    # Extract vendor SHORTCUT from callback data (format: prepare_time|order_id|time|vendor_shortcut)
+                    order_id, selected_time, vendor_shortcut = data[1], data[2], data[3]
+                    
+                    # Convert shortcut back to full vendor name
+                    vendor = shortcut_to_vendor(vendor_shortcut)
+                    if not vendor:
+                        logger.error(f"Could not convert vendor shortcut '{vendor_shortcut}' to full name")
+                        return
+                    
                     order = STATE.get(order_id)
                     if order:
                         # Track confirmed time per vendor
@@ -1656,25 +1670,37 @@ def telegram_webhook():
                 
                 # VENDOR EXACT TIME SELECTION
                 elif action == "vendor_exact_time":
-                    order_id, vendor, original_action = data[1], data[2], data[3]
+                    # Extract vendor SHORTCUT from callback (format: vendor_exact_time|order_id|vendor_shortcut|action)
+                    order_id, vendor_shortcut, original_action = data[1], data[2], data[3]
+                    
+                    # Convert shortcut back to full vendor name
+                    vendor = shortcut_to_vendor(vendor_shortcut)
+                    if not vendor:
+                        logger.error(f"Could not convert vendor shortcut '{vendor_shortcut}' to full name")
+                        return
+                    
                     logger.info(f"Vendor {vendor} requesting exact time for order {order_id} (action: {original_action})")
                     
                     # Get the message that needs to be edited (time picker message)
                     chat_id = cq["message"]["chat"]["id"]
                     message_id = cq["message"]["message_id"]
                     
-                    # Show hour picker
+                    # Show hour picker (pass vendor_shortcut to maintain consistency)
                     await safe_edit_message(
                         chat_id,
                         message_id,
                         "🕒 Select hour:",
-                        vendor_exact_time_keyboard(order_id, vendor, original_action)
+                        vendor_exact_time_keyboard(order_id, vendor_shortcut, original_action)
                     )
                 
                 elif action == "vendor_exact_hour":
                     order_id, hour, vendor_short, original_action = data[1], data[2], data[3], data[4]
                     # Decode vendor shortcut
-                    vendor = SHORTCUT_TO_VENDOR.get(vendor_short, vendor_short)
+                    vendor = shortcut_to_vendor(vendor_short)
+                    if not vendor:
+                        logger.error(f"Could not convert vendor shortcut '{vendor_short}' to full name")
+                        return
+                    
                     logger.info(f"Vendor {vendor} selected hour {hour} for order {order_id}")
                     
                     # Edit message to show minute picker
@@ -1691,7 +1717,11 @@ def telegram_webhook():
                 elif action == "vendor_exact_selected":
                     order_id, selected_time, vendor_short, original_action = data[1], data[2], data[3], data[4]
                     # Decode vendor shortcut
-                    vendor = SHORTCUT_TO_VENDOR.get(vendor_short, vendor_short)
+                    vendor = shortcut_to_vendor(vendor_short)
+                    if not vendor:
+                        logger.error(f"Could not convert vendor shortcut '{vendor_short}' to full name")
+                        return
+                    
                     logger.info(f"Vendor {vendor} selected exact time {selected_time} for order {order_id} (action: {original_action})")
                     
                     order = STATE.get(order_id)
@@ -1748,10 +1778,14 @@ def telegram_webhook():
                 elif action == "vendor_exact_back":
                     order_id, vendor_short, original_action = data[1], data[2], data[3]
                     # Decode vendor shortcut
-                    vendor = SHORTCUT_TO_VENDOR.get(vendor_short, vendor_short)
+                    vendor = shortcut_to_vendor(vendor_short)
+                    if not vendor:
+                        logger.error(f"Could not convert vendor shortcut '{vendor_short}' to full name")
+                        return
+                    
                     logger.info(f"Vendor {vendor} going back to hour selection for order {order_id}")
                     
-                    # Edit message back to hour picker
+                    # Edit message back to hour picker (pass vendor_shortcut to maintain consistency)
                     chat_id = cq["message"]["chat"]["id"]
                     message_id = cq["message"]["message_id"]
                     
@@ -1759,7 +1793,7 @@ def telegram_webhook():
                         chat_id,
                         message_id,
                         "🕒 Select hour:",
-                        vendor_exact_time_keyboard(order_id, vendor, original_action)
+                        vendor_exact_time_keyboard(order_id, vendor_short, original_action)
                     )
                 
                 # ASSIGNMENT ACTIONS

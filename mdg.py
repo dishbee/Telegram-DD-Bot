@@ -481,7 +481,12 @@ def same_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
 
 def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[str] = None, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
-    """Build time picker for various actions."""
+    """
+    Build time picker for various actions.
+    
+    Args:
+        vendor: Full vendor name - will be converted to shortcut for callback data
+    """
     try:
         current_time = datetime.now()
         if requested_time:
@@ -505,30 +510,33 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
                 time_option = current_time + timedelta(minutes=minutes)
                 intervals.append(time_option.strftime("%H:%M"))
 
+        # Convert vendor name to shortcut for callback data (avoid 64-byte limit)
+        vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper()) if vendor else None
+
         rows: List[List[InlineKeyboardButton]] = []
         for i in range(0, len(intervals), 2):
             # Add minute increment label to button text
             button_text = f"{intervals[i]} ({minute_increments[i]} mins)"
             
-            # Include vendor in callback if provided (for prepare_time and later_time actions)
-            if vendor:
-                callback = f"{action}|{order_id}|{intervals[i]}|{vendor}"
+            # Include vendor SHORTCUT in callback if provided (for prepare_time and later_time actions)
+            if vendor_shortcut:
+                callback = f"{action}|{order_id}|{intervals[i]}|{vendor_shortcut}"
             else:
                 callback = f"{action}|{order_id}|{intervals[i]}"
             row = [InlineKeyboardButton(button_text, callback_data=callback)]
             
             if i + 1 < len(intervals):
                 button_text2 = f"{intervals[i + 1]} ({minute_increments[i + 1]} mins)"
-                if vendor:
-                    callback2 = f"{action}|{order_id}|{intervals[i + 1]}|{vendor}"
+                if vendor_shortcut:
+                    callback2 = f"{action}|{order_id}|{intervals[i + 1]}|{vendor_shortcut}"
                 else:
                     callback2 = f"{action}|{order_id}|{intervals[i + 1]}"
                 row.append(InlineKeyboardButton(button_text2, callback_data=callback2))
             rows.append(row)
         
         # Add EXACT TIME button at the bottom
-        if vendor:
-            exact_callback = f"vendor_exact_time|{order_id}|{vendor}|{action}"
+        if vendor_shortcut:
+            exact_callback = f"vendor_exact_time|{order_id}|{vendor_shortcut}|{action}"
         else:
             exact_callback = f"exact_time|{order_id}|{action}"
         rows.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=exact_callback)])
