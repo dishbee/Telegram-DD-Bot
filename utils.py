@@ -89,19 +89,21 @@ def clean_product_name(name: str) -> str:
     Applied consistently across MDG, RG, and UPC displays.
     
     Handles compound products (e.g., "Burger - Pommes") by splitting on " - "
-    and cleaning each part separately. Removes duplicates (e.g., "Prosciutto - Prosciutto" → "Prosciutto").
+    and cleaning each part separately. Removes duplicates (e.g., "Prosciutto - Prosciutto Funghi" → "Prosciutto Funghi").
     
-    Rules implemented (18 total):
+    Rules implemented (25+ total):
     - Extract burger names from quotes, remove "Bio-Burger" prefix
-    - Simplify fries/pommes variations (Bio-Pommes → Pommes)
+    - Simplify fries/pommes variations (Bio-Pommes → Pommes, Süßkartoffel-Pommes → Süßkartoffel)
     - Remove pizza prefixes (Sauerteig-Pizza → keep only name)
     - Simplify Spätzle dishes (remove "& Spätzle" and "- Standard" suffixes)
     - Remove pasta prefixes (Selbstgemachte → keep only type)
     - Simplify rolls (remove ALL roll type prefixes: Special, Cinnamon, etc.)
-    - Remove prices in brackets: (+2.6€), (1.9€)
-    - Remove "/ Standard" suffixes
+    - Remove prices in brackets: (+2.6€), (1.9€), (13,50€) - handles both . and , decimals
+    - Remove "/ Standard", "/ Classic", "/ Glutenfrei" patterns
     - Remove Bio- prefixes from salads
     - Special handling for "Gemüse Curry & Spätzle" → "Curry"
+    - Duplicate word removal: "Prosciutto - Prosciutto Funghi" → "Prosciutto Funghi"
+    - "Halb Pommes / Halb Salat" → "Halb P. / Halb S."
     
     Args:
         name: Raw product name from Shopify line_items
@@ -114,12 +116,12 @@ def clean_product_name(name: str) -> str:
         'Classic'
         >>> clean_product_name('Veganer-Monats-Bio-Burger „BBQ Oyster" - Bio-Pommes')
         'BBQ Oyster - Pommes'
-        >>> clean_product_name('Special roll - Oreo')
-        'Oreo'
-        >>> clean_product_name('Erdnuss Pesto Spätzle - Standard')
-        'Erdnuss Pesto'
-        >>> clean_product_name('Gemüse Curry & Spätzle - Vegetarisch')
-        'Curry'
+        >>> clean_product_name('Special roll - Salted Caramel Apfel')
+        'Salted Caramel Apfel'
+        >>> clean_product_name('Spaghetti - Cacio e Pepe (13,50€)')
+        'Spaghetti - Cacio e Pepe'
+        >>> clean_product_name('Prosciutto - Prosciutto Funghi')
+        'Prosciutto Funghi'
     """
     import re
     
@@ -139,10 +141,24 @@ def clean_product_name(name: str) -> str:
         logger.debug(f"Rule 0b (Gulasch special): detected Gulasch+Spätzle → 'Gulasch'")
         return 'Gulasch'
     
+    # Rule 0c: Special case for "Halb Pommes / Halb Salat" → "Halb P. / Halb S."
+    if 'Halb Pommes' in name and 'Halb Salat' in name:
+        logger.debug(f"Rule 0c: 'Halb Pommes / Halb Salat' → 'Halb P. / Halb S.'")
+        return 'Halb P. / Halb S.'
+    
     # Rule 1: Remove " - Classic" suffix FIRST (before compound splitting)
     if ' - Classic' in name:
         name = re.sub(r'\s*-\s*Classic$', '', name)
         logger.debug(f"Rule 1 (Classic removal): removed ' - Classic' suffix → '{name}'")
+    
+    # Rule 1b: Remove " / Classic" suffix
+    if ' / Classic' in name:
+        name = re.sub(r'\s*/\s*Classic$', '', name)
+        logger.debug(f"Rule 1b (Classic removal): removed ' / Classic' suffix → '{name}'")
+    
+    # Rule 1c: Remove " / Glutenfrei" suffix but keep " - Glutenfrei"
+    name = re.sub(r'\s*-\s*Classic\s*/\s*Glutenfrei$', ' - Glutenfrei', name)
+    logger.debug(f"Rule 1c: After glutenfrei processing → '{name}'")
     
     # Handle compound products: "Burger - Side" - split and clean each part
     if ' - ' in name:
@@ -170,11 +186,17 @@ def clean_product_name(name: str) -> str:
                 if cleaned and cleaned.strip():
                     cleaned_parts.append(cleaned)
         
-        # Remove duplicates: "Prosciutto - Prosciutto" -> "Prosciutto"
-        if len(cleaned_parts) == 2 and cleaned_parts[0] == cleaned_parts[1]:
-            result = cleaned_parts[0]
-            logger.debug(f"Removed duplicate: {cleaned_parts} → '{result}'")
-            return result
+        # Remove duplicate first words: "Prosciutto - Prosciutto Funghi" -> "Prosciutto Funghi"
+        # Also handles "Burrata - Burrata Crudo" -> "Burrata Crudo"
+        if len(cleaned_parts) == 2:
+            first_word_part1 = cleaned_parts[0].split()[0] if cleaned_parts[0].split() else ""
+            first_word_part2 = cleaned_parts[1].split()[0] if cleaned_parts[1].split() else ""
+            
+            if first_word_part1 == first_word_part2:
+                # Second part starts with same word as first part
+                result = cleaned_parts[1]
+                logger.debug(f"Removed duplicate first word: {cleaned_parts} → '{result}'")
+                return result
         
         # If we have additions (+ X), join with space instead of " - "
         if len(cleaned_parts) > 1 and any(p.startswith('+ ') for p in cleaned_parts):
@@ -189,16 +211,42 @@ def clean_product_name(name: str) -> str:
     # Remove brackets from product names
     name = name.strip('[]')
     
-    # Rule 2: Remove prices in brackets (do early, affects multiple rules)
-    name = re.sub(r'\s*\(\+?[\d.]+€\)', '', name)
+    # Rule 2: Remove prices in brackets - handles both . and , as decimal separator
+    # Matches: (+2.6€), (1.9€), (13,50€), (+0,90€), etc.
+    name = re.sub(r'\s*\(\+?[\d.,]+€\)', '', name)
+    logger.debug(f"Rule 2 (Price removal): after removing prices → '{name}'")
     
     # Rule 3: Burger names - extract text between quotes (ANY burger type)
     # Handles: [Bio-Burger "X"], [Monats-Bio-Burger „X"], [Veganer-Monats-Bio-Burger „X"]
     # Supports all quote types: „" "" "" and straight "
-    if 'Burger' in name:
+    # BUT: Must preserve compound structure after extraction
+    if 'Burger' in name and (' - ' in name):
+        # Example: "Veganer-Monats-Bio-Burger „BBQ Oyster" - Pommes"
+        # Split first, extract burger quote from first part
+        parts = name.split(' - ', 1)  # Split only on first " - "
+        burger_part = parts[0]
+        other_parts = parts[1] if len(parts) > 1 else ""
+        
+        # Try to extract quoted burger name
+        match = re.search(r'[„""""]([^„""""]+)[„""""]', burger_part)
+        if match:
+            burger_name = match.group(1)
+            if other_parts:
+                # Recursively clean the other parts
+                cleaned_other = clean_product_name(other_parts)
+                result = f"{burger_name} - {cleaned_other}"
+                logger.debug(f"Rule 3 (Burger with compound): '{name}' → '{result}'")
+                return result
+            else:
+                logger.debug(f"Rule 3 (Burger quote): '{name}' → '{burger_name}'")
+                return burger_name
+    elif 'Burger' in name:
+        # No compound structure, extract quote as before
         match = re.search(r'[„""""]([^„""""]+)[„""""]', name)
         if match:
-            return match.group(1)
+            result = match.group(1)
+            logger.debug(f"Rule 3 (Burger quote simple): '{name}' → '{result}'")
+            return result
     
     # Rule 4: Remove ANY roll type prefix BEFORE other processing
     # Matches: "Special roll - X", "Cinnamon roll - X", "Lotus roll X", etc.
@@ -214,44 +262,54 @@ def clean_product_name(name: str) -> str:
         name = name.replace('Bio-', '', 1)
         logger.debug(f"Rule 5 (Bio removal): removed 'Bio-' prefix → '{name}'")
     
-    # Rule 6: Chili-Cheese-Fries -> Fries: Chili-Cheese-Style
+    # Rule 6: Remove "B-" prefix (e.g., "B-umpkin")
+    if name.startswith('B-'):
+        name = name.replace('B-', '', 1)
+        logger.debug(f"Rule 6 (B- removal): removed 'B-' prefix → '{name}'")
+    
+    # Rule 7: Chili-Cheese-Fries -> Fries: Chili-Cheese-Style
     if 'Chili-Cheese-Fries' in name:
         return 'Fries: Chili-Cheese-Style'
     
-    # Rule 7: Chili-Cheese-Süßkartoffelpommes -> Süßkartoffel: Chili-Cheese-Style
-    if 'Chili-Cheese-Süßkartoffelpommes' in name:
-        return 'Süßkartoffel: Chili-Cheese-Style'
+    # Rule 8: Chili-Cheese-Süßkartoffel -> Süßkart.: Chili-Cheese-Style
+    if 'Chili-Cheese-Süßkartoffel' in name:
+        return 'Süßkart.: Chili-Cheese-Style'
     
-    # Rule 8: Sloppy-Fries (keep as is after price removal)
+    # Rule 9: Sloppy-Fries (keep as is after price removal)
     if name.startswith('Sloppy-Fries'):
         return 'Sloppy-Fries'
     
-    # Rule 9: Remove "Sauerteig-Pizza " prefix from any pizza
+    # Rule 10: Süßkartoffel-Pommes → Süßkartoffel
+    if 'Süßkartoffel-Pommes' in name or 'Süßkartoffelpommes' in name:
+        name = re.sub(r'Süßkartoffel(-)?[Pp]ommes', 'Süßkartoffel', name)
+        logger.debug(f"Rule 10 (Süßkartoffel-Pommes): shortened to 'Süßkartoffel' → '{name}'")
+    
+    # Rule 11: Remove "Sauerteig-Pizza " prefix from any pizza
     if name.startswith('Sauerteig-Pizza '):
         name = name.replace('Sauerteig-Pizza ', '', 1)
-        logger.debug(f"Rule 9 (Pizza prefix removal): removed 'Sauerteig-Pizza' → '{name}'")
+        logger.debug(f"Rule 11 (Pizza prefix removal): removed 'Sauerteig-Pizza' → '{name}'")
     
-    # Rule 10: Remove " Spätzle" suffix (with space) - catches "Erdnuss Pesto Spätzle"
+    # Rule 12: Remove " Spätzle" suffix (with space) - catches "Erdnuss Pesto Spätzle"
     if name.endswith(' Spätzle'):
         name = name[:-8]  # Remove last 8 characters: " Spätzle"
-        logger.debug(f"Rule 10 (Spätzle suffix removal): removed ' Spätzle' → '{name}'")
+        logger.debug(f"Rule 12 (Spätzle suffix removal): removed ' Spätzle' → '{name}'")
     
-    # Rule 11: Remove "-Spätzle" from any product (general spätzle removal with hyphen)
+    # Rule 13: Remove "-Spätzle" from any product (general spätzle removal with hyphen)
     # Handle various spellings: Spätzle, Spaetzle, with or without space before hyphen
     if 'Spätzle' in name or 'Spaetzle' in name or 'spätzle' in name or 'spaetzle' in name:
         result = re.sub(r'\s*-\s*[Ss][pä][aeä]tzle', '', name, flags=re.IGNORECASE)
-        logger.debug(f"Rule 11 (Spätzle hyphen removal): '{name}' → '{result}'")
+        logger.debug(f"Rule 13 (Spätzle hyphen removal): '{name}' → '{result}'")
         name = result
     
-    # Rule 12: General spätzle cleanup: "X & Spätzle" -> "X"
+    # Rule 14: General spätzle cleanup: "X & Spätzle" -> "X"
     name = re.sub(r'\s*&\s*[Ss][pä][aeä]tzle', '', name, flags=re.IGNORECASE)
     
-    # Rule 13: Remove "Selbstgemachte " prefix from any pasta
+    # Rule 15: Remove "Selbstgemachte " prefix from any pasta
     if name.startswith('Selbstgemachte '):
         name = name.replace('Selbstgemachte ', '', 1)
-        logger.debug(f"Rule 13 (Selbstgemachte removal): removed prefix → '{name}'")
+        logger.debug(f"Rule 15 (Selbstgemachte removal): removed prefix → '{name}'")
     
-    # Rule 14: Remove "/ Standard" suffix from any product
+    # Rule 16: Remove "/ Standard" suffix from any product
     name = re.sub(r'\s*/\s*Standard\s*$', '', name)
     
     return name.strip()
