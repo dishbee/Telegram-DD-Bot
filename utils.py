@@ -386,7 +386,10 @@ def clean_product_name(name: str) -> str:
         result = re.sub(r'\s*-\s*[Ss][pä][aeä]tzle', '', name, flags=re.IGNORECASE)
         name = result
     
-    # Rule 14: General spätzle cleanup: "X & Spätzle" -> "X"
+    # Rule 14: General spätzle cleanup patterns
+    # Pattern 1: "X vom Rind & Spätzle" -> "X" (removes meat description and spätzle)
+    name = re.sub(r'\s+vom\s+\w+\s*&\s*[Ss][pä][aeä]tzle', '', name, flags=re.IGNORECASE)
+    # Pattern 2: "X & Spätzle" -> "X" (general & Spätzle removal)
     name = re.sub(r'\s*&\s*[Ss][pä][aeä]tzle', '', name, flags=re.IGNORECASE)
     
     # Rule 15: Remove "Selbstgemachte " prefix from any pasta

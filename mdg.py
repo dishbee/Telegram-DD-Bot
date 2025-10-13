@@ -225,6 +225,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             logger.info(f"DISTRICT DEBUG - Entering show_details block for order {order.get('name', 'Unknown')}")
             logger.info(f"DISTRICT DEBUG - original_address value: '{original_address}'")
             
+            # Add blank line before district
+            text += "\n"
+            
             # Add district line at the beginning of details section
             district = get_district_from_address(original_address)
             
@@ -244,7 +247,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 vendor_items = order.get("vendor_items", {})
                 items_text_parts: List[str] = []
                 for vendor in vendors:
-                    items_text_parts.append(f"\n{vendor}:")
+                    # Use shortcut instead of full vendor name
+                    shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                    items_text_parts.append(f"\n{shortcut}: ")
                     vendor_products = vendor_items.get(vendor, [])
                     for item in vendor_products:
                         clean_item = item.lstrip('- ').strip()
@@ -262,7 +267,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 if payment.lower() != "cash on delivery":
                     items_text += f"\n{total}"
 
-            text += f"\n{items_text}\n"
+            text += f"{items_text}\n"
 
         return text
     except Exception as exc:  # pragma: no cover - defensive
