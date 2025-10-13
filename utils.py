@@ -105,12 +105,22 @@ def get_district_from_address(address: str) -> Optional[str]:
         address_components = results[0].get("address_components", [])
         district = None
         
+        # Log all components for debugging
+        logger.info(f"Google Maps returned {len(address_components)} components:")
+        for comp in address_components:
+            logger.info(f"  - {comp.get('long_name')} | Types: {comp.get('types')}")
+        
         for component in address_components:
             types = component.get("types", [])
-            if "sublocality" in types or "neighborhood" in types or "sublocality_level_1" in types:
-                district = component.get("long_name")
-                logger.info(f"District found: '{district}' for address '{address}'")
-                break
+            # Check for multiple possible district-related types
+            if any(t in types for t in ["sublocality", "sublocality_level_1", "sublocality_level_2", 
+                                         "neighborhood", "locality", "political"]):
+                # Skip if it's just "Passau" (the city itself)
+                name = component.get("long_name")
+                if name and name.lower() != "passau":
+                    district = name
+                    logger.info(f"District found: '{district}' for address '{address}'")
+                    break
         
         if not district:
             logger.info(f"No district/sublocality found for: {address}")
@@ -248,6 +258,10 @@ def clean_product_name(name: str) -> str:
             # Skip empty parts, "Classic", "Standard", or "Vegetarisch" suffixes
             if not part or part in ['Classic', 'Standard', 'Vegetarisch']:
                 continue
+            
+            # Handle "Vegetarisch / X" pattern -> keep only "X"
+            if part.startswith('Vegetarisch /'):
+                part = part.replace('Vegetarisch /', '').strip()
             
             # Handle "+ X" pattern: "Bergkäse-Spätzle - + Gebratener Speck" → ["Bergkäse-Spätzle", "+ Gebratener Speck"]
             # Keep the + prefix for additions
