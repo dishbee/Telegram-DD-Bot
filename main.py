@@ -2138,7 +2138,9 @@ def shopify_webhook():
                 
                 # Clean product name using project rules
                 raw_name = item.get('name', 'Item')
+                logger.info(f"PRODUCT NAME DEBUG - Raw: '{raw_name}'")
                 cleaned_name = clean_product_name(raw_name)
+                logger.info(f"PRODUCT NAME DEBUG - Cleaned: '{cleaned_name}'")
                 item_line = f"- {item.get('quantity', 1)} x {cleaned_name}"
                 vendor_items[vendor].append(item_line)
         

@@ -129,7 +129,8 @@ def clean_product_name(name: str) -> str:
         return name
     
     # Debug logging
-    logger.debug(f"clean_product_name input: '{name}'")
+    logger.info(f"=== clean_product_name START: '{name}' ===")
+    original_input = name  # Store for final logging
     
     # Rule 0a: Special case for Curry dishes - must be BEFORE compound splitting
     if 'Curry' in name and 'Spätzle' in name:
@@ -221,31 +222,36 @@ def clean_product_name(name: str) -> str:
     # Supports all quote types: „" "" "" and straight "
     # BUT: Must preserve compound structure after extraction
     if 'Burger' in name and (' - ' in name):
+        logger.info(f"Rule 3: Detected Burger with compound structure")
         # Example: "Veganer-Monats-Bio-Burger „BBQ Oyster" - Pommes"
         # Split first, extract burger quote from first part
         parts = name.split(' - ', 1)  # Split only on first " - "
         burger_part = parts[0]
         other_parts = parts[1] if len(parts) > 1 else ""
+        logger.info(f"Rule 3: Split into burger_part='{burger_part}' | other_parts='{other_parts}'")
         
         # Try to extract quoted burger name
         match = re.search(r'[„""""]([^„""""]+)[„""""]', burger_part)
         if match:
             burger_name = match.group(1)
+            logger.info(f"Rule 3: Extracted burger name: '{burger_name}'")
             if other_parts:
                 # Recursively clean the other parts
+                logger.info(f"Rule 3: Recursively cleaning other_parts: '{other_parts}'")
                 cleaned_other = clean_product_name(other_parts)
+                logger.info(f"Rule 3: Recursive result: '{cleaned_other}'")
                 result = f"{burger_name} - {cleaned_other}"
-                logger.debug(f"Rule 3 (Burger with compound): '{name}' → '{result}'")
+                logger.info(f"Rule 3 (Burger with compound): '{original_input}' → '{result}'")
                 return result
             else:
-                logger.debug(f"Rule 3 (Burger quote): '{name}' → '{burger_name}'")
+                logger.info(f"Rule 3 (Burger quote): '{original_input}' → '{burger_name}'")
                 return burger_name
     elif 'Burger' in name:
         # No compound structure, extract quote as before
         match = re.search(r'[„""""]([^„""""]+)[„""""]', name)
         if match:
             result = match.group(1)
-            logger.debug(f"Rule 3 (Burger quote simple): '{name}' → '{result}'")
+            logger.info(f"Rule 3 (Burger quote simple): '{original_input}' → '{result}'")
             return result
     
     # Rule 4: Remove ANY roll type prefix BEFORE other processing
@@ -277,6 +283,7 @@ def clean_product_name(name: str) -> str:
     
     # Rule 9: Sloppy-Fries (keep as is after price removal)
     if name.startswith('Sloppy-Fries'):
+        logger.info(f"Rule 9 (Sloppy-Fries): MATCHED - returning 'Sloppy-Fries'")
         return 'Sloppy-Fries'
     
     # Rule 10: Süßkartoffel-Pommes → Süßkartoffel
@@ -312,6 +319,7 @@ def clean_product_name(name: str) -> str:
     # Rule 16: Remove "/ Standard" suffix from any product
     name = re.sub(r'\s*/\s*Standard\s*$', '', name)
     
+    logger.info(f"=== clean_product_name END: '{original_input}' → '{name.strip()}' ===")
     return name.strip()
 
 def verify_webhook(raw: bytes, hmac_header: str) -> bool:
