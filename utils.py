@@ -42,54 +42,86 @@ RESTAURANT_SHORTCUTS = {
     "Wittelsbacher Apotheke": "AP"
 }
 
-# District mapping for Passau addresses
-DISTRICT_MAPPING = {
-    "Innstadt": [
-        "Lederergasse", "Innstraße", "Angerstraße", "Spitalhofstraße", 
-        "Theresienstraße", "Nikolastraße", "Severinstraße", "Innbruckstraße"
-    ],
-    "Altstadt": [
-        "Bräugasse", "Residenzplatz", "Domplatz", "Ludwigsplatz", "Schrottgasse",
-        "Heiliggeistgasse", "Rindermarkt", "Kleine Messergasse", "Steinweg", 
-        "Große Messergasse", "Wittgasse", "Nibelungenplatz"
-    ],
-    "Hacklberg": [
-        "Ilzleite", "Hacklberg", "Dr.-Hans-Kapfinger-Straße", "Passauer Straße"
-    ],
-    "Grubweg": [
-        "Grubweg", "Neuburger Straße", "Vilshofener Straße"
-    ],
-    "Hals": [
-        "Regensburger Straße", "Halser Straße", "Breslauer Straße", "Alte Straße"
-    ]
-}
+# Google Maps API key for district detection (optional)
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+
+# District cache to minimize API calls
+_DISTRICT_CACHE: Dict[str, Optional[str]] = {}
 
 def get_district_from_address(address: str) -> Optional[str]:
     """
-    Determine district from street address.
+    Determine district/neighborhood from address using Google Maps Geocoding API.
+    
+    Caches results to minimize API calls. Returns None if API key not configured.
     
     Args:
         address: Full address string (e.g., "Lederergasse 15, Passau 94032")
     
     Returns:
-        District name (e.g., "Innstadt") or None if not found
+        District name (e.g., "Innstadt") or None if not found/unavailable
     """
     if not address:
-        logger.info("get_district_from_address: Empty address provided")
         return None
     
-    # Extract street name (first part before house number)
-    address_lower = address.lower()
-    logger.info(f"get_district_from_address: Checking address '{address}' (lowercase: '{address_lower}')")
+    # Check cache first
+    if address in _DISTRICT_CACHE:
+        logger.info(f"District cache hit for '{address}': {_DISTRICT_CACHE[address]}")
+        return _DISTRICT_CACHE[address]
     
-    for district, streets in DISTRICT_MAPPING.items():
-        for street in streets:
-            if street.lower() in address_lower:
-                logger.info(f"get_district_from_address: MATCH found! Street '{street}' matches district '{district}'")
-                return district
+    # If no API key configured, return None
+    if not GOOGLE_MAPS_API_KEY:
+        logger.info("GOOGLE_MAPS_API_KEY not set - district detection disabled")
+        _DISTRICT_CACHE[address] = None
+        return None
     
-    logger.info(f"get_district_from_address: No district match found for '{address}'")
-    return None
+    try:
+        # Query Google Maps Geocoding API
+        logger.info(f"Querying Google Maps for district: '{address}'")
+        
+        url = "https://maps.googleapis.com/maps/api/geocode/json"
+        params = {
+            "address": f"{address}, Passau, Germany",
+            "key": GOOGLE_MAPS_API_KEY,
+            "language": "de"
+        }
+        
+        response = requests.get(url, params=params, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("status") != "OK":
+            logger.warning(f"Google Maps API error: {data.get('status')}")
+            _DISTRICT_CACHE[address] = None
+            return None
+        
+        # Extract district from address components
+        results = data.get("results", [])
+        if not results:
+            logger.warning(f"No results from Google Maps for: {address}")
+            _DISTRICT_CACHE[address] = None
+            return None
+        
+        # Look for sublocality/neighborhood in components
+        address_components = results[0].get("address_components", [])
+        district = None
+        
+        for component in address_components:
+            types = component.get("types", [])
+            if "sublocality" in types or "neighborhood" in types or "sublocality_level_1" in types:
+                district = component.get("long_name")
+                logger.info(f"District found: '{district}' for address '{address}'")
+                break
+        
+        if not district:
+            logger.info(f"No district/sublocality found for: {address}")
+        
+        _DISTRICT_CACHE[address] = district
+        return district
+        
+    except Exception as e:
+        logger.error(f"Error calling Google Maps API: {e}")
+        _DISTRICT_CACHE[address] = None
+        return None
 
 # --- TELEGRAM BOT CONFIGURATION ---
 request_cfg = HTTPXRequest(

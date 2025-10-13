@@ -343,21 +343,16 @@ AP = Wittelsbacher Apotheke
 
 ## DISTRICTS (Passau)
 ```
-Innstadt    = Lederergasse, Innstraße, Angerstraße, Spitalhofstraße,
-              Theresienstraße, Nikolastraße, Severinstraße, Innbruckstraße
+District detection uses Google Maps Geocoding API to automatically identify
+the neighborhood/district (sublocality) from the address.
 
-Altstadt    = Bräugasse, Residenzplatz, Domplatz, Ludwigsplatz, Schrottgasse,
-              Heiliggeistgasse, Rindermarkt, Kleine Messergasse, Steinweg,
-              Große Messergasse, Wittgasse, Nibelungenplatz
+Requires GOOGLE_MAPS_API_KEY environment variable.
+Results are cached per address to minimize API calls.
 
-Hacklberg   = Ilzleite, Hacklberg, Dr.-Hans-Kapfinger-Straße, Passauer Straße
-
-Grubweg     = Grubweg, Neuburger Straße, Vilshofener Straße
-
-Hals        = Regensburger Straße, Halser Straße, Breslauer Straße, Alte Straße
+Returns district names like: Innstadt, Altstadt, Hacklberg, Grubweg, Hals, etc.
 ```
 **Note**: District shown in MDG Details view as: 🏙️ {District} ({zip})
-**Note**: To add more streets, update DISTRICT_MAPPING in utils.py
+**Note**: Set GOOGLE_MAPS_API_KEY in Render environment variables to enable
 
 ## CALLBACK ACTIONS
 ```
