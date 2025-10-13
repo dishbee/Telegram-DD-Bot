@@ -60,7 +60,7 @@ DISTRICT_MAPPING = {
         "Grubweg", "Neuburger Straße", "Vilshofener Straße"
     ],
     "Hals": [
-        "Regensburger Straße", "Halser Straße", "Breslauer Straße"
+        "Regensburger Straße", "Halser Straße", "Breslauer Straße", "Alte Straße"
     ]
 }
 

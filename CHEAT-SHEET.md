@@ -354,7 +354,7 @@ Hacklberg   = Ilzleite, Hacklberg, Dr.-Hans-Kapfinger-Straße, Passauer Straße
 
 Grubweg     = Grubweg, Neuburger Straße, Vilshofener Straße
 
-Hals        = Regensburger Straße, Halser Straße, Breslauer Straße
+Hals        = Regensburger Straße, Halser Straße, Breslauer Straße, Alte Straße
 ```
 **Note**: District shown in MDG Details view as: 🏙️ {District} ({zip})
 **Note**: To add more streets, update DISTRICT_MAPPING in utils.py
