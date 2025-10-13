@@ -201,7 +201,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             payment = order.get("payment_method", "Paid")
             total = order.get("total", "0.00€")
             if payment.lower() == "cash on delivery":
-                payment_line = f"❕ Cash on delivery: {total}\n"
+                payment_line = f"❕ Cash: {total}\n"
 
         phone = order['customer']['phone']
         phone_line = ""

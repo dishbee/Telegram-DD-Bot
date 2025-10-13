@@ -2,7 +2,16 @@
 
 ## CHANNELS
 ```
-MDG  = Main Dispatch (coordination)
+MDG  = Main DispaMDG-ORD         = Order arrives (main message)
+  └─ Format: 🔖 #{num} - dishbee ({Vendor Shortcut(s)})
+              🧑 {Customer Name}
+              🗺️ [{Address} ({zip})](maps link)
+              
+              ❕ Note: {Customer Note} (if exists)
+              ❕ Tip: {Amount}€ (if tip)
+              ❕ Cash: {Total}€ (if COD)
+              
+              {Vendor Name}: (if multi-vendor)ination)
 RG   = Restaurants (vendors)  
 UPC  = Private Chat (couriers)
 ```
@@ -25,7 +34,7 @@ MDG-ORD         = Order arrives (main message - summary by default)
               
               ❕ Note: {Customer Note} (if exists)
               ❕ Tip: {Amount}€ (if tip)
-              ❕ Cash on delivery: {Total}€ (if COD)
+              ❕ Cash: {Total}€ (if COD)
               
               [{phone}](tel:{phone}) (if phone exists)
               
@@ -117,7 +126,7 @@ UPC-ASSIGN      = Assignment message to courier
               👤 {Customer Name}
               🔺 {Address} ({zip})
               ❕ Tip: {amount}€ (if applicable)
-              ❕ Cash on delivery: {amount}€ (if COD)
+              ❕ Cash: {amount}€ (if COD)
               ☎️ Call customer: {phone}
               🍽 Call Restaurant:
 

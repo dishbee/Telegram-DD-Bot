@@ -364,7 +364,7 @@ def build_assignment_message(order: dict) -> str:
         payment = order.get("payment_method", "Paid")
         total = order.get("total", "0.00€")
         if payment.lower() == "cash on delivery":
-            optional_section += f"❕ Cash on delivery: {total}\n"
+            optional_section += f"❕ Cash: {total}\n"
         
         # Phone numbers section
         phone = order['customer']['phone']
