@@ -209,13 +209,19 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         # Add product details if requested
         if show_details:
             # Add district line at the beginning of details section
-            original_address = order['customer'].get('original_address', full_address)
             district = get_district_from_address(original_address)
             
+            logger.info(f"District detection: address='{original_address}', district='{district}'")
+            
             if district:
-                # Extract zip code from display_address
-                zip_code = zip_part if len(address_parts) >= 2 else ""
+                # Extract zip code from address_parts (already parsed above)
+                zip_code = ""
+                if len(address_parts) >= 2:
+                    zip_code = address_parts[-1].strip().strip('()')
                 text += f"🏙️ {district} ({zip_code})\n"
+                logger.info(f"Added district line: 🏙️ {district} ({zip_code})")
+            else:
+                logger.info(f"No district found for address: {original_address}")
             
             if order_type == "shopify" and len(vendors) > 1:
                 vendor_items = order.get("vendor_items", {})

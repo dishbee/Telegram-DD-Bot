@@ -75,16 +75,20 @@ def get_district_from_address(address: str) -> Optional[str]:
         District name (e.g., "Innstadt") or None if not found
     """
     if not address:
+        logger.info("get_district_from_address: Empty address provided")
         return None
     
     # Extract street name (first part before house number)
     address_lower = address.lower()
+    logger.info(f"get_district_from_address: Checking address '{address}' (lowercase: '{address_lower}')")
     
     for district, streets in DISTRICT_MAPPING.items():
         for street in streets:
             if street.lower() in address_lower:
+                logger.info(f"get_district_from_address: MATCH found! Street '{street}' matches district '{district}'")
                 return district
     
+    logger.info(f"get_district_from_address: No district match found for '{address}'")
     return None
 
 # --- TELEGRAM BOT CONFIGURATION ---
