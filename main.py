@@ -35,6 +35,7 @@ from telegram.error import TelegramError, TimedOut, NetworkError
 from mdg import (
     configure as configure_mdg,
     build_mdg_dispatch_text,
+    mdg_initial_keyboard,
     mdg_time_request_keyboard,
     mdg_time_submenu_keyboard,
     order_reference_options_keyboard,
@@ -854,6 +855,34 @@ def telegram_webhook():
                     # Clean up additional MDG messages
                     await cleanup_mdg_messages(order_id)
                 
+                # MDG DETAILS TOGGLE
+                elif action == "mdg_toggle":
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        logger.warning(f"Order {order_id} not found in state")
+                        return
+                    
+                    # Toggle expansion state
+                    is_expanded = order.get("mdg_expanded", False)
+                    order["mdg_expanded"] = not is_expanded
+                    
+                    # Rebuild message with new state
+                    show_details = order["mdg_expanded"]
+                    mdg_text = build_mdg_dispatch_text(order, show_details=show_details)
+                    
+                    # Add requested time if exists
+                    if order.get("requested_time"):
+                        mdg_text += f"\n\n⏰ Requested: {order['requested_time']}"
+                    
+                    # Update message with new keyboard
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_initial_keyboard(order_id)
+                    )
+                
                 # ORIGINAL TIME REQUEST ACTIONS (MDG)
                 elif action == "req_asap":
                     order_id = data[1]
@@ -889,7 +918,7 @@ def telegram_webhook():
                     else:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
                     
-                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: ASAP"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: ASAP"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
@@ -991,7 +1020,7 @@ def telegram_webhook():
                     
                     # Update MDG
                     order["requested_time"] = requested_time
-                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {requested_time}"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {requested_time}"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
@@ -1113,7 +1142,7 @@ def telegram_webhook():
                     
                     # Update MDG
                     order["requested_time"] = ref_time
-                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {ref_time}"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {ref_time}"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
@@ -1210,7 +1239,7 @@ def telegram_webhook():
                     
                     # Update MDG
                     order["requested_time"] = adjusted_time
-                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {adjusted_time}"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {adjusted_time}"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
@@ -1278,7 +1307,7 @@ def telegram_webhook():
                     
                     # Update MDG
                     order["requested_time"] = requested_time
-                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {requested_time}"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {requested_time}"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
@@ -1370,7 +1399,7 @@ def telegram_webhook():
                     
                     # Update MDG
                     order["requested_time"] = reference_time
-                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {reference_time} (same as {reference_order.get('name', 'other order')})"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {reference_time} (same as {reference_order.get('name', 'other order')})"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
@@ -1433,7 +1462,7 @@ def telegram_webhook():
                     
                     # Update MDG
                     order["requested_time"] = selected_time
-                    mdg_text = build_mdg_dispatch_text(order) + f"\n\n⏰ Requested: {selected_time}"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {selected_time}"
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
@@ -2257,8 +2286,8 @@ def shopify_webhook():
 
         async def process():
             try:
-                # Send to MDG with appropriate buttons
-                mdg_text = build_mdg_dispatch_text(order)
+                # Send to MDG with appropriate buttons (summary by default)
+                mdg_text = build_mdg_dispatch_text(order, show_details=False)
                 
                 # Special formatting for pickup orders
                 if is_pickup:
@@ -2269,7 +2298,7 @@ def shopify_webhook():
                 mdg_msg = await safe_send_message(
                     DISPATCH_MAIN_CHAT_ID,
                     mdg_text,
-                    mdg_time_request_keyboard(order_id)
+                    mdg_initial_keyboard(order_id)
                 )
                 order["mdg_message_id"] = mdg_msg.message_id
                 

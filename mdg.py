@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from utils import get_district_from_address
 
 logger = logging.getLogger(__name__)
 
@@ -111,22 +112,50 @@ def build_smart_time_suggestions(order_id: str, vendor: Optional[str] = None) ->
         ])
 
 
-def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
-    """Build MDG dispatch message per user's exact specifications."""
+def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -> str:
+    """
+    Build MDG dispatch message with collapsible details.
+    
+    Summary view (show_details=False):
+    - 🔖 #28 - dishbee
+    - 🏠 JS+LR 🍕 3+1
+    - 🧑 Customer Name
+    - 🗺️ Address
+    - Note/Tip/COD (if applicable)
+    - Phone link
+    
+    Details view (show_details=True):
+    - Same header but shows full product list
+    """
     try:
         order_type = order.get("order_type", "shopify")
         vendors = order.get("vendors", [])
+        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
 
+        # Build title line
+        title = f"🔖 #{order_num} - dishbee"
+
+        # Build vendor line with product counts
         if order_type == "shopify":
-            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+            vendor_items = order.get("vendor_items", {})
+            vendor_counts = []
+            shortcuts = []
+            
+            for vendor in vendors:
+                shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                shortcuts.append(shortcut)
+                
+                # Count products for this vendor
+                items = vendor_items.get(vendor, [])
+                count = len(items)
+                vendor_counts.append(str(count))
+            
             if len(vendors) > 1:
-                shortcuts = [RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors]
-                title = f"🔖 #{order_num} - dishbee ({'+'.join(shortcuts)})"
+                vendor_line = f"🏠 {'+'.join(shortcuts)} 🍕 {'+'.join(vendor_counts)}"
             else:
-                shortcut = RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper()) if vendors else ""
-                title = f"🔖 #{order_num} - dishbee ({shortcut})"
+                vendor_line = f"🏠 {shortcuts[0]} 🍕 {vendor_counts[0]}"
         else:
-            title = vendors[0] if vendors else "Unknown"
+            vendor_line = f"🏠 {vendors[0] if vendors else 'Unknown'}"
 
         customer_line = f"🧑 {order['customer']['name']}"
 
@@ -160,34 +189,14 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
             if payment.lower() == "cash on delivery":
                 payment_line = f"❕ Cash on delivery: {total}\n"
 
-        if order_type == "shopify" and len(vendors) > 1:
-            vendor_items = order.get("vendor_items", {})
-            items_text_parts: List[str] = []
-            for vendor in vendors:
-                items_text_parts.append(f"\n{vendor}:")
-                vendor_products = vendor_items.get(vendor, [])
-                for item in vendor_products:
-                    clean_item = item.lstrip('- ').strip()
-                    items_text_parts.append(clean_item)
-            items_text = "\n".join(items_text_parts)
-        else:
-            items_text = order.get("items_text", "")
-            lines = items_text.split('\n')
-            clean_lines = [line.lstrip('- ').strip() for line in lines if line.strip()]
-            items_text = '\n'.join(clean_lines)
-
-        total = order.get("total", "0.00€")
-        if order_type == "shopify":
-            payment = order.get("payment_method", "Paid")
-            if payment.lower() != "cash on delivery":
-                items_text += f"\n{total}"
-
         phone = order['customer']['phone']
         phone_line = ""
         if phone and phone != "N/A":
             phone_line = f"[{phone}](tel:{phone})\n"
 
+        # Build base text (always shown)
         text = f"{title}\n"
+        text += f"{vendor_line}\n"
         text += f"{customer_line}\n"
         text += f"{address_line}\n\n"
         text += note_line
@@ -195,13 +204,104 @@ def build_mdg_dispatch_text(order: Dict[str, Any]) -> str:
         text += payment_line
         if note_line or tips_line or payment_line:
             text += "\n"
-        text += f"{items_text}\n\n"
         text += phone_line
+
+        # Add product details if requested
+        if show_details:
+            # Add district line at the beginning of details section
+            original_address = order['customer'].get('original_address', full_address)
+            district = get_district_from_address(original_address)
+            
+            if district:
+                # Extract zip code from display_address
+                zip_code = zip_part if len(address_parts) >= 2 else ""
+                text += f"🏙️ {district} ({zip_code})\n"
+            
+            if order_type == "shopify" and len(vendors) > 1:
+                vendor_items = order.get("vendor_items", {})
+                items_text_parts: List[str] = []
+                for vendor in vendors:
+                    items_text_parts.append(f"\n{vendor}:")
+                    vendor_products = vendor_items.get(vendor, [])
+                    for item in vendor_products:
+                        clean_item = item.lstrip('- ').strip()
+                        items_text_parts.append(clean_item)
+                items_text = "\n".join(items_text_parts)
+            else:
+                items_text = order.get("items_text", "")
+                lines = items_text.split('\n')
+                clean_lines = [line.lstrip('- ').strip() for line in lines if line.strip()]
+                items_text = '\n'.join(clean_lines)
+
+            total = order.get("total", "0.00€")
+            if order_type == "shopify":
+                payment = order.get("payment_method", "Paid")
+                if payment.lower() != "cash on delivery":
+                    items_text += f"\n{total}"
+
+            text += f"\n{items_text}\n"
 
         return text
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building MDG text: %s", exc)
         return f"Error formatting order {order.get('name', 'Unknown')}"
+
+
+def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """
+    Build initial MDG keyboard with Details button above time request buttons.
+    
+    Layout:
+    [Details ▸]
+    [Request ASAP] [Request TIME]
+    
+    Or for multi-vendor:
+    [Details ▸]
+    [Request JS]
+    [Request LR]
+    """
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            return InlineKeyboardMarkup([
+                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(datetime.now().timestamp())}")],
+                [
+                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(datetime.now().timestamp())}"),
+                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(datetime.now().timestamp())}")
+                ]
+            ])
+
+        vendors = order.get("vendors", [])
+        order.setdefault("mdg_expanded", False)  # Track expansion state
+        
+        is_expanded = order.get("mdg_expanded", False)
+        toggle_button = InlineKeyboardButton(
+            "◂ Hide" if is_expanded else "Details ▸",
+            callback_data=f"mdg_toggle|{order_id}|{int(datetime.now().timestamp())}"
+        )
+
+        buttons = [[toggle_button]]
+
+        if len(vendors) > 1:
+            # Multi-vendor: show vendor selection buttons
+            for vendor in vendors:
+                shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                buttons.append([InlineKeyboardButton(
+                    f"Request {shortcut}",
+                    callback_data=f"req_vendor|{order_id}|{vendor}|{int(datetime.now().timestamp())}"
+                )])
+        else:
+            # Single vendor: show ASAP/TIME buttons
+            buttons.append([
+                InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(datetime.now().timestamp())}"),
+                InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(datetime.now().timestamp())}")
+            ])
+
+        return InlineKeyboardMarkup(buttons)
+
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("Error building initial MDG keyboard: %s", exc)
+        return InlineKeyboardMarkup([])
 
 
 def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:

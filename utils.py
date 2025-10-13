@@ -42,6 +42,51 @@ RESTAURANT_SHORTCUTS = {
     "Wittelsbacher Apotheke": "AP"
 }
 
+# District mapping for Passau addresses
+DISTRICT_MAPPING = {
+    "Innstadt": [
+        "Lederergasse", "Innstraße", "Angerstraße", "Spitalhofstraße", 
+        "Theresienstraße", "Nikolastraße", "Severinstraße", "Innbruckstraße"
+    ],
+    "Altstadt": [
+        "Bräugasse", "Residenzplatz", "Domplatz", "Ludwigsplatz", "Schrottgasse",
+        "Heiliggeistgasse", "Rindermarkt", "Kleine Messergasse", "Steinweg", 
+        "Große Messergasse", "Wittgasse", "Nibelungenplatz"
+    ],
+    "Hacklberg": [
+        "Ilzleite", "Hacklberg", "Dr.-Hans-Kapfinger-Straße", "Passauer Straße"
+    ],
+    "Grubweg": [
+        "Grubweg", "Neuburger Straße", "Vilshofener Straße"
+    ],
+    "Hals": [
+        "Regensburger Straße", "Halser Straße", "Breslauer Straße"
+    ]
+}
+
+def get_district_from_address(address: str) -> Optional[str]:
+    """
+    Determine district from street address.
+    
+    Args:
+        address: Full address string (e.g., "Lederergasse 15, Passau 94032")
+    
+    Returns:
+        District name (e.g., "Innstadt") or None if not found
+    """
+    if not address:
+        return None
+    
+    # Extract street name (first part before house number)
+    address_lower = address.lower()
+    
+    for district, streets in DISTRICT_MAPPING.items():
+        for street in streets:
+            if street.lower() in address_lower:
+                return district
+    
+    return None
+
 # --- TELEGRAM BOT CONFIGURATION ---
 request_cfg = HTTPXRequest(
     connection_pool_size=32,

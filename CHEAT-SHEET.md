@@ -17,11 +17,84 @@ ORD       = General order reference
 
 ## MESSAGES
 ```
+MDG-ORD         = Order arrives (main message - summary by default)
+  └─ Format: 🔖 #{num} - dishbee
+              🏠 {Vendor Shortcuts} 🍕 {Product Counts}
+              🧑 {Customer Name}
+              🗺️ [{Address} ({zip})](maps link)
+              
+              ❕ Note: {Customer Note} (if exists)
+              ❕ Tip: {Amount}€ (if tip)
+              ❕ Cash on delivery: {Total}€ (if COD)
+              
+              [{phone}](tel:{phone}) (if phone exists)
+              
+              [Details ▸] button
+              [Request ASAP] [Request TIME] (or vendor buttons if multi-vendor)
+              
+  └─ When expanded (Details clicked):
+              First shows district if detected:
+              🏙️ {District} ({zip})
+              
+              Then full product list:
+              
+              {Vendor Name}: (if multi-vendor)
+              {qty} x {Product Name}
+              {qty} x {Product Name}
+              
+              Or: (if single vendor, no vendor name shown)
+              {qty} x {Product Name}
+              {qty} x {Product Name}
+              {Total}€ (if NOT COD)
+              
+              [◂ Hide] button
+              [Request ASAP] [Request TIME]
+  
+  └─ MDG-UPDATE = Status updates (edits MDG-ORD)
+```
 MDG-ORD         = Order arrives (main message)
+  └─ Format: 🔖 #{num} - dishbee ({Vendor Shortcut(s)})
+              🧑 {Customer Name}
+              �️ [{Address} ({zip})](maps link)
+              
+              ❕ Note: {Customer Note} (if exists)
+              ❕ Tip: {Amount}€ (if tip)
+              ❕ Cash on delivery: {Total}€ (if COD)
+              
+              {Vendor Name}: (if multi-vendor)
+              {qty} x {Product Name}
+              {qty} x {Product Name}
+              
+              Or: (if single vendor, no vendor name shown)
+              {qty} x {Product Name}
+              {qty} x {Product Name}
+              {Total}€ (if NOT COD)
+              
+              [{phone}](tel:{phone}) (if phone exists)
   └─ MDG-UPDATE = Status updates (edits MDG-ORD)
   
 RG-SUM          = Order arrives (vendor summary)
+  └─ Format: 🔖 #{num} - dishbee
+              👤 {Customer Name}
+              🔺 {Address} ({zip})
+              
+              📦 {Product Count} product(s)
+              💳 {Payment Method}: {Vendor Total}€
+              
+              [Details ▸] button
+              
 RG-DET          = Order details (expanded view)
+  └─ Format: 🔖 #{num} - dishbee
+              👤 {Customer Name}
+              🔺 {Address} ({zip})
+              
+              - {qty} x {Product Name}
+              - {qty} x {Product Name}
+              
+              💳 {Payment Method}: {Vendor Total}€
+              ❕ Note: {Customer Note} (if exists)
+              
+              [◂ Hide] button
 
 MDG-REQ-VENDOR  = 📍 Request time from {vendor}: (multi-vendor)
 MDG-CONF        = All confirmed (with vendor details)
@@ -258,6 +331,24 @@ KA = Kahaani
 SA = i Sapori della Toscana
 AP = Wittelsbacher Apotheke
 ```
+
+## DISTRICTS (Passau)
+```
+Innstadt    = Lederergasse, Innstraße, Angerstraße, Spitalhofstraße,
+              Theresienstraße, Nikolastraße, Severinstraße, Innbruckstraße
+
+Altstadt    = Bräugasse, Residenzplatz, Domplatz, Ludwigsplatz, Schrottgasse,
+              Heiliggeistgasse, Rindermarkt, Kleine Messergasse, Steinweg,
+              Große Messergasse, Wittgasse, Nibelungenplatz
+
+Hacklberg   = Ilzleite, Hacklberg, Dr.-Hans-Kapfinger-Straße, Passauer Straße
+
+Grubweg     = Grubweg, Neuburger Straße, Vilshofener Straße
+
+Hals        = Regensburger Straße, Halser Straße, Breslauer Straße
+```
+**Note**: District shown in MDG Details view as: 🏙️ {District} ({zip})
+**Note**: To add more streets, update DISTRICT_MAPPING in utils.py
 
 ## CALLBACK ACTIONS
 ```
