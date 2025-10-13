@@ -112,12 +112,10 @@ def get_district_from_address(address: str) -> Optional[str]:
         
         for component in address_components:
             types = component.get("types", [])
-            # Check for multiple possible district-related types
-            if any(t in types for t in ["sublocality", "sublocality_level_1", "sublocality_level_2", 
-                                         "neighborhood", "locality", "political"]):
-                # Skip if it's just "Passau" (the city itself)
+            # Check for sublocality/neighborhood types (most specific districts)
+            if any(t in types for t in ["sublocality", "sublocality_level_1", "sublocality_level_2", "neighborhood"]):
                 name = component.get("long_name")
-                if name and name.lower() != "passau":
+                if name:
                     district = name
                     logger.info(f"District found: '{district}' for address '{address}'")
                     break
@@ -262,6 +260,10 @@ def clean_product_name(name: str) -> str:
             # Handle "Vegetarisch / X" pattern -> keep only "X"
             if part.startswith('Vegetarisch /'):
                 part = part.replace('Vegetarisch /', '').strip()
+            
+            # Handle "X / Standard" pattern -> keep only "X"
+            if part.endswith('/ Standard'):
+                part = part.replace('/ Standard', '').strip()
             
             # Handle "+ X" pattern: "Bergkäse-Spätzle - + Gebratener Speck" → ["Bergkäse-Spätzle", "+ Gebratener Speck"]
             # Keep the + prefix for additions
