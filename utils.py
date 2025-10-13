@@ -132,15 +132,18 @@ def clean_product_name(name: str) -> str:
     original_input = name
     
     # Rule 0a: Special case for Curry dishes - must be BEFORE compound splitting
-    if 'Curry' in name and 'Spätzle' in name:
+    # BUT: Don't apply if it's part of a Burger compound
+    if 'Curry' in name and 'Spätzle' in name and 'Burger' not in name:
         return 'Curry'
     
     # Rule 0b: Special case for Gulasch dishes - must be BEFORE compound splitting
-    if 'Gulasch' in name and 'Spätzle' in name:
+    # BUT: Don't apply if it's part of a Burger compound
+    if 'Gulasch' in name and 'Spätzle' in name and 'Burger' not in name:
         return 'Gulasch'
     
     # Rule 0c: Special case for "Halb Pommes / Halb Salat" → "Halb P. / Halb S."
-    if 'Halb Pommes' in name and 'Halb Salat' in name:
+    # BUT: Don't apply if it's part of a Burger compound (e.g., Bio-Burger "BBQ" Halb Pommes / Halb Salat)
+    if 'Halb Pommes' in name and 'Halb Salat' in name and 'Burger' not in name:
         return 'Halb P. / Halb S.'
     
     # Rule 1: Remove " - Classic" suffix FIRST (before compound splitting)
@@ -228,11 +231,25 @@ def clean_product_name(name: str) -> str:
             else:
                 return burger_name
     elif 'Burger' in name:
-        # No compound structure, extract quote as before
+        # No " - " separator, but might have side dish after burger name
+        # Example: Bio-Burger "BBQ" Halb Pommes / Halb Salat
         match = re.search(r'[„""""]([^„""""]+)[„""""]', name)
         if match:
-            result = match.group(1)
-            return result
+            burger_name = match.group(1)
+            # Check if there's text after the closing quote
+            quote_end_pos = match.end()
+            remaining_text = name[quote_end_pos:].strip()
+            
+            if remaining_text:
+                # There's a side dish after the burger name
+                logger.info(f"DEBUG Rule 3 (no separator): Burger='{burger_name}' | Side: '{remaining_text}'")
+                cleaned_side = clean_product_name(remaining_text)
+                logger.info(f"DEBUG Rule 3 (no separator): Side cleaned to: '{cleaned_side}'")
+                result = f"{burger_name} - {cleaned_side}"
+                return result
+            else:
+                # Just the burger name
+                return burger_name
     
     # Rule 4: Remove ANY roll type prefix BEFORE other processing
     # Matches: "Special roll - X", "Cinnamon roll - X", "Lotus roll X", etc.
