@@ -303,10 +303,17 @@ def clean_product_name(name: str) -> str:
     # Rule 4: Remove ANY roll type prefix BEFORE other processing
     # Matches: "Special roll - X", "Cinnamon roll - X", "Lotus roll X", etc.
     # Handles both "roll - Product" and "roll Product" formats
+    # Also handles standalone "Special roll" case (return empty to filter out)
     roll_pattern = r'^([A-Za-zäöüÄÖÜß]+\s+roll)[\s\-]+(.+)$'
     roll_match = re.match(roll_pattern, name, re.IGNORECASE)
     if roll_match:
         name = roll_match.group(2).strip()
+    else:
+        # Check if name IS just "{Type} roll" with nothing after
+        standalone_roll_pattern = r'^([A-Za-zäöüÄÖÜß]+\s+roll)$'
+        if re.match(standalone_roll_pattern, name, re.IGNORECASE):
+            # Return empty string to filter this part out in compound handler
+            return ""
     
     # Rule 5: Remove "Bio-" prefix from any product
     if name.startswith('Bio-'):

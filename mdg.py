@@ -1,6 +1,7 @@
 """MDG (Main Dispatching Group) helpers."""
 
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -141,14 +142,27 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             vendor_counts = []
             shortcuts = []
             
+            logger.info(f"DEBUG Product Count - vendor_items structure: {vendor_items}")
+            
             for vendor in vendors:
                 shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
                 shortcuts.append(shortcut)
                 
-                # Count products for this vendor
+                # Count TOTAL QUANTITY for this vendor (not just line items)
                 items = vendor_items.get(vendor, [])
-                count = len(items)
-                vendor_counts.append(str(count))
+                total_qty = 0
+                for item_line in items:
+                    # Extract quantity from formatted string like "- 2 x Product Name"
+                    # Pattern: "- {qty} x {name}" or just "- {name}" (qty=1)
+                    match = re.match(r'^-\s*(\d+)\s*x\s+', item_line)
+                    if match:
+                        total_qty += int(match.group(1))
+                    else:
+                        # No quantity prefix, assume 1
+                        total_qty += 1
+                
+                logger.info(f"DEBUG Product Count - {vendor}: items={items}, total_qty={total_qty}")
+                vendor_counts.append(str(total_qty))
             
             if len(vendors) > 1:
                 vendor_line = f"🏠 {'+'.join(shortcuts)} 🍕 {'+'.join(vendor_counts)}"
@@ -208,6 +222,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
 
         # Add product details if requested
         if show_details:
+            logger.info(f"DISTRICT DEBUG - Entering show_details block for order {order.get('name', 'Unknown')}")
+            logger.info(f"DISTRICT DEBUG - original_address value: '{original_address}'")
+            
             # Add district line at the beginning of details section
             district = get_district_from_address(original_address)
             
