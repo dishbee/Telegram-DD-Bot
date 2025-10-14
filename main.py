@@ -367,7 +367,7 @@ def build_assignment_confirmation_message(order: dict) -> str:
     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
     
     # Chef emojis for variety
-    chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "�🏼‍🍳", "👨🏾‍🍳"]
+    chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
     
     # Count products per vendor and build counts string
     vendor_counts = []
@@ -387,7 +387,7 @@ def build_assignment_confirmation_message(order: dict) -> str:
     
     # Build header with product counts
     counts_display = "+".join(vendor_counts)
-    message = f"👍 #{order_num} - dishbee � {counts_display}\n\n"
+    message = f"👍 #{order_num} - dishbee 🍕 {counts_display}\n\n"
     
     # Vendor details with rotating chef emojis
     for idx, vendor in enumerate(vendors):
@@ -2081,19 +2081,33 @@ def telegram_webhook():
                     # Show delay time options
                     await upc.show_delay_options(order_id, user_id)
                 
+                elif action == "delay_vendor_selected":
+                    """
+                    Courier selected vendor for delay in multi-vendor order.
+                    
+                    Shows time picker for the selected vendor.
+                    """
+                    order_id, vendor = data[1], data[2]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} selected vendor {vendor} for delay on order {order_id}")
+                    
+                    # Show time picker for this vendor
+                    await upc.show_delay_time_picker(order_id, user_id, vendor)
+                
                 elif action == "delay_selected":
                     """
                     Courier selected delay time - send to restaurants.
                     
-                    Sends message to all vendors asking for confirmation of new time.
+                    Sends message to vendor(s) asking for confirmation of new time.
                     Vendors see same response buttons as original time request.
                     """
                     order_id, new_time = data[1], data[2]
+                    vendor = data[3] if len(data) > 3 else None
                     user_id = cq["from"]["id"]
-                    logger.info(f"User {user_id} selected delay time {new_time} for order {order_id}")
+                    logger.info(f"User {user_id} selected delay time {new_time} for order {order_id}" + (f" (vendor: {vendor})" if vendor else ""))
                     
-                    # Send delay request to restaurants
-                    await upc.send_delay_request_to_restaurants(order_id, new_time, user_id)
+                    # Send delay request to restaurants (with vendor if multi-vendor)
+                    await upc.send_delay_request_to_restaurants(order_id, new_time, user_id, vendor)
                 
                 elif action == "call_restaurant":
                     """

@@ -319,7 +319,7 @@ def build_assignment_message(order: dict) -> str:
         # Header: � #34 - dishbee
         if order_type == "shopify":
             order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-            header = f"� #{order_num} - dishbee\n"
+            header = f"👉 #{order_num} - dishbee\n"
         else:
             header = f"👉 {order.get('name', 'Order')}\n"
         
@@ -425,7 +425,7 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
         # Row 3: Unassign (only show if not yet delivered)
         if order.get("status") != "delivered":
             unassign = InlineKeyboardButton(
-                "� Unassign",
+                "🚫 Unassign",
                 callback_data=f"unassign_order|{order_id}"
             )
             buttons.append([unassign])
@@ -666,8 +666,54 @@ async def show_delay_options(order_id: str, user_id: int):
             )
             return
         
-        # Use the latest confirmed time
-        latest_time_str = max(confirmed_times.values())
+        vendors = order.get("vendors", [])
+        
+        # Multi-vendor: show vendor selection first
+        if len(vendors) > 1:
+            buttons = []
+            for vendor in vendors:
+                vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                buttons.append([InlineKeyboardButton(
+                    f"Request {vendor_shortcut}",
+                    callback_data=f"delay_vendor_selected|{order_id}|{vendor}"
+                )])
+            
+            # Add Back button
+            buttons.append([InlineKeyboardButton("← Back", callback_data="hide")])
+            
+            await safe_send_message(
+                user_id,
+                "⏳ Select vendor to request delay:",
+                InlineKeyboardMarkup(buttons)
+            )
+        else:
+            # Single vendor: show time options directly
+            await show_delay_time_picker(order_id, user_id, vendors[0] if vendors else None)
+
+    except Exception as e:
+        logger.error(f"Error showing delay options: {e}")
+
+
+async def show_delay_time_picker(order_id: str, user_id: int, vendor: str = None):
+    """Show time picker for delay request (called after vendor selection or directly for single vendor)"""
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            return
+        
+        confirmed_times = order.get("confirmed_times", {})
+        
+        # Get confirmed time for specific vendor or latest time
+        if vendor and vendor in confirmed_times:
+            latest_time_str = confirmed_times[vendor]
+        else:
+            latest_time_str = max(confirmed_times.values())
+        
+        # Get order number for display
+        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+        
+        # Get vendor shortcut for display
+        vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper()) if vendor else "vendors"
         
         try:
             # Parse the confirmed time
@@ -682,9 +728,16 @@ async def show_delay_options(order_id: str, user_id: int):
                 delayed_time = base_time + timedelta(minutes=minutes_to_add)
                 time_str = delayed_time.strftime("%H:%M")
                 button_text = f"{time_str} (+{minutes_to_add} mins)"
+                
+                # Include vendor in callback if specified
+                if vendor:
+                    callback = f"delay_selected|{order_id}|{time_str}|{vendor}"
+                else:
+                    callback = f"delay_selected|{order_id}|{time_str}"
+                
                 delay_buttons.append([InlineKeyboardButton(
                     button_text,
-                    callback_data=f"delay_selected|{order_id}|{time_str}"
+                    callback_data=callback
                 )])
             
             # Add Back button
@@ -692,7 +745,7 @@ async def show_delay_options(order_id: str, user_id: int):
             
             await safe_send_message(
                 user_id,
-                f"⏰ Select new delivery time (current: {latest_time_str}):",
+                f"⏳ Request new ({latest_time_str}) for 🔖 #{order_num} from {vendor_shortcut}",
                 InlineKeyboardMarkup(delay_buttons)
             )
             
@@ -704,7 +757,7 @@ async def show_delay_options(order_id: str, user_id: int):
             )
 
     except Exception as e:
-        logger.error(f"Error showing delay options: {e}")
+        logger.error(f"Error showing delay time picker: {e}")
 
 async def show_restaurant_selection(order_id: str, user_id: int):
     """Show restaurant selection for multi-vendor orders"""
@@ -814,19 +867,34 @@ async def handle_unassign_order(order_id: str, user_id: int):
     except Exception as e:
         logger.error(f"Error handling order unassignment: {e}")
 
-async def send_delay_request_to_restaurants(order_id: str, new_time: str, user_id: int):
-    """Send delay request to all vendors for this order"""
+async def send_delay_request_to_restaurants(order_id: str, new_time: str, user_id: int, vendor: str = None):
+    """
+    Send delay request to vendor(s) for this order.
+    
+    Args:
+        order_id: Order ID
+        new_time: New requested time (HH:MM)
+        user_id: Courier user ID for confirmation message
+        vendor: Specific vendor to send to (for multi-vendor), or None for all vendors (single vendor)
+    """
     try:
         order = STATE.get(order_id)
         if not order:
             return
         
-        vendors = order.get("vendors", [])
+        # Determine which vendors to notify
+        if vendor:
+            # Multi-vendor: send to specific vendor only
+            vendors_to_notify = [vendor]
+        else:
+            # Single vendor: send to all vendors
+            vendors_to_notify = order.get("vendors", [])
+        
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
         
         # Send delay request to each vendor
-        for vendor in vendors:
-            vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+        for v in vendors_to_notify:
+            vendor_chat = VENDOR_GROUP_MAP.get(v)
             if vendor_chat:
                 delay_msg = f"We have a delay, if possible prepare #{order_num} at {new_time}. If not, please keep it warm."
                 
@@ -837,14 +905,13 @@ async def send_delay_request_to_restaurants(order_id: str, new_time: str, user_i
                 await safe_send_message(
                     vendor_chat,
                     delay_msg,
-                    restaurant_response_keyboard(new_time, order_id, vendor)
+                    restaurant_response_keyboard(new_time, order_id, v)
                 )
                 
-                logger.info(f"Delay request sent to {vendor} for order {order_id} - new time {new_time}")
+                logger.info(f"Delay request sent to {v} for order {order_id} - new time {new_time}")
         
         # Confirm to user with updated format
-        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors])
+        vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
         await safe_send_message(
             user_id,
             f"📨 DELAY request ({new_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}"
