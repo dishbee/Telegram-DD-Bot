@@ -141,7 +141,8 @@ Format: 🔖 Order #{num}
 **UPC-ASSIGN** - Assignment message to courier
 ```
 Format: 👉 #{num} - dishbee
-        👩‍🍳 {Vendor}: {time} 🍕 {count}
+        👩‍🍳 {Vendor Shortcut}: {time} 🍕 {count}
+        🧑‍🍳 {Vendor Shortcut}: {time} 🍕 {count}
         👤 {Customer Name}
         🧭 {Address} ({zip})
         ❕ Tip: {amount}€ (if applicable)
@@ -150,6 +151,7 @@ Format: 👉 #{num} - dishbee
 
 Chef emojis rotate: 👩‍🍳👩🏻‍🍳👩🏼‍🍳👩🏾‍🍳🧑‍🍳🧑🏻‍🍳🧑🏼‍🍳🧑🏾‍🍳👨‍🍳👨🏻‍🍳👨🏼‍🍳👨🏾‍🍳
 
+NOTE: Vendor shortcuts used (JS, LR, DD, etc.) instead of full names
 NOTE: No delivery completion message sent to courier after BTN-DELIVERED clicked
 ```
 
@@ -330,6 +332,8 @@ BTN-DELIVERED   = ✅ Delivered (completes order)
                   ├─ Marks "delivered" → records timestamp
                   ├─ Sends ST-DELIVERED to MDG: "🔖 #{num} was delivered by {courier} at {HH:MM}"
                   └─ NOTE: No confirmation message sent to courier
+
+> 📝 Note: All buttons displayed vertically (one per row) for easy mobile access
 ```
 
 **Delay Time Picker:**
@@ -549,7 +553,6 @@ prepare_time        = Vendor selects prepare time
 wrong_delay         = Vendor reports delay
 wrong_unavailable   = Product not available
 wrong_canceled      = Order canceled
-wrong_technical     = Technical issue
 wrong_other         = Other issue (text input)
 delay_time          = Vendor selects delay time
 

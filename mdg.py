@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """MDG (Main Dispatching Group) helpers."""
 
 import logging

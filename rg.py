@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """RG (Restaurant Group) helpers."""
 
 import logging
@@ -136,11 +137,11 @@ def restaurant_response_keyboard(request_type: str, order_id: str, vendor: str) 
         else:
             rows.append([
                 InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}"),
-                InlineKeyboardButton("Later at", callback_data=f"later|{order_id}|{vendor}")
+                InlineKeyboardButton("⏰ Later at", callback_data=f"later|{order_id}|{vendor}")
             ])
 
         rows.append([
-            InlineKeyboardButton("Something is wrong", callback_data=f"wrong|{order_id}|{vendor}")
+            InlineKeyboardButton("⚠️ Issue", callback_data=f"wrong|{order_id}|{vendor}")
         ])
 
         return InlineKeyboardMarkup(rows)

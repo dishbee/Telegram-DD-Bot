@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # utils.py - Shared utilities, constants, and helpers for Telegram Dispatch Bot
 
 import os

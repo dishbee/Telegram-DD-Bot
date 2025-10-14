@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # upc.py - User Private Chat functions for Telegram Dispatch Bot
 
 import asyncio
@@ -332,6 +333,9 @@ def build_assignment_message(order: dict) -> str:
             pickup_time = confirmed_times.get(vendor, "ASAP")
             chef_emoji = chef_emojis[idx % len(chef_emojis)]
             
+            # Use vendor shortcut instead of full name
+            vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+            
             # Count products for this vendor
             items = vendor_items.get(vendor, [])
             product_count = 0
@@ -346,7 +350,7 @@ def build_assignment_message(order: dict) -> str:
                 else:
                     product_count += 1
             
-            restaurant_section += f"{chef_emoji} {vendor}: {pickup_time} 🍕 {product_count}\n"
+            restaurant_section += f"{chef_emoji} {vendor_shortcut}: {pickup_time} 🍕 {product_count}\n"
         
         # Customer info
         customer_name = order['customer']['name']
@@ -411,25 +415,22 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
         
         buttons.append([navigate])
 
-        # Row 2: Delay and Unassign (only show Unassign if not yet delivered)
-        row2 = []
+        # Row 2: Delay (single button per row)
         delay = InlineKeyboardButton(
             "⏰ Delay",
             callback_data=f"delay_order|{order_id}"
         )
-        row2.append(delay)
+        buttons.append([delay])
         
-        # Only show Unassign if order is not delivered yet
+        # Row 3: Unassign (only show if not yet delivered)
         if order.get("status") != "delivered":
             unassign = InlineKeyboardButton(
                 "🔓 Unassign",
                 callback_data=f"unassign_order|{order_id}"
             )
-            row2.append(unassign)
-        
-        buttons.append(row2)
+            buttons.append([unassign])
 
-        # Row 3: Call Restaurant(s)
+        # Row 4: Call Restaurant(s)
         if len(vendors) == 1:
             # Single vendor: Direct button with vendor shortcut
             vendor = vendors[0]
@@ -447,7 +448,7 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
             )
             buttons.append([call_btn])
 
-        # Row 4: Mark delivered
+        # Row 5: Mark delivered
         delivered = InlineKeyboardButton(
             "✅ Delivered",
             callback_data=f"confirm_delivered|{order_id}"

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Telegram Dispatch Bot — Complete Assignment Implementation
 # All features from requirements document implemented
 
@@ -711,11 +712,12 @@ def telegram_webhook():
                     # Send ASAP request only to specific vendor
                     vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                     if vendor_chat:
-                        if order["order_type"] == "shopify":
-                            msg = f"#{order['name'][-2:]} ASAP?"
+                        order_num = order['name'][-2:] if order["order_type"] == "shopify" else None
+                        if order_num:
+                            msg = f"Can you prepare 🔖 #{order_num} ASAP?"
                         else:
                             addr = order['customer']['address'].split(',')[0]
-                            msg = f"*{addr}* ASAP?"
+                            msg = f"Can you prepare *{addr}* ASAP?"
                         
                         # Send with restaurant response buttons
                         await safe_send_message(
@@ -907,11 +909,12 @@ def telegram_webhook():
                     for vendor in order["vendors"]:
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
-                            if order["order_type"] == "shopify":
-                                msg = f"#{order['name'][-2:]} ASAP?"
+                            order_num = order['name'][-2:] if order["order_type"] == "shopify" else None
+                            if order_num:
+                                msg = f"Can you prepare 🔖 #{order_num} ASAP?"
                             else:
                                 addr = order['customer']['address'].split(',')[0]
-                                msg = f"*{addr}* ASAP?"
+                                msg = f"Can you prepare *{addr}* ASAP?"
                             
                             # ASAP request buttons
                             await safe_send_message(
@@ -1757,13 +1760,12 @@ def telegram_webhook():
                 
                 elif action == "wrong":
                     order_id, vendor = data[1], data[2]
-                    # Show "Something is wrong" submenu
+                    # Show "⚠️ Issue" submenu
                     wrong_buttons = [
-                        [InlineKeyboardButton("Ordered product(s) not available", callback_data=f"wrong_unavailable|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("🍕 Product(s) N/A", callback_data=f"wrong_unavailable|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("⏳ We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("❌ Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("💬 Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
                         [InlineKeyboardButton("← Back", callback_data="hide")]
                     ]
                     
