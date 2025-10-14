@@ -432,18 +432,23 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
         # Row 4: Call Restaurant(s)
         if len(vendors) == 1:
-            # Single vendor: Direct button with vendor shortcut
+            # Single vendor: Direct button with vendor shortcut and chef emoji
             vendor = vendors[0]
             vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+            # Use chef emoji instead of shop emoji
+            chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
+            chef_emoji = chef_emojis[0]
             call_btn = InlineKeyboardButton(
-                f"🏪 Call {vendor_shortcut}",
+                f"{chef_emoji} Call {vendor_shortcut}",
                 callback_data=f"call_vendor|{order_id}|{vendor}"
             )
             buttons.append([call_btn])
         else:
-            # Multi-vendor: Show selection menu
+            # Multi-vendor: Show selection menu with chef emoji
+            chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
+            chef_emoji = chef_emojis[0]
             call_btn = InlineKeyboardButton(
-                "🏪 Call Restaurant",
+                f"{chef_emoji} Call Restaurant",
                 callback_data=f"call_vendor_menu|{order_id}"
             )
             buttons.append([call_btn])

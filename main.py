@@ -1793,8 +1793,9 @@ def telegram_webhook():
                     order = STATE.get(order_id)
                     order_num = order['name'][-2:] if order and len(order.get('name', '')) >= 2 else order.get('name', '') if order else order_id
                     
-                    # ST-CANCEL format from CHEAT-SHEET
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"{vendor}: Order 🔖 #{order_num} is canceled")
+                    # ST-CANCEL format from CHEAT-SHEET (auto-delete after 20s)
+                    msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"{vendor}: Order 🔖 #{order_num} is canceled")
+                    asyncio.create_task(_delete_after_delay(DISPATCH_MAIN_CHAT_ID, msg.message_id, 20))
                 
                 elif action in ["wrong_technical", "wrong_other"]:
                     order_id, vendor = data[1], data[2]

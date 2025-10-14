@@ -173,14 +173,21 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 logger.info(f"DEBUG Product Count - {vendor}: items={items}, total_qty={total_qty}")
                 vendor_counts.append(str(total_qty))
             
+            # Use rotating chef emojis for vendors
+            chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
+            chef_emoji = chef_emojis[0]  # Use first chef emoji for vendor line
+            
             if len(vendors) > 1:
-                vendor_line = f"� {'+'.join(shortcuts)} 🍕 {'+'.join(vendor_counts)}"
+                vendor_line = f"{chef_emoji} {'+'.join(shortcuts)} 🍕 {'+'.join(vendor_counts)}"
             else:
-                vendor_line = f"� {shortcuts[0]} 🍕 {vendor_counts[0]}"
+                vendor_line = f"{chef_emoji} {shortcuts[0]} 🍕 {vendor_counts[0]}"
         else:
-            vendor_line = f"� {vendors[0] if vendors else 'Unknown'}"
+            # Fallback for non-Shopify orders
+            chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
+            chef_emoji = chef_emojis[0]
+            vendor_line = f"{chef_emoji} {vendors[0] if vendors else 'Unknown'}"
 
-        customer_line = f"🧑 {order['customer']['name']}"
+        customer_line = f"👤 {order['customer']['name']}"
 
         full_address = order['customer']['address']
         original_address = order['customer'].get('original_address', full_address)

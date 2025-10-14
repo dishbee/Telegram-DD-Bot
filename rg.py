@@ -91,7 +91,7 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
             formatted_address = address.strip()
 
         details = f"{summary}\n\n"
-        details += f"🧑 {customer_name}\n"
+        details += f"👤 {customer_name}\n"
         details += f"🗺️ {formatted_address}\n"
         details += f"📞 {phone}\n"
         details += f"⏰ Ordered at: {order_time}"
