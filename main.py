@@ -25,12 +25,20 @@ import logging
 import threading
 import requests  # Add this for synchronous HTTP calls
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Dict, Any, List, Optional
 from flask import Flask, request, jsonify
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
 from telegram.request import HTTPXRequest
 from telegram.error import TelegramError, TimedOut, NetworkError
+
+# Timezone configuration for Passau, Germany (Europe/Berlin)
+TIMEZONE = ZoneInfo("Europe/Berlin")
+
+def now() -> datetime:
+    """Get current time in Passau timezone (Europe/Berlin)."""
+    return datetime.now(TIMEZONE)
 
 from mdg import (
     configure as configure_mdg,
@@ -224,14 +232,14 @@ def create_or_join_group(order_id: str, ref_order_id: str) -> None:
         NEXT_GROUP_COLOR_INDEX = (NEXT_GROUP_COLOR_INDEX + 1) % len(GROUP_COLORS)
         
         # Generate unique group ID
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now().strftime("%Y%m%d_%H%M%S")
         group_id = f"group_{color}_{timestamp}"
         
         # Create group
         GROUPS[group_id] = {
             "color": color,
             "order_ids": [ref_order_id, order_id],
-            "created_at": datetime.now()
+            "created_at": now()
         }
         
         # Update reference order
@@ -529,7 +537,7 @@ def health_check():
         "status": "healthy",
         "service": "telegram-dispatch-bot",
         "orders_in_state": len(STATE),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": now().isoformat()
     }), 200
 
 # --- TELEGRAM WEBHOOK ---
@@ -580,7 +588,7 @@ def telegram_webhook():
         # Log all incoming updates for spam detection
         logger.info(f"=== INCOMING UPDATE ===")
         logger.info(f"Update ID: {upd.get('update_id')}")
-        logger.info(f"Timestamp: {datetime.now().isoformat()}")
+        logger.info(f"Timestamp: {now().isoformat()}")
 
         # Check for regular messages (potential spam source)
         if "message" in upd:
@@ -981,7 +989,7 @@ def telegram_webhook():
                         return
                     
                     # Calculate new time
-                    current_time = datetime.now()
+                    current_time = now()
                     new_time = current_time + timedelta(minutes=minutes)
                     requested_time = new_time.strftime("%H:%M")
                     
@@ -1788,11 +1796,11 @@ def telegram_webhook():
                         if agreed_time and agreed_time != "ASAP":
                             try:
                                 hour, minute = map(int, agreed_time.split(':'))
-                                base_time = datetime.now().replace(hour=hour, minute=minute)
+                                base_time = now().replace(hour=hour, minute=minute)
                             except:
-                                base_time = datetime.now()
+                                base_time = now()
                         else:
-                            base_time = datetime.now()
+                            base_time = now()
                         
                         delay_intervals = []
                         for minutes in [5, 10, 15, 20]:
@@ -2258,7 +2266,7 @@ def shopify_webhook():
             "total": total_price,
             "delivery_time": "ASAP",
             "is_pickup": is_pickup,
-            "created_at": datetime.now(),
+            "created_at": now(),
             "vendor_messages": {},
             "vendor_expanded": {},
             "requested_time": None,
@@ -2322,7 +2330,7 @@ def shopify_webhook():
                 # Keep only recent orders
                 RECENT_ORDERS.append({
                     "order_id": order_id,
-                    "created_at": datetime.now(),
+                    "created_at": now(),
                     "vendors": vendors
                 })
                 

@@ -2,8 +2,16 @@
 
 import asyncio
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from utils import logger, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, RESTAURANT_SHORTCUTS, safe_send_message, safe_edit_message, safe_delete_message
+
+# Timezone configuration for Passau, Germany (Europe/Berlin)
+TIMEZONE = ZoneInfo("Europe/Berlin")
+
+def now() -> datetime:
+    """Get current time in Passau timezone (Europe/Berlin)."""
+    return datetime.now(TIMEZONE)
 
 # =============================================================================
 # ORDER ASSIGNMENT SYSTEM - UPC (User Private Chats)
@@ -210,7 +218,7 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int):
 
         # Update order status
         order["assigned_to"] = user_id
-        order["assigned_at"] = datetime.now()
+        order["assigned_at"] = now()
         order["status"] = "assigned"
         order["upc_assignment_message_id"] = msg.message_id  # Track for group updates
 
@@ -502,7 +510,7 @@ async def handle_delivery_completion(order_id: str, user_id: int):
 
         # Update order status
         order["status"] = "delivered"
-        order["delivered_at"] = datetime.now()
+        order["delivered_at"] = now()
         order["delivered_by"] = user_id
 
         # Send confirmation to MDG: "Order #47 was delivered."
@@ -634,7 +642,7 @@ async def show_delay_options(order_id: str, user_id: int):
         try:
             # Parse the confirmed time
             hour, minute = map(int, latest_time_str.split(':'))
-            base_time = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+            base_time = now().replace(hour=hour, minute=minute, second=0, microsecond=0)
             
             # Calculate delay options: +5, +10, +15, +20 minutes
             delay_buttons = []

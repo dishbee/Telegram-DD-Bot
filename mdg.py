@@ -3,12 +3,20 @@
 import logging
 import re
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from utils import get_district_from_address
 
 logger = logging.getLogger(__name__)
+
+# Timezone configuration for Passau, Germany (Europe/Berlin)
+TIMEZONE = ZoneInfo("Europe/Berlin")
+
+def now() -> datetime:
+    """Get current time in Passau timezone (Europe/Berlin)."""
+    return datetime.now(TIMEZONE)
 
 STATE: Dict[str, Dict[str, Any]] = {}
 RESTAURANT_SHORTCUTS: Dict[str, str] = {}
@@ -31,7 +39,7 @@ def shortcut_to_vendor(shortcut: str) -> Optional[str]:
 
 def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
     """Get recent CONFIRMED orders (last 5 hours) for 'same time as' functionality."""
-    one_hour_ago = datetime.now() - timedelta(hours=5)
+    one_hour_ago = now() - timedelta(hours=5)
     recent: List[Dict[str, str]] = []
 
     for order_id, order_data in STATE.items():
@@ -59,7 +67,7 @@ def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str
 
 def get_last_confirmed_order(vendor: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Get the most recent order with confirmed time from today."""
-    today = datetime.now().date()
+    today = now().date()
     confirmed_orders: List[Dict[str, Any]] = []
 
     for order_data in STATE.values():
@@ -92,7 +100,7 @@ def build_smart_time_suggestions(order_id: str, vendor: Optional[str] = None) ->
 
     try:
         hour, minute = map(int, last_time_str.split(':'))
-        base_time = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+        base_time = now().replace(hour=hour, minute=minute, second=0, microsecond=0)
 
         buttons: List[List[InlineKeyboardButton]] = []
         for i, minutes_to_add in enumerate([5, 10, 15, 20]):
@@ -292,10 +300,10 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
         order = STATE.get(order_id)
         if not order:
             return InlineKeyboardMarkup([
-                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(datetime.now().timestamp())}")],
+                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}")],
                 [
-                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(datetime.now().timestamp())}"),
-                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(datetime.now().timestamp())}")
+                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
+                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
                 ]
             ])
 
@@ -305,7 +313,7 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
         is_expanded = order.get("mdg_expanded", False)
         toggle_button = InlineKeyboardButton(
             "◂ Hide" if is_expanded else "Details ▸",
-            callback_data=f"mdg_toggle|{order_id}|{int(datetime.now().timestamp())}"
+            callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}"
         )
 
         buttons = [[toggle_button]]
@@ -316,13 +324,13 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
                 shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
                 buttons.append([InlineKeyboardButton(
                     f"Request {shortcut}",
-                    callback_data=f"req_vendor|{order_id}|{vendor}|{int(datetime.now().timestamp())}"
+                    callback_data=f"req_vendor|{order_id}|{vendor}|{int(now().timestamp())}"
                 )])
         else:
             # Single vendor: show ASAP/TIME buttons
             buttons.append([
-                InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(datetime.now().timestamp())}"),
-                InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(datetime.now().timestamp())}")
+                InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
+                InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
             ])
 
         return InlineKeyboardMarkup(buttons)
@@ -333,40 +341,49 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
 
 def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
-    """Build MDG time request buttons per assignment requirements."""
+    """Build MDG time request buttons per assignment requirements. Includes Details button."""
     try:
         order = STATE.get(order_id)
         if not order:
             return InlineKeyboardMarkup([
+                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}")],
                 [
-                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(datetime.now().timestamp())}"),
-                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(datetime.now().timestamp())}")
+                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
+                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
                 ]
             ])
 
         vendors = order.get("vendors", [])
+        order.setdefault("mdg_expanded", False)  # Track expansion state
+        
+        is_expanded = order.get("mdg_expanded", False)
+        toggle_button = InlineKeyboardButton(
+            "◂ Hide" if is_expanded else "Details ▸",
+            callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}"
+        )
+        
+        buttons = [[toggle_button]]
+        
         logger.info("Order %s has vendors: %s (count: %s)", order_id, vendors, len(vendors))
 
         if len(vendors) > 1:
             logger.info("MULTI-VENDOR detected: %s", vendors)
-            buttons = []
             for vendor in vendors:
                 shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
                 logger.info("Adding button for vendor: %s (shortcut: %s)", vendor, shortcut)
                 buttons.append([InlineKeyboardButton(
                     f"Request {shortcut}",
-                    callback_data=f"req_vendor|{order_id}|{vendor}|{int(datetime.now().timestamp())}"
+                    callback_data=f"req_vendor|{order_id}|{vendor}|{int(now().timestamp())}"
                 )])
             logger.info("Sending restaurant selection with %s buttons", len(buttons))
             return InlineKeyboardMarkup(buttons)
 
         logger.info("SINGLE VENDOR detected: %s", vendors)
-        return InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(datetime.now().timestamp())}"),
-                InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(datetime.now().timestamp())}")
-            ]
+        buttons.append([
+            InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
+            InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
         ])
+        return InlineKeyboardMarkup(buttons)
 
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building time request keyboard: %s", exc)
@@ -381,7 +398,7 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
             return InlineKeyboardMarkup([])
 
         # Get all confirmed orders (not delivered) from last 5 hours
-        one_hour_ago = datetime.now() - timedelta(hours=5)
+        one_hour_ago = now() - timedelta(hours=5)
         recent_orders: List[Dict[str, Any]] = []
         
         logger.info(f"BTN-TIME: Searching for recent orders (current order: {order_id}, vendor: {vendor})")
@@ -478,7 +495,7 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
         
         # Calculate +5, +10, +15, +20 times from reference time
         ref_hour, ref_min = map(int, ref_time.split(':'))
-        ref_datetime = datetime.now().replace(hour=ref_hour, minute=ref_min, second=0, microsecond=0)
+        ref_datetime = now().replace(hour=ref_hour, minute=ref_min, second=0, microsecond=0)
         
         buttons: List[List[InlineKeyboardButton]] = []
         
@@ -546,7 +563,7 @@ def group_time_adjustment_keyboard(current_order_id: str, ref_order_id: str, ref
     try:
         # Parse reference time
         ref_hour, ref_min = map(int, ref_time.split(':'))
-        ref_datetime = datetime.now().replace(hour=ref_hour, minute=ref_min, second=0, microsecond=0)
+        ref_datetime = now().replace(hour=ref_hour, minute=ref_min, second=0, microsecond=0)
         
         buttons: List[List[InlineKeyboardButton]] = []
         
@@ -616,11 +633,11 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
         vendor: Full vendor name - will be converted to shortcut for callback data
     """
     try:
-        current_time = datetime.now()
+        current_time = now()
         if requested_time:
             try:
                 req_hour, req_min = map(int, requested_time.split(':'))
-                base_time = datetime.now().replace(hour=req_hour, minute=req_min)
+                base_time = now().replace(hour=req_hour, minute=req_min)
             except Exception:  # pragma: no cover - defensive
                 base_time = current_time
         else:
@@ -678,7 +695,7 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
 def exact_time_keyboard(order_id: str, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
     """Build exact time picker - shows hours."""
     try:
-        current_hour = datetime.now().hour
+        current_hour = now().hour
         rows: List[List[InlineKeyboardButton]] = []
         hours: List[str] = [f"{hour:02d}:XX" for hour in range(current_hour, 24)]
 
@@ -708,7 +725,7 @@ def exact_time_keyboard(order_id: str, vendor: Optional[str] = None) -> InlineKe
 def exact_hour_keyboard(order_id: str, hour: int, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
     """Build minute picker for exact time - 3 minute intervals."""
     try:
-        current_time = datetime.now()
+        current_time = now()
         rows: List[List[InlineKeyboardButton]] = []
         minutes_options: List[str] = []
 
