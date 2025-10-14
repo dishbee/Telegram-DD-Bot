@@ -377,7 +377,7 @@ def build_assignment_message(order: dict) -> str:
         
         tips = order.get("tips", 0.0)
         if tips and float(tips) > 0:
-            optional_section += f"\n❕ Tip: {float(tips):.2f}€\n"
+            optional_section += f"❕ Tip: {float(tips):.2f}€\n"
         
         payment = order.get("payment_method", "Paid")
         total = order.get("total", "0.00€")
@@ -417,7 +417,7 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
         # Row 2: Delay (single button per row)
         delay = InlineKeyboardButton(
-            "⏰ Delay",
+            "⏳ Delay",
             callback_data=f"delay_order|{order_id}"
         )
         buttons.append([delay])
@@ -425,31 +425,19 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
         # Row 3: Unassign (only show if not yet delivered)
         if order.get("status") != "delivered":
             unassign = InlineKeyboardButton(
-                "🔓 Unassign",
+                "� Unassign",
                 callback_data=f"unassign_order|{order_id}"
             )
             buttons.append([unassign])
 
-        # Row 4: Call Restaurant(s)
-        if len(vendors) == 1:
-            # Single vendor: Direct button with vendor shortcut and chef emoji
-            vendor = vendors[0]
+        # Row 4: Call Restaurant(s) - separate button for each vendor
+        chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
+        for idx, vendor in enumerate(vendors):
             vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-            # Use chef emoji instead of shop emoji
-            chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
-            chef_emoji = chef_emojis[0]
+            chef_emoji = chef_emojis[idx % len(chef_emojis)]
             call_btn = InlineKeyboardButton(
                 f"{chef_emoji} Call {vendor_shortcut}",
                 callback_data=f"call_vendor|{order_id}|{vendor}"
-            )
-            buttons.append([call_btn])
-        else:
-            # Multi-vendor: Show selection menu with chef emoji
-            chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
-            chef_emoji = chef_emojis[0]
-            call_btn = InlineKeyboardButton(
-                f"{chef_emoji} Call Restaurant",
-                callback_data=f"call_vendor_menu|{order_id}"
             )
             buttons.append([call_btn])
 
