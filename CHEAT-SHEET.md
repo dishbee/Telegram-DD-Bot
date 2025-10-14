@@ -124,6 +124,11 @@ Format: 🔖 Order #{num}
 "Can you prepare {order} together with {ref_order} at {time}?" (from BTN-SAME)
 ```
 
+**RG-UNAVAIL** - Product unavailable (sent to RG, not MDG)
+```
+"Please call customer and ask him which product he wants instead. If he wants a refund - please write dishbee into this group."
+```
+
 **RG-DELAY-REQ** - Delay request from courier
 ```
 "We have a delay, if possible prepare #{num} at {time}. If not, please keep it warm."
@@ -144,11 +149,8 @@ Format: 👉 #{num} - dishbee
         ☎️ {phone}
 
 Chef emojis rotate: 👩‍🍳👩🏻‍🍳👩🏼‍🍳👩🏾‍🍳🧑‍🍳🧑🏻‍🍳🧑🏼‍🍳🧑🏾‍🍳👨‍🍳👨🏻‍🍳👨🏼‍🍳👨🏾‍🍳
-```
 
-**UPC-DELIVERED** - Order completed
-```
-"✅ **Delivery completed!** Thank you..."
+NOTE: No delivery completion message sent to courier after BTN-DELIVERED clicked
 ```
 
 ---
@@ -198,49 +200,109 @@ BTN-BACK        = ← Back (closes selection)
 
 ### 🏪 RG Buttons (Restaurant responses)
 
-**Toggle Details:**
+**On RG-SUM/RG-DET message:**
 ```
-BTN-TOGGLE      = Details ▸ / ◂ Hide (on RG-SUM/RG-DET)
+BTN-TOGGLE      = Details ▸ (expand) / ◂ Hide (collapse)
+                  └─ Toggles between summary and detailed view
+                  └─ Updates vendor_expanded state
 ```
 
-**On TIME Request:**
+**On TIME Request (from MDG dispatcher):**
 ```
 BTN-WORKS       = Works 👍
-BTN-LATER       = Later at... (time picker)
-                  └─ Shows: "09:52 (5 mins)", "09:57 (10 mins)", +10/+15/+20
+                  └─ Confirms requested time works
+                  └─ Updates confirmed_times in STATE
+                  └─ Sends ST-WORKS to MDG (auto-delete 20s)
+                  └─ Triggers assignment buttons if all vendors confirmed
+
+BTN-LATER       = ⏰ Later at...
+                  └─ Opens time picker (+5/+10/+15/+20 from requested time)
                   └─ Plus: EXACT TIME ⏰ button
                   └─ Plus: ← Back button
-BTN-WRONG       = Something is wrong (submenu → select issue → reports to MDG)
+                  └─ On selection: Updates confirmed_times, sends ST-LATER
+
+BTN-WRONG       = ⚠️ Issue
+                  └─ Opens issue type submenu with 5 options:
+                  └─ BTN-UNAVAIL (🍕 Product(s) N/A)
+                  └─ BTN-DELAY (⏳ We have a delay)
+                  └─ BTN-CANCEL (❌ Order is canceled)
+                  └─ BTN-OTHER (💬 Something else)
+                  └─ BTN-BACK (← Back)
+                  └─ See BTN-WRONG Submenu section below for details
 ```
 
-**On ASAP Request:**
+**On ASAP Request (from MDG dispatcher):**
 ```
-BTN-PREP        = Will prepare at... (time picker)
-                  └─ Shows: "09:52 (5 mins)", "09:57 (10 mins)", +10/+15/+20
+BTN-PREP        = Will prepare at...
+                  └─ Opens time picker (+5/+10/+15/+20 from now)
                   └─ Plus: EXACT TIME ⏰ button
                   └─ Plus: ← Back button
-BTN-WRONG       = Something is wrong
+                  └─ On selection: Updates confirmed_times, sends ST-PREP
+
+BTN-WRONG       = ⚠️ Issue
+                  └─ Opens issue type submenu (same as TIME request)
+                  └─ See BTN-WRONG Submenu section below for details
+```
+
+**Time Picker (from BTN-LATER or BTN-PREP):**
+```
+BTN-TIME-OPTS   = +5 / +10 / +15 / +20 minute buttons
+                  └─ Quick selection relative to requested/current time
+                  └─ On click: Confirms time, updates STATE, notifies MDG
+
+BTN-EXACT-TIME  = EXACT TIME ⏰
+                  └─ Opens hour selection picker
+                  └─ See Exact Time Flow below
+
+BTN-BACK        = ← Back
+                  └─ Returns to main response buttons
 ```
 
 **Exact Time Flow:**
 ```
-BTN-HOUR        = Hour selection (12:XX, 13:XX, 14:XX...)
-                  └─ Has "← Back" button
-                  └─ BTN-MINUTE = Minute selection (00, 03, 06... 3-min intervals)
-                     └─ BTN-BACK = ◂ Back to hours
+BTN-EXACT-TIME  = EXACT TIME ⏰ (from time picker)
+                  └─ Opens hour picker: 12:XX, 13:XX, 14:XX... (current hour to 23:XX)
+                  └─ Has ← Back button (returns to +5/+10/+15/+20 picker)
+
+BTN-HOUR        = Hour selection (e.g., "14:XX")
+                  └─ Opens minute picker for selected hour
+                  └─ Minutes: 00, 03, 06, 09... (3-minute intervals)
+                  └─ Has ◂ Back button (returns to hour selection)
+
+BTN-MINUTE      = Minute selection (e.g., "14:35")
+                  └─ Confirms exact time
+                  └─ Updates confirmed_times in STATE
+                  └─ Sends status to MDG (ST-LATER or ST-PREP)
+                  └─ Deletes picker message
 ```
 
 **BTN-WRONG Submenu:**
 ```
-BTN-UNAVAIL     = Product not available
-BTN-CANCEL      = Order is canceled
-BTN-TECH        = Technical issue
-BTN-OTHER       = Something else (text input)
-BTN-DELAY       = We have a delay (picker → updates time → notifies MDG & courier)
-BTN-BACK        = ← Back (closes submenu)
+BTN-WRONG       = ⚠️ Issue (main button)
+                  └─ Opens issue type submenu with options:
+
+    BTN-UNAVAIL     = 🍕 Product(s) N/A
+                      └─ Sends message to RG (vendor's group):
+                      └─ "Please call customer and ask him which product he wants instead.
+                          If he wants a refund - please write dishbee into this group."
+
+    BTN-DELAY       = ⏳ We have a delay
+                      └─ Opens delay time picker (+5/+10/+15/+20)
+                      └─ On selection: Sends ST-DELAY to MDG and courier
+                      └─ Updates confirmed_times with new delayed time
+
+    BTN-CANCEL      = ❌ Order is canceled
+                      └─ Sends ST-CANCEL to MDG: "Order is canceled"
+
+    BTN-OTHER       = 💬 Something else
+                      └─ Prompts vendor for text input
+                      └─ Sends ST-WRITE to MDG with vendor's message
+
+    BTN-BACK        = ← Back
+                      └─ Closes submenu, returns to main response buttons
 ```
 
-> 📝 Note: All RG temporary menus have "← Back" button
+> 📝 Note: All RG temporary menus (time pickers, issue submenu) have "← Back" button
 
 ---
 
@@ -254,23 +316,33 @@ BTN-DELAY-ORD   = ⏰ Delay (triggers delay workflow)
                   └─ Sends to vendors: "We have a delay..."
                   └─ Confirms to courier: "✅ Delay request sent..."
                   └─ Vendors respond with BTN-WORKS or BTN-LATER
+BTN-UNASSIGN    = 🔓 Unassign (only before delivery)
+                  └─ Removes assignment from courier
+                  └─ Deletes UPC message
+                  └─ Updates MDG order message (removes "Assigned to:" line)
+                  └─ Re-shows MDG-CONF with assignment buttons
+                  └─ Sends notification to MDG
+BTN-CALL-VEND   = 🏪 Call {Shortcut} (single vendor: direct button)
+                  └─ Shows vendor shortcut (JS, LR, DD, etc.)
+                  └─ Multi-vendor: opens restaurant selection menu
+                  └─ Placeholder for Telegram calling integration
 BTN-DELIVERED   = ✅ Delivered (completes order)
-                  └─ Marks "delivered" → records timestamp
-                  └─ Sends confirmation to courier & updates MDG
-BTN-CALL-REST   = 🍽 Call {Vendor} (multi-vendor: shows restaurant menu)
+                  ├─ Marks "delivered" → records timestamp
+                  ├─ Sends ST-DELIVERED to MDG: "🔖 #{num} was delivered by {courier} at {HH:MM}"
+                  └─ NOTE: No confirmation message sent to courier
 ```
 
 **Delay Time Picker:**
 ```
 BTN-DELAY-SEL   = Time buttons with +X labels
-                  └─ Format: "HH:MM (+X mins)" e.g., "14:35 (+5 mins)"
-                  └─ On click: Sends delay request to all vendors
+                  ├─ Format: "HH:MM (+X mins)" e.g., "14:35 (+5 mins)"
+                  └─ On click: Sends ST-UPC-DELAY to MDG: "📨 DELAY request ({time}) for 🔖 #{num} sent to {Shortcut}"
 BTN-BACK        = ← Back (closes delay menu)
 ```
 
 **Restaurant Call Menu (multi-vendor):**
 ```
-BTN-CALL-REST   = 🍽 Call {Vendor} (opens phone dialer)
+BTN-CALL-VEND   = � Call {Shortcut} (opens phone dialer)
 BTN-BACK        = ← Back (closes menu)
 ```
 
@@ -288,23 +360,26 @@ ST-PREP       = {Vendor} replied: Will prepare 🔖 #{num} at {time} 👍
 ST-LATER      = {Vendor} replied: Will prepare 🔖 #{num} later at {time} 👍
 ST-DELAY      = {Vendor}: We have a delay for 🔖 #{num} - new time {time}
 ST-CANCEL     = {Vendor}: Order 🔖 #{num} is canceled
-ST-CALL       = {Vendor}: Please call customer for 🔖 #{num} (replacement/refund)
 ST-WRITE      = {Vendor}: Issue with 🔖 #{num}: "{vendor's message}"
 ```
 
+> 📝 Note: ST-CALL removed - BTN-UNAVAIL now sends message directly to RG group instead of MDG
+
 ### From MDG (Dispatcher actions)
 ```
-ST-DELIVERED  = Order #{num} was delivered.
-ST-ASAP-SENT  = ✅ ASAP request sent to {vendor}
-ST-TIME-SENT  = ✅ Time request ({time}) sent to {vendor}
+ST-DELIVERED  = 🔖 #{num} was delivered by {courier} at {HH:MM}
+ST-UNASSIGNED = 🔖 #{num} was unassigned by {courier}.
+ST-ASAP-SENT  = 📨 ASAP request for 🔖 #{num} sent to {Shortcut}
+ST-TIME-SENT  = 📨 TIME request ({time}) for 🔖 #{num} sent to {Shortcut}
 ```
 
 ### From UPC (Courier confirmations)
 ```
-ST-UPC-DONE   = ✅ **Delivery completed!** Thank you...
-ST-UPC-DELAY  = ✅ Delay request sent to restaurant(s) for {time}
-ST-UPC-ERR    = ⚠️ Error sending delay request
+ST-UPC-DELAY  = 📨 DELAY request ({time}) for 🔖 #{num} sent to {Shortcut}
+ST-UPC-ERR    = ⚠️ {Custom error description from get_error_description()}
 ```
+
+> 📝 Note: No delivery completion message sent to courier (ST-UPC-DONE removed)
 
 ---
 
@@ -488,8 +563,10 @@ vendor_exact_back   = Back to hour picker
 ```
 delay_order         = Show delay time picker
 delay_selected      = Courier selects delay time
+unassign_order      = Unassign order from courier (only before delivery)
+call_vendor         = Call specific vendor (single vendor direct, or after menu selection)
+call_vendor_menu    = Show vendor selection menu for calling
 confirm_delivered   = Mark order as delivered
-call_restaurant     = Show restaurant selection (multi-vendor)
 navigate            = Open Google Maps
 ```
 

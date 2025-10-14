@@ -725,9 +725,11 @@ def telegram_webhook():
                         )
                     
                     # Update MDG status
+                    vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"✅ ASAP request sent to {vendor}",
+                        f"📨 ASAP request for 🔖 #{order_num} sent to {vendor_shortcut}",
                         auto_delete_after=20
                     )
                     
@@ -854,9 +856,11 @@ def telegram_webhook():
                     
                     # Update state and MDG
                     order["requested_time"] = selected_time
+                    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                    vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper()) if vendor != 'all' else 'vendors'
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"✅ Time request ({selected_time}) sent to {vendor if vendor != 'all' else 'vendors'}",
+                        f"📨 TIME request ({selected_time}) for 🔖 #{order_num} sent to {vendor_shortcut}",
                         auto_delete_after=20
                     )
                     
@@ -1162,10 +1166,11 @@ def telegram_webhook():
                     await cleanup_mdg_messages(order_id)
                     
                     # Send confirmation to MDG
-                    vendor_names = ", ".join([RESTAURANT_SHORTCUTS.get(v, v) for v in vendors_to_notify])
+                    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                    vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"✅ Time request ({ref_time}) sent to {vendor_names}",
+                        f"📨 TIME request ({ref_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
                         auto_delete_after=20
                     )
                     
@@ -1259,10 +1264,11 @@ def telegram_webhook():
                     await cleanup_mdg_messages(order_id)
                     
                     # Send confirmation to MDG
-                    vendor_names = ", ".join([RESTAURANT_SHORTCUTS.get(v, v) for v in vendors_to_notify])
+                    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                    vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"✅ Time request ({adjusted_time}) sent to {vendor_names}",
+                        f"📨 TIME request ({adjusted_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
                         auto_delete_after=20
                     )
                     
@@ -1327,10 +1333,11 @@ def telegram_webhook():
                     await cleanup_mdg_messages(order_id)
                     
                     # Send confirmation to MDG
-                    vendor_names = ", ".join([RESTAURANT_SHORTCUTS.get(v, v) for v in vendors_to_notify])
+                    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                    vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"✅ Time request ({requested_time}) sent to {vendor_names}",
+                        f"📨 TIME request ({requested_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
                         auto_delete_after=20
                     )
                 
@@ -1771,9 +1778,9 @@ def telegram_webhook():
                     order = STATE.get(order_id)
                     order_num = order['name'][-2:] if order and len(order.get('name', '')) >= 2 else order.get('name', '') if order else order_id
                     
-                    # ST-CALL format from CHEAT-SHEET
-                    msg = f"{vendor}: Please call customer for 🔖 #{order_num} (replacement/refund)"
-                    await safe_send_message(DISPATCH_MAIN_CHAT_ID, msg)
+                    # Send message to RESTAURANT GROUP (not MDG)
+                    msg = f"Please call customer and ask him which product he wants instead. If he wants a refund - please write dishbee into this group."
+                    await safe_send_message(VENDOR_GROUP_MAP[vendor], msg)
                 
                 elif action == "wrong_canceled":
                     order_id, vendor = data[1], data[2]
@@ -2100,6 +2107,46 @@ def telegram_webhook():
                     logger.info(f"User {user_id} selecting restaurant to call for order {order_id}")
                     
                     await upc.show_restaurant_selection(order_id, user_id)
+                
+                elif action == "call_vendor":
+                    """
+                    Courier initiates call to specific vendor.
+                    Single vendor orders use this directly, multi-vendor after selection.
+                    """
+                    order_id, vendor = data[1], data[2]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} calling vendor {vendor} for order {order_id}")
+                    
+                    await upc.initiate_restaurant_call(order_id, vendor, user_id)
+                
+                elif action == "call_vendor_menu":
+                    """
+                    Show vendor selection menu for multi-vendor call action.
+                    """
+                    order_id = data[1]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} opening call vendor menu for order {order_id}")
+                    
+                    await upc.show_restaurant_selection(order_id, user_id)
+                
+                elif action == "unassign_order":
+                    """
+                    Courier unassigns themselves from order.
+                    
+                    Flow:
+                    1. Courier clicks "Unassign" in their private chat
+                    2. UPC assignment message deleted
+                    3. Order state reverted to ready-for-assignment
+                    4. MDG updated with assignment buttons restored
+                    5. Notification sent to MDG about unassignment
+                    
+                    Only available before delivery is marked.
+                    """
+                    order_id = data[1]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} unassigning order {order_id}")
+                    
+                    await upc.handle_unassign_order(order_id, user_id)
                 
                 elif action == "confirm_delivered":
                     """

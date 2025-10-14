@@ -550,3 +550,63 @@ async def cleanup_mdg_messages(order_id: str):
 
     # Clear the list after cleanup
     order["mdg_additional_messages"] = []
+
+
+def get_error_description(error: Exception) -> str:
+    """
+    Get a human-readable short error description based on exception type.
+    
+    Converts technical Telegram API errors into user-friendly messages.
+    Used for universal error handling across all message sending operations.
+    
+    Args:
+        error: The exception that was raised
+        
+    Returns:
+        Short error description string for display to user
+        
+    Examples:
+        TimedOut → "Network timeout"
+        NetworkError → "Network connection lost"
+        RetryAfter → "Rate limit exceeded"
+    """
+    from telegram.error import TimedOut, NetworkError, RetryAfter, Forbidden, BadRequest, ChatMigrated
+    
+    error_name = type(error).__name__
+    
+    # Telegram-specific errors
+    if isinstance(error, TimedOut):
+        return "Network timeout"
+    elif isinstance(error, NetworkError):
+        return "Network connection lost"
+    elif isinstance(error, RetryAfter):
+        return f"Rate limit exceeded (retry in {error.retry_after}s)"
+    elif isinstance(error, Forbidden):
+        return "Bot blocked by user or insufficient permissions"
+    elif isinstance(error, BadRequest):
+        error_msg = str(error).lower()
+        if "chat not found" in error_msg:
+            return "Chat not found"
+        elif "user not found" in error_msg:
+            return "User not found"
+        elif "message is too long" in error_msg:
+            return "Message too long"
+        elif "message can't be deleted" in error_msg:
+            return "Message already deleted"
+        elif "message to edit not found" in error_msg:
+            return "Message not found"
+        else:
+            return f"Invalid request ({error_msg[:50]})"
+    elif isinstance(error, ChatMigrated):
+        return "Chat was migrated to supergroup"
+    
+    # Generic errors
+    elif isinstance(error, ConnectionError):
+        return "Connection error"
+    elif isinstance(error, TimeoutError):
+        return "Request timeout"
+    elif isinstance(error, ValueError):
+        return f"Invalid value ({str(error)[:30]})"
+    
+    # Fallback to exception name
+    return f"{error_name}: {str(error)[:50]}"

@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-from utils import logger, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, RESTAURANT_SHORTCUTS, safe_send_message, safe_edit_message, safe_delete_message
+from utils import logger, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, RESTAURANT_SHORTCUTS, safe_send_message, safe_edit_message, safe_delete_message, get_error_description
 
 # Timezone configuration for Passau, Germany (Europe/Berlin)
 TIMEZONE = ZoneInfo("Europe/Berlin")
@@ -402,6 +402,7 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
         buttons = []
         address = order['customer'].get('original_address', order['customer']['address'])
+        vendors = order.get("vendors", [])
 
         # Row 1: Navigate (single button - phone numbers are in message text)
         # Google Maps navigation with cycling mode
@@ -410,14 +411,43 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
         
         buttons.append([navigate])
 
-        # Row 2: Delay order
+        # Row 2: Delay and Unassign (only show Unassign if not yet delivered)
+        row2 = []
         delay = InlineKeyboardButton(
             "⏰ Delay",
             callback_data=f"delay_order|{order_id}"
         )
-        buttons.append([delay])
+        row2.append(delay)
+        
+        # Only show Unassign if order is not delivered yet
+        if order.get("status") != "delivered":
+            unassign = InlineKeyboardButton(
+                "🔓 Unassign",
+                callback_data=f"unassign_order|{order_id}"
+            )
+            row2.append(unassign)
+        
+        buttons.append(row2)
 
-        # Row 3: Mark delivered
+        # Row 3: Call Restaurant(s)
+        if len(vendors) == 1:
+            # Single vendor: Direct button with vendor shortcut
+            vendor = vendors[0]
+            vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+            call_btn = InlineKeyboardButton(
+                f"🏪 Call {vendor_shortcut}",
+                callback_data=f"call_vendor|{order_id}|{vendor}"
+            )
+            buttons.append([call_btn])
+        else:
+            # Multi-vendor: Show selection menu
+            call_btn = InlineKeyboardButton(
+                "🏪 Call Restaurant",
+                callback_data=f"call_vendor_menu|{order_id}"
+            )
+            buttons.append([call_btn])
+
+        # Row 4: Mark delivered
         delivered = InlineKeyboardButton(
             "✅ Delivered",
             callback_data=f"confirm_delivered|{order_id}"
@@ -518,9 +548,14 @@ async def handle_delivery_completion(order_id: str, user_id: int):
         order["delivered_at"] = now()
         order["delivered_by"] = user_id
 
-        # Send confirmation to MDG: "Order #47 was delivered."
+        # Get courier info
+        assignee_info = COURIER_MAP.get(str(user_id), {})
+        assignee_name = assignee_info.get("username", f"User{user_id}")
+        
+        # Send confirmation to MDG with courier name and delivery time
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        delivered_msg = f"Order #{order_num} was delivered."
+        delivery_time = order["delivered_at"].strftime("%H:%M")
+        delivered_msg = f"🔖 #{order_num} was delivered by {assignee_name} at {delivery_time}"
         await safe_send_message(DISPATCH_MAIN_CHAT_ID, delivered_msg)
         
         # Delete MDG-CONF and other temporary messages
@@ -533,8 +568,6 @@ async def handle_delivery_completion(order_id: str, user_id: int):
         if "mdg_message_id" in order:
             import mdg
             base_text = mdg.build_mdg_dispatch_text(order)
-            assignee_info = COURIER_MAP.get(str(user_id), {})
-            assignee_name = assignee_info.get("username", f"User{user_id}")
             
             updated_text = base_text + f"\n\n👤 **Assigned to:** {assignee_name}\n✅ **Delivered**"
             
@@ -545,9 +578,7 @@ async def handle_delivery_completion(order_id: str, user_id: int):
                 mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
             )
 
-        # Update private chat message
-        completion_msg = "✅ **Delivery completed!**\n\nThank you for the successful delivery."
-        await safe_send_message(user_id, completion_msg)
+        # NO confirmation message to courier (removed as per requirement)
 
         logger.info(f"Order {order_id} marked as delivered by user {user_id}")
         
@@ -694,8 +725,8 @@ async def show_restaurant_selection(order_id: str, user_id: int):
         for vendor in vendors:
             vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
             buttons.append([InlineKeyboardButton(
-                f"🍽 Call {vendor_shortcut}",
-                callback_data=f"call_restaurant|{order_id}|{vendor}"
+                f"� Call {vendor_shortcut}",
+                callback_data=f"call_vendor|{order_id}|{vendor}"
             )])
         
         # Add Back button
@@ -709,6 +740,83 @@ async def show_restaurant_selection(order_id: str, user_id: int):
 
     except Exception as e:
         logger.error(f"Error showing restaurant selection: {e}")
+
+async def handle_unassign_order(order_id: str, user_id: int):
+    """
+    Handle order unassignment from courier.
+    
+    Flow:
+    1. Courier clicks "Unassign" button in their private chat
+    2. Delete UPC assignment message
+    3. Clear assignment fields from order STATE
+    4. Restore MDG message to pre-assignment state with assignment buttons
+    5. Send notification to MDG about unassignment
+    
+    Args:
+        order_id: Shopify order ID
+        user_id: Courier's Telegram user_id who is unassigning
+    """
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found for unassignment")
+            return
+
+        # Get courier name for notification
+        from utils import COURIER_MAP
+        courier_info = COURIER_MAP.get(str(user_id), {})
+        courier_name = courier_info.get("username", f"User{user_id}")
+        
+        # Delete UPC assignment message
+        if "upc_assignment_message_id" in order:
+            await safe_delete_message(user_id, order["upc_assignment_message_id"])
+            del order["upc_assignment_message_id"]
+        
+        # Clear assignment fields - revert to ready-for-assignment state
+        order["status"] = "assigned"  # Keep as assigned but ready for re-assignment
+        if "assigned_to" in order:
+            del order["assigned_to"]
+        if "assigned_at" in order:
+            del order["assigned_at"]
+        if "assigned_by" in order:
+            del order["assigned_by"]
+        
+        # Restore MDG message to show assignment buttons again
+        if "mdg_message_id" in order:
+            import mdg
+            base_text = mdg.build_mdg_dispatch_text(order)
+            
+            # Update MDG with assignment buttons restored
+            await safe_edit_message(
+                DISPATCH_MAIN_CHAT_ID,
+                order["mdg_message_id"],
+                base_text,
+                mdg.mdg_time_request_keyboard(order_id)
+            )
+        
+        # Send notification to MDG (same style as delivery notification)
+        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+        unassign_msg = f"🔖 #{order_num} was unassigned by {courier_name}."
+        await safe_send_message(DISPATCH_MAIN_CHAT_ID, unassign_msg)
+        
+        # Re-show assignment buttons in MDG
+        # Import here to avoid circular dependency
+        from main import build_assignment_confirmation_message
+        assignment_msg = await safe_send_message(
+            DISPATCH_MAIN_CHAT_ID,
+            build_assignment_confirmation_message(order),
+            mdg_assignment_keyboard(order_id)
+        )
+        
+        # Track assignment message for cleanup
+        if "mdg_additional_messages" not in order:
+            order["mdg_additional_messages"] = []
+        order["mdg_additional_messages"].append(assignment_msg.message_id)
+        
+        logger.info(f"Order {order_id} unassigned by user {user_id} ({courier_name})")
+
+    except Exception as e:
+        logger.error(f"Error handling order unassignment: {e}")
 
 async def send_delay_request_to_restaurants(order_id: str, new_time: str, user_id: int):
     """Send delay request to all vendors for this order"""
@@ -738,42 +846,31 @@ async def send_delay_request_to_restaurants(order_id: str, new_time: str, user_i
                 
                 logger.info(f"Delay request sent to {vendor} for order {order_id} - new time {new_time}")
         
-        # Confirm to user
+        # Confirm to user with updated format
+        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+        vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors])
         await safe_send_message(
             user_id,
-            f"✅ Delay request sent to restaurant(s) for {new_time}"
+            f"📨 DELAY request ({new_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}"
         )
         
     except Exception as e:
         logger.error(f"Error sending delay request: {e}")
-        await safe_send_message(user_id, "⚠️ Error sending delay request")
+        # Use custom error message based on exception type
+        error_desc = get_error_description(e)
+        await safe_send_message(user_id, f"⚠️ Error while sending a message: {error_desc}")
 
 async def initiate_restaurant_call(order_id: str, vendor: str, user_id: int):
     """Initiate call to restaurant - placeholder for future Telegram call integration"""
     try:
         # For now, inform user to call directly
         # Future: This will integrate with Telegram calling when restaurant accounts are created
+        vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
         await safe_send_message(
             user_id,
-            f"🍽 Please call {vendor} directly.\n\n(Automatic Telegram calling will be available when restaurant accounts are set up)"
+            f"� Please call {vendor_shortcut} directly.\n\n(Automatic Telegram calling will be available when restaurant accounts are set up)"
         )
 
-        logger.info(f"User {user_id} initiated call to {vendor} for order {order_id}")
-
-    except Exception as e:
-        logger.error(f"Error initiating restaurant call: {e}")
-
-# Placeholder functions for future implementation
-    """Initiate call to restaurant (placeholder - would integrate with phone system)"""
-    try:
-        # For now, just show contact info
-        # In production, this would integrate with telephony system
-        await safe_send_message(
-            user_id,
-            f"📞 Calling {vendor}...\n\nPlease contact them directly for coordination."
-        )
-
-        # Log the call attempt
         logger.info(f"User {user_id} initiated call to {vendor} for order {order_id}")
 
     except Exception as e:
