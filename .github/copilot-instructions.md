@@ -387,8 +387,8 @@ Enhanced vendor confirmation message showing detailed breakdown:
 ```
 🔖 #58 - dishbee (JS+LR)
 ✅ Restaurants confirmed:
-🏠 Julis Spätzlerei: 12:50 📦 1
-🏠 Leckerolls: 12:55 📦 3
+� Julis Spätzlerei: 12:50 📦 1
+� Leckerolls: 12:55 📦 3
 ```
 - Shows vendor shortcuts in header
 - Lists each vendor with confirmed time and product count

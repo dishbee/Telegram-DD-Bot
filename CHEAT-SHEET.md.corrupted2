@@ -5,8 +5,22 @@
 ## 📡 CHANNELS
 
 ```
-MDG  = Main Dispatch Group (all coordinators + couriers)
-RG   = Restaurant Groups (vendor-specific chats)
+MDG  = Main Dispatch Group (all coordinators + courie**RG-DET** - Order details (expanded view)
+```
+Format: 🔖 Order #{num}
+
+        {qty} x {Product Name}
+        {qty} x {Product Name}
+        
+        ❕ Note: {Customer Note} (if exists)
+        
+        🧑 {Customer Name}
+        🗺️ {Street + Building}
+        📞 {phone}
+        ⏰ Ordered at: {time}
+        
+        [◂ Hide] button
+```aurant Groups (vendor-specific chats)
 UPC  = User Private Chat (individual couriers)
 ```
 
@@ -111,7 +125,7 @@ Format: 🔖 Order #{num}
         
         🧑 {Customer Name}
         🗺️ {Street + Building}
-        📞 {phone}
+        � {phone}
         ⏰ Ordered at: {time}
         
         [◂ Hide] button

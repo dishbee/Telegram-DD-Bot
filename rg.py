@@ -107,7 +107,8 @@ def vendor_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("Request ASAP", callback_data=f"vendor_asap|{order_id}|{vendor}"),
             InlineKeyboardButton("Request TIME", callback_data=f"vendor_time|{order_id}|{vendor}")
-        ]
+        ],
+        [InlineKeyboardButton("← Back", callback_data="hide")]
     ])
 
 
@@ -166,6 +167,9 @@ def vendor_exact_time_keyboard(order_id: str, vendor: str, action: str) -> Inlin
                 callback_data = f"vendor_exact_hour|{order_id}|{hour_value}|{vendor_short}|{action}"
                 row.append(InlineKeyboardButton(hours[j], callback_data=callback_data))
             rows.append(row)
+        
+        # Add Back button
+        rows.append([InlineKeyboardButton("← Back", callback_data="hide")])
 
         return InlineKeyboardMarkup(rows)
     except Exception as exc:  # pragma: no cover - defensive

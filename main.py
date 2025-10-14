@@ -337,20 +337,22 @@ def build_assignment_confirmation_message(order: dict) -> str:
     vendor information including pickup times and product counts.
     
     Format for multi-vendor orders:
-        🔖 #58 - dishbee (JS+LR)
-        ✅ Restaurants confirmed:
-        🏠 Julis Spätzlerei: 12:50 📦 1
-        🏠 Leckerolls: 12:55 📦 3
+        � #58 - dishbee 🍕 1+3
+        
+        👩‍� Julis Spätzlerei: 12:50
+        🧑‍� Leckerolls: 12:55
     
     Format for single-vendor orders:
-        🔖 #58 - dishbee (LR)
-        ✅ Restaurant confirmed:
-        🏠 Leckerolls: 12:55 📦 3
+        � #58 - dishbee 🍕 3
+        
+        👩‍� Leckerolls: 12:55
     
     Product count logic:
     - Parses vendor_items lines (format: "- X x Product Name")
     - Extracts quantity from each line
     - Sums total products per vendor
+    
+    Chef emojis rotate through: 👩‍🍳👩🏻‍🍳👩🏼‍🍳👩🏾‍🍳🧑‍🍳🧑🏻‍🍳🧑🏼‍🍳🧑🏾‍🍳👨‍🍳👨🏻‍🍳👨🏼‍🍳👨🏾‍🍳
     
     Args:
         order: Order dict from STATE with vendors, confirmed_times, vendor_items
@@ -363,23 +365,12 @@ def build_assignment_confirmation_message(order: dict) -> str:
     vendor_items = order.get("vendor_items", {})
     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
     
-    # Build vendor shortcuts string
-    vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors])
+    # Chef emojis for variety
+    chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "�🏼‍🍳", "👨🏾‍🍳"]
     
-    # Header
-    message = f"🔖 #{order_num} - dishbee ({vendor_shortcuts})\n"
-    
-    # Title (singular/plural)
-    if len(vendors) > 1:
-        message += "✅ Restaurants confirmed:\n"
-    else:
-        message += "✅ Restaurant confirmed:\n"
-    
-    # Vendor details
+    # Count products per vendor and build counts string
+    vendor_counts = []
     for vendor in vendors:
-        pickup_time = confirmed_times.get(vendor, "ASAP")
-        
-        # Count products for this vendor
         items = vendor_items.get(vendor, [])
         product_count = 0
         for item_line in items:
@@ -391,8 +382,17 @@ def build_assignment_confirmation_message(order: dict) -> str:
                     product_count += 1
             else:
                 product_count += 1
-        
-        message += f"🏠 {vendor}: {pickup_time} 📦 {product_count}\n"
+        vendor_counts.append(str(product_count))
+    
+    # Build header with product counts
+    counts_display = "+".join(vendor_counts)
+    message = f"👍 #{order_num} - dishbee � {counts_display}\n\n"
+    
+    # Vendor details with rotating chef emojis
+    for idx, vendor in enumerate(vendors):
+        pickup_time = confirmed_times.get(vendor, "ASAP")
+        chef_emoji = chef_emojis[idx % len(chef_emojis)]
+        message += f"{chef_emoji} {vendor}: {pickup_time}\n"
     
     return message
 
@@ -691,7 +691,7 @@ def telegram_webhook():
                     # Send vendor-specific time request buttons
                     msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"📍 Request time from {vendor}:",
+                        f"�‍🍳 Request prep. time from {vendor}:",
                         vendor_time_keyboard(order_id, vendor)
                     )
                     
@@ -1512,6 +1512,16 @@ def telegram_webhook():
                     
                     await safe_delete_message(chat_id, message_id)
                 
+                elif action == "hide":
+                    # Generic hide/back button - deletes any temporary message
+                    logger.info(f"Hiding temporary message")
+                    
+                    # Delete the message
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                    
+                    await safe_delete_message(chat_id, message_id)
+                
                 # VENDOR RESPONSES
                 elif action == "toggle":
                     order_id, vendor = data[1], data[2]
@@ -1746,7 +1756,8 @@ def telegram_webhook():
                         [InlineKeyboardButton("Order is canceled", callback_data=f"wrong_canceled|{order_id}|{vendor}")],
                         [InlineKeyboardButton("Technical issue", callback_data=f"wrong_technical|{order_id}|{vendor}")],
                         [InlineKeyboardButton("Something else", callback_data=f"wrong_other|{order_id}|{vendor}")],
-                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")]
+                        [InlineKeyboardButton("We have a delay", callback_data=f"wrong_delay|{order_id}|{vendor}")],
+                        [InlineKeyboardButton("← Back", callback_data="hide")]
                     ]
                     
                     await safe_send_message(

@@ -191,6 +191,9 @@ async def courier_selection_keyboard(order_id: str, bot) -> InlineKeyboardMarkup
                     callback_data=f"assign_to_user|{order_id}|{courier['user_id']}"
                 )])
         
+        # Add Back button
+        buttons.append([InlineKeyboardButton("← Back", callback_data="hide")])
+        
         logger.info(f"DEBUG: Built {len(buttons)} courier buttons for selection")
         return InlineKeyboardMarkup(buttons) if buttons else None
         
@@ -268,24 +271,23 @@ def build_assignment_message(order: dict) -> str:
     Build the assignment message sent to courier's private chat.
     
     This message contains all information the courier needs to complete the delivery:
-    - Order number and vendor shortcuts
-    - Each restaurant with pickup time and product count
+    - Order number (with 👉 emoji)
+    - Each restaurant with pickup time and product count (using chef emoji)
     - Customer name and formatted address
     - Payment method and tip information
-    - Phone numbers for customer and restaurants
+    - Phone number for customer (without "Call customer:" label)
     
     Format example:
-        🔖 #58 - dishbee
-        🏠 Leckerolls: 12:55 📦 3
-        🏠 Julis Spätzlerei: 13:00 📦 2
+        � #58 - dishbee
+        👩‍� Leckerolls: 12:55 🍕 3
+        🧑‍� Julis Spätzlerei: 13:00 🍕 2
         
         👤 John Doe
-        🔺 Hauptstraße 5 (80333)
+        🧭 Hauptstraße 5 (80333)
         
         ❕ Tip: 2.50€
         
-        ☎️ Call customer: +49...
-        🍽 Call Restaurant:
+        ☎️ +49...
     
     Args:
         order: Order dict from STATE with all order details
@@ -295,6 +297,9 @@ def build_assignment_message(order: dict) -> str:
     """
     try:
         order_type = order.get("order_type", "shopify")
+        
+        # Chef emojis for variety (same as MDG-CONF)
+        chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
         
         # Group indicator (if order is in a group)
         group_header = ""
@@ -310,12 +315,12 @@ def build_assignment_message(order: dict) -> str:
                 group_total = len(group["order_ids"])
                 group_header = f"{group_color} Group: {group_position}/{group_total}\n\n"
         
-        # Header: 🔖 #34 - dishbee (without vendor shortcut)
+        # Header: � #34 - dishbee
         if order_type == "shopify":
             order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-            header = f"🔖 #{order_num} - dishbee\n"
+            header = f"� #{order_num} - dishbee\n"
         else:
-            header = f"� {order.get('name', 'Order')}\n"
+            header = f"👉 {order.get('name', 'Order')}\n"
         
         # Restaurant info with confirmed times and product quantities
         vendors = order.get("vendors", [])
@@ -323,8 +328,9 @@ def build_assignment_message(order: dict) -> str:
         vendor_items = order.get("vendor_items", {})
         
         restaurant_section = ""
-        for vendor in vendors:
+        for idx, vendor in enumerate(vendors):
             pickup_time = confirmed_times.get(vendor, "ASAP")
+            chef_emoji = chef_emojis[idx % len(chef_emojis)]
             
             # Count products for this vendor
             items = vendor_items.get(vendor, [])
@@ -340,7 +346,7 @@ def build_assignment_message(order: dict) -> str:
                 else:
                     product_count += 1
             
-            restaurant_section += f"🏠 {vendor}: {pickup_time} 📦 {product_count}\n"
+            restaurant_section += f"{chef_emoji} {vendor}: {pickup_time} 🍕 {product_count}\n"
         
         # Customer info
         customer_name = order['customer']['name']
@@ -356,7 +362,7 @@ def build_assignment_message(order: dict) -> str:
             formatted_address = address.strip()
         
         customer_section = f"\n👤 {customer_name}\n"
-        customer_section += f"� {formatted_address}\n"
+        customer_section += f"🧭 {formatted_address}\n"
         
         # Optional info (note, tips, cash on delivery)
         optional_section = ""
@@ -374,10 +380,9 @@ def build_assignment_message(order: dict) -> str:
         if payment.lower() == "cash on delivery":
             optional_section += f"❕ Cash: {total}\n"
         
-        # Phone numbers section
+        # Phone number section (without "Call customer:" label)
         phone = order['customer']['phone']
-        phone_section = f"\n☎️ Call customer: {phone}\n"
-        phone_section += "🍽 Call Restaurant: \n"  # Restaurant phone will be added later
+        phone_section = f"\n☎️ {phone}\n"
         
         # Combine all sections (group_header first if present)
         message = group_header + header + restaurant_section + customer_section + optional_section + phone_section
@@ -386,7 +391,7 @@ def build_assignment_message(order: dict) -> str:
 
     except Exception as e:
         logger.error(f"Error building assignment message: {e}")
-        return f"� **ORDER ASSIGNED** - Error formatting details"
+        return f"👉 **ORDER ASSIGNED** - Error formatting details"
 
 def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build CTA buttons for assigned orders in private chats"""
@@ -646,13 +651,19 @@ async def show_delay_options(order_id: str, user_id: int):
             
             # Calculate delay options: +5, +10, +15, +20 minutes
             delay_buttons = []
-            for minutes_to_add in [5, 10, 15, 20]:
+            minute_increments = [5, 10, 15, 20]
+            
+            for i, minutes_to_add in enumerate(minute_increments):
                 delayed_time = base_time + timedelta(minutes=minutes_to_add)
                 time_str = delayed_time.strftime("%H:%M")
+                button_text = f"{time_str} (+{minutes_to_add} mins)"
                 delay_buttons.append([InlineKeyboardButton(
-                    time_str,
+                    button_text,
                     callback_data=f"delay_selected|{order_id}|{time_str}"
                 )])
+            
+            # Add Back button
+            delay_buttons.append([InlineKeyboardButton("← Back", callback_data="hide")])
             
             await safe_send_message(
                 user_id,
@@ -686,6 +697,9 @@ async def show_restaurant_selection(order_id: str, user_id: int):
                 f"🍽 Call {vendor_shortcut}",
                 callback_data=f"call_restaurant|{order_id}|{vendor}"
             )])
+        
+        # Add Back button
+        buttons.append([InlineKeyboardButton("← Back", callback_data="hide")])
 
         await safe_send_message(
             user_id,

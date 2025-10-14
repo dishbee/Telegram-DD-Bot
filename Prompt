@@ -28,7 +28,7 @@ Send the assignment message to the selected user's private chat. Format must mat
 Format Rules:
 
 Title: "🔖 #{order_number} - dishbee" (no vendor shortcuts).
-Vendor Lines: For each vendor, "🏠 {vendor_name}: {confirmed_time} 📦 {total_quantity}".
+Vendor Lines: For each vendor, "� {vendor_name}: {confirmed_time} 📦 {total_quantity}".
 For multi-vendor: Include ALL vendors with their confirmed times.
 For single-vendor: Include only that vendor.
 Customer Name: "👤 {full_name}".

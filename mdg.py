@@ -127,7 +127,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
     
     Summary view (show_details=False):
     - 🔖 #28 - dishbee
-    - 🏠 JS+LR 🍕 3+1
+    - � JS+LR 🍕 3+1
     - 🧑 Customer Name
     - 🗺️ Address
     - Note/Tip/COD (if applicable)
@@ -173,11 +173,11 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 vendor_counts.append(str(total_qty))
             
             if len(vendors) > 1:
-                vendor_line = f"🏠 {'+'.join(shortcuts)} 🍕 {'+'.join(vendor_counts)}"
+                vendor_line = f"� {'+'.join(shortcuts)} 🍕 {'+'.join(vendor_counts)}"
             else:
-                vendor_line = f"🏠 {shortcuts[0]} 🍕 {vendor_counts[0]}"
+                vendor_line = f"� {shortcuts[0]} 🍕 {vendor_counts[0]}"
         else:
-            vendor_line = f"🏠 {vendors[0] if vendors else 'Unknown'}"
+            vendor_line = f"� {vendors[0] if vendors else 'Unknown'}"
 
         customer_line = f"🧑 {order['customer']['name']}"
 
@@ -464,6 +464,9 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
             # Show EXACT TIME button at bottom when there are recent orders
             vendor_param = f"|{vendor}" if vendor else ""
             buttons.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}{vendor_param}")])
+            
+            # Add Back button
+            buttons.append([InlineKeyboardButton("← Back", callback_data="hide")])
         
         # If NO recent orders, return None to signal that hour picker should be shown directly
         # The handler in main.py will detect this and show exact_time_keyboard() immediately
@@ -542,6 +545,9 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
         buttons.append([time_buttons[0], time_buttons[1]])
         buttons.append([time_buttons[2], time_buttons[3]])
         
+        # Add Back button
+        buttons.append([InlineKeyboardButton("← Back", callback_data="hide")])
+        
         return InlineKeyboardMarkup(buttons)
     
     except Exception as exc:  # pragma: no cover - defensive
@@ -597,6 +603,9 @@ def group_time_adjustment_keyboard(current_order_id: str, ref_order_id: str, ref
         
         buttons.append(row1)  # [+3m, +5m]
         buttons.append(row2)  # [-3m, -5m]
+        
+        # Add Back button
+        buttons.append([InlineKeyboardButton("← Back", callback_data="hide")])
         
         return InlineKeyboardMarkup(buttons)
     
@@ -685,6 +694,9 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
         else:
             exact_callback = f"exact_time|{order_id}|{action}"
         rows.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=exact_callback)])
+        
+        # Add Back button
+        rows.append([InlineKeyboardButton("← Back", callback_data="hide")])
 
         return InlineKeyboardMarkup(rows)
     except Exception as exc:  # pragma: no cover - defensive
