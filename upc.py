@@ -774,7 +774,7 @@ async def handle_unassign_order(order_id: str, user_id: int):
             del order["upc_assignment_message_id"]
         
         # Clear assignment fields - revert to ready-for-assignment state
-        order["status"] = "assigned"  # Keep as assigned but ready for re-assignment
+        order["status"] = "new"  # Reset to new status so assignment buttons can show
         if "assigned_to" in order:
             del order["assigned_to"]
         if "assigned_at" in order:
@@ -782,17 +782,19 @@ async def handle_unassign_order(order_id: str, user_id: int):
         if "assigned_by" in order:
             del order["assigned_by"]
         
-        # Restore MDG message to show assignment buttons again
+        # Restore MDG message to show confirmation text (assignment buttons come next)
         if "mdg_message_id" in order:
             import mdg
-            base_text = mdg.build_mdg_dispatch_text(order)
             
-            # Update MDG with assignment buttons restored
+            # Show confirmation message with vendor times
+            confirmation_text = build_assignment_confirmation_message(order)
+            
+            # Update MDG - remove any existing buttons temporarily
             await safe_edit_message(
                 DISPATCH_MAIN_CHAT_ID,
                 order["mdg_message_id"],
-                base_text,
-                mdg.mdg_time_request_keyboard(order_id)
+                confirmation_text,
+                None  # No buttons on main message
             )
         
         # Send notification to MDG (same style as delivery notification)

@@ -960,6 +960,10 @@ def telegram_webhook():
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
                         keyboard = mdg_time_submenu_keyboard(order_id)
                         
+                        # Initialize mdg_additional_messages if not exists
+                        if "mdg_additional_messages" not in order:
+                            order["mdg_additional_messages"] = []
+                        
                         # If keyboard is None, no recent orders - show hour picker directly
                         if keyboard is None:
                             logger.info(f"No recent orders found - showing hour picker directly")
@@ -981,7 +985,7 @@ def telegram_webhook():
                                 keyboard
                             )
                             
-                            # Track additional message for cleanup
+                            # Track additional message for cleanup (array already initialized above)
                             order["mdg_additional_messages"].append(msg.message_id)
                     else:
                         # For multi-vendor, this shouldn't happen as they have vendor buttons
