@@ -225,9 +225,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             phone_line = f"[{phone}](tel:{phone})\n"
 
         # Build base text (always shown)
-        text = f"{title}\n"
-        text += f"{vendor_line}\n"
-        text += f"{customer_line}\n"
+        text = f"{title}\n\n"
+        text += f"{vendor_line}\n\n"
+        text += f"{customer_line}\n\n"
         text += f"{address_line}\n\n"
         text += note_line
         text += tips_line
@@ -687,8 +687,8 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
         # Create one button per row (vertical layout)
         for i, time_str in enumerate(intervals):
             minutes = minute_increments[i]
-            # Format: "in 5 m  |  12:32" or "+ 5 m  |  09:32"
-            button_text = f"{prefix} {minutes} m  |  {time_str}"
+            # Format: "in 5 m --- 12:32" or "+ 5 m --- 09:32"
+            button_text = f"{prefix} {minutes} m --- {time_str}"
             
             # Include vendor SHORTCUT in callback if provided (for prepare_time and later_time actions)
             if vendor_shortcut:

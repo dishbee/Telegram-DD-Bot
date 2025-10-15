@@ -132,16 +132,16 @@ def restaurant_response_keyboard(request_type: str, order_id: str, vendor: str) 
 
         if request_type == "ASAP":
             rows.append([
-                InlineKeyboardButton("Will prepare at", callback_data=f"prepare|{order_id}|{vendor}")
+                InlineKeyboardButton("⌚️ Yes at:", callback_data=f"prepare|{order_id}|{vendor}")
             ])
         else:
             rows.append([
                 InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}"),
-                InlineKeyboardButton("⏰ Later at", callback_data=f"later|{order_id}|{vendor}")
+                InlineKeyboardButton("⌚️ Later at", callback_data=f"later|{order_id}|{vendor}")
             ])
 
         rows.append([
-            InlineKeyboardButton("⚠️ Issue", callback_data=f"wrong|{order_id}|{vendor}")
+            InlineKeyboardButton("🚩 Problem", callback_data=f"wrong|{order_id}|{vendor}")
         ])
 
         return InlineKeyboardMarkup(rows)
