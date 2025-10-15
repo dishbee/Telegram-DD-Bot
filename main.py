@@ -831,7 +831,7 @@ def telegram_webhook():
                             vc = VENDOR_GROUP_MAP.get(v)
                             if vc:
                                 if order["order_type"] == "shopify":
-                                    msg = f"#{order['name'][-2:]} at {selected_time}?"
+                                    msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {selected_time}?"
                                 else:
                                     addr = order['customer']['address'].split(',')[0]
                                     msg = f"*{addr}* at {selected_time}?"
@@ -845,7 +845,7 @@ def telegram_webhook():
                         # Multi-vendor - send to specific vendor
                         if vendor_chat:
                             if order["order_type"] == "shopify":
-                                msg = f"#{order['name'][-2:]} at {selected_time}?"
+                                msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {selected_time}?"
                             else:
                                 addr = order['customer']['address'].split(',')[0]
                                 msg = f"*{addr}* at {selected_time}?"
@@ -1010,7 +1010,7 @@ def telegram_webhook():
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
                             if order["order_type"] == "shopify":
-                                msg = f"#{order['name'][-2:]} at {requested_time}?"
+                                msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {requested_time}?"
                             else:
                                 addr = order['customer']['address'].split(',')[0]
                                 msg = f"*{addr}* at {requested_time}?"
@@ -1026,7 +1026,7 @@ def telegram_webhook():
                             vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                             if vendor_chat:
                                 if order["order_type"] == "shopify":
-                                    msg = f"#{order['name'][-2:]} at {requested_time}?"
+                                    msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {requested_time}?"
                                 else:
                                     addr = order['customer']['address'].split(',')[0]
                                     msg = f"*{addr}* at {requested_time}?"
@@ -1408,7 +1408,7 @@ def telegram_webhook():
                             else:
                                 # Different restaurant - standard message
                                 if order["order_type"] == "shopify":
-                                    msg = f"#{order['name'][-2:]} at {reference_time}?"
+                                    msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {reference_time}?"
                                 else:
                                     addr = order['customer']['address'].split(',')[0]
                                     msg = f"*{addr}* at {reference_time}?"
@@ -1471,7 +1471,7 @@ def telegram_webhook():
                         vendor_chat = VENDOR_GROUP_MAP.get(v)
                         if vendor_chat:
                             if order["order_type"] == "shopify":
-                                msg = f"#{order['name'][-2:]} at {selected_time}?"
+                                msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {selected_time}?"
                             else:
                                 addr = order['customer']['address'].split(',')[0]
                                 msg = f"*{addr}* at {selected_time}?"

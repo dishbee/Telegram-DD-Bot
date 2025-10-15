@@ -727,7 +727,8 @@ async def show_delay_time_picker(order_id: str, user_id: int, vendor: str = None
             for i, minutes_to_add in enumerate(minute_increments):
                 delayed_time = base_time + timedelta(minutes=minutes_to_add)
                 time_str = delayed_time.strftime("%H:%M")
-                button_text = f"{time_str} (+{minutes_to_add} mins)"
+                # Format: "+ 5 m  |  09:32"
+                button_text = f"+ {minutes_to_add} m  |  {time_str}"
                 
                 # Include vendor in callback if specified
                 if vendor:

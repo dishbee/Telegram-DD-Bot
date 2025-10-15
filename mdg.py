@@ -676,25 +676,27 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
         vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper()) if vendor else None
 
         rows: List[List[InlineKeyboardButton]] = []
-        for i in range(0, len(intervals), 2):
-            # Add minute increment label to button text
-            button_text = f"{intervals[i]} ({minute_increments[i]} mins)"
+        
+        # Determine button prefix based on action
+        # RG buttons (later_time, prepare_time) use "in", others use "+"
+        if action in ["later_time", "prepare_time"]:
+            prefix = "in"
+        else:
+            prefix = "+"
+        
+        # Create one button per row (vertical layout)
+        for i, time_str in enumerate(intervals):
+            minutes = minute_increments[i]
+            # Format: "in 5 m  |  12:32" or "+ 5 m  |  09:32"
+            button_text = f"{prefix} {minutes} m  |  {time_str}"
             
             # Include vendor SHORTCUT in callback if provided (for prepare_time and later_time actions)
             if vendor_shortcut:
-                callback = f"{action}|{order_id}|{intervals[i]}|{vendor_shortcut}"
+                callback = f"{action}|{order_id}|{time_str}|{vendor_shortcut}"
             else:
-                callback = f"{action}|{order_id}|{intervals[i]}"
-            row = [InlineKeyboardButton(button_text, callback_data=callback)]
+                callback = f"{action}|{order_id}|{time_str}"
             
-            if i + 1 < len(intervals):
-                button_text2 = f"{intervals[i + 1]} ({minute_increments[i + 1]} mins)"
-                if vendor_shortcut:
-                    callback2 = f"{action}|{order_id}|{intervals[i + 1]}|{vendor_shortcut}"
-                else:
-                    callback2 = f"{action}|{order_id}|{intervals[i + 1]}"
-                row.append(InlineKeyboardButton(button_text2, callback_data=callback2))
-            rows.append(row)
+            rows.append([InlineKeyboardButton(button_text, callback_data=callback)])
         
         # Add EXACT TIME button at the bottom
         if vendor_shortcut:
