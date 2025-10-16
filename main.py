@@ -1970,10 +1970,9 @@ def telegram_webhook():
                                     build_assignment_confirmation_message(order),
                                     mdg_assignment_keyboard(order_id)
                                 )
-                                # Track this message for potential cleanup
-                                if "mdg_additional_messages" not in order:
-                                    order["mdg_additional_messages"] = []
-                                order["mdg_additional_messages"].append(assignment_msg.message_id)
+                                # Track MDG-CONF message ID for deletion after assignment
+                                order["mdg_conf_message_id"] = assignment_msg.message_id
+                                logger.info(f"DEBUG: MDG-CONF message {assignment_msg.message_id} sent for order {order_id}")
                             else:
                                 logger.info(f"DEBUG: All vendors confirmed but order already assigned - skipping assignment buttons")
                         else:

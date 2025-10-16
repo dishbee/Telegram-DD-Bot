@@ -240,49 +240,38 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int):
         logger.error(f"Error sending assignment to private chat: {e}")
 
 async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
-    """Update MDG message to show assignment status and remove assignment buttons"""
+    """Update MDG-CONF message: remove assignment buttons, add assignment info text"""
     try:
         order = STATE.get(order_id)
-        if not order or "mdg_message_id" not in order:
+        mdg_conf_message_id = order.get("mdg_conf_message_id")
+        
+        if not order or not mdg_conf_message_id:
             return
 
         # Get assignee info
         assignee_info = COURIER_MAP.get(str(assigned_user_id), {})
         assignee_name = assignee_info.get("username", f"User{assigned_user_id}")
-
-        # Build updated MDG text with assignment info including time
-        import mdg
-        base_text = mdg.build_mdg_dispatch_text(order)
         
-        # Format assignment time
+        # Get assignment time
         assigned_at = order.get("assigned_at")
-        if assigned_at:
-            assignment_time = assigned_at.strftime("%H:%M")
-            assignment_info = f"\n\n� **Assigned to** 🐝 {assignee_name} at {assignment_time}"
-        else:
-            assignment_info = f"\n\n👉 **Assigned to** 🐝 {assignee_name}"
+        time_str = assigned_at.strftime("%H:%M") if assigned_at else "now"
 
-        updated_text = base_text + assignment_info
+        # Get vendor confirmation text and add assignment info
+        import mdg
+        from main import build_assignment_confirmation_message
+        vendor_conf_text = build_assignment_confirmation_message(order)
+        assignment_info = f"\n\n👉 **Assigned to** 🐝 {assignee_name} at {time_str}"
+        updated_text = vendor_conf_text + assignment_info
 
-        # Update MDG message WITHOUT assignment buttons (Details button only)
+        # Update MDG-CONF message: keep text, REMOVE buttons (no keyboard)
         await safe_edit_message(
             DISPATCH_MAIN_CHAT_ID,
-            order["mdg_message_id"],
+            mdg_conf_message_id,
             updated_text,
-            mdg.mdg_initial_keyboard(order_id, show_assignment_buttons=False)
+            reply_markup=None  # Remove all buttons
         )
 
-        # Delete the MDG-CONF message (assignment confirmation message with buttons)
-        additional_messages = order.get("mdg_additional_messages", [])
-        if additional_messages:
-            # The last message in the list is usually the assignment confirmation
-            conf_msg_id = additional_messages[-1] if additional_messages else None
-            if conf_msg_id:
-                await safe_delete_message(DISPATCH_MAIN_CHAT_ID, conf_msg_id)
-                # Remove from tracking
-                order["mdg_additional_messages"].remove(conf_msg_id)
-
-        logger.info(f"Updated MDG for order {order_id} - assigned to {assignee_name}")
+        logger.info(f"DEBUG: Updated MDG-CONF for order {order_id} - removed buttons, added assignment to {assignee_name} at {time_str}")
 
     except Exception as e:
         logger.error(f"Error updating MDG with assignment: {e}")
@@ -849,39 +838,25 @@ async def handle_unassign_order(order_id: str, user_id: int):
         if "assigned_by" in order:
             del order["assigned_by"]
         
-        # Restore MDG message to show confirmation text (assignment buttons come next)
-        if "mdg_message_id" in order:
-            import mdg
-            
-            # Show confirmation message with vendor times
-            confirmation_text = build_assignment_confirmation_message(order)
-            
-            # Update MDG - remove any existing buttons temporarily
-            await safe_edit_message(
-                DISPATCH_MAIN_CHAT_ID,
-                order["mdg_message_id"],
-                confirmation_text,
-                None  # No buttons on main message
-            )
-        
         # Send notification to MDG (same style as delivery notification)
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
         unassign_msg = f"🔖 #{order_num} was unassigned by {courier_name}."
         await safe_send_message(DISPATCH_MAIN_CHAT_ID, unassign_msg)
         
-        # Re-show assignment buttons in MDG
-        # Import here to avoid circular dependency
-        from main import build_assignment_confirmation_message
-        assignment_msg = await safe_send_message(
-            DISPATCH_MAIN_CHAT_ID,
-            build_assignment_confirmation_message(order),
-            mdg_assignment_keyboard(order_id)
-        )
-        
-        # Track assignment message for cleanup
-        if "mdg_additional_messages" not in order:
-            order["mdg_additional_messages"] = []
-        order["mdg_additional_messages"].append(assignment_msg.message_id)
+        # Restore MDG-CONF message: remove assignment text, re-add assignment buttons
+        mdg_conf_message_id = order.get("mdg_conf_message_id")
+        if mdg_conf_message_id:
+            from main import build_assignment_confirmation_message
+            confirmation_text = build_assignment_confirmation_message(order)
+            
+            # Edit MDG-CONF: restore original text + buttons
+            await safe_edit_message(
+                DISPATCH_MAIN_CHAT_ID,
+                mdg_conf_message_id,
+                confirmation_text,
+                mdg_assignment_keyboard(order_id)
+            )
+            logger.info(f"DEBUG: Restored MDG-CONF message {mdg_conf_message_id} with assignment buttons for order {order_id}")
         
         logger.info(f"Order {order_id} unassigned by user {user_id} ({courier_name})")
 
