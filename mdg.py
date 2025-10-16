@@ -314,10 +314,10 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
         order = STATE.get(order_id)
         if not order:
             return InlineKeyboardMarkup([
-                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}")],
+                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}")],
                 [
-                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
-                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
+                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}"),
+                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}")
                 ]
             ])
 
@@ -327,7 +327,7 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
         is_expanded = order.get("mdg_expanded", False)
         toggle_button = InlineKeyboardButton(
             "◂ Hide" if is_expanded else "Details ▸",
-            callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}"
+            callback_data=f"mdg_toggle|{order_id}"
         )
 
         buttons = [[toggle_button]]
@@ -339,17 +339,17 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
                 chef_emoji = CHEF_EMOJIS[idx % len(CHEF_EMOJIS)]
                 buttons.append([InlineKeyboardButton(
                     f"Ask {chef_emoji} {shortcut}",
-                    callback_data=f"req_vendor|{order_id}|{vendor}|{int(now().timestamp())}"
+                    callback_data=f"req_vendor|{order_id}|{vendor}"
                 )])
         else:
             # Single vendor: show ⚡ Asap, 🕒 Time picker, 🗂 Scheduled orders (if available)
-            buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}")])
-            buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{int(now().timestamp())}")])
+            buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}")])
+            buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}")])
             
             # Check if there are recent orders for Scheduled orders button
             recent_orders = get_recent_orders_for_same_time(order_id)
             if recent_orders:
-                buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")])
+                buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_time|{order_id}")])
 
         return InlineKeyboardMarkup(buttons)
 
@@ -364,10 +364,10 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
         order = STATE.get(order_id)
         if not order:
             return InlineKeyboardMarkup([
-                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}")],
+                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}")],
                 [
-                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
-                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
+                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}"),
+                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}")
                 ]
             ])
 
@@ -377,7 +377,7 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
         is_expanded = order.get("mdg_expanded", False)
         toggle_button = InlineKeyboardButton(
             "◂ Hide" if is_expanded else "Details ▸",
-            callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}"
+            callback_data=f"mdg_toggle|{order_id}"
         )
         
         buttons = [[toggle_button]]
@@ -392,19 +392,19 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
                 logger.info("Adding button for vendor: %s (shortcut: %s, emoji: %s)", vendor, shortcut, chef_emoji)
                 buttons.append([InlineKeyboardButton(
                     f"Ask {chef_emoji} {shortcut}",
-                    callback_data=f"req_vendor|{order_id}|{vendor}|{int(now().timestamp())}"
+                    callback_data=f"req_vendor|{order_id}|{vendor}"
                 )])
             logger.info("Sending restaurant selection with %s buttons", len(buttons))
             return InlineKeyboardMarkup(buttons)
 
         logger.info("SINGLE VENDOR detected: %s", vendors)
-        buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}")])
-        buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{int(now().timestamp())}")])
+        buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}")])
+        buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}")])
         
         # Check if there are recent orders for Scheduled orders button
         recent_orders = get_recent_orders_for_same_time(order_id)
         if recent_orders:
-            buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")])
+            buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_time|{order_id}")])
         
         return InlineKeyboardMarkup(buttons)
 
@@ -567,11 +567,11 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
         ref_time: Reference time (HH:MM)
     """
     try:
-        # Convert shortcuts back to full vendor names
+        # Convert shortcuts back to full vendor names for matching logic
         ref_vendor_shortcuts = ref_vendors_str.split(",")
         ref_vendors = [shortcut_to_vendor(s) or s for s in ref_vendor_shortcuts]
         
-        # Convert current_vendor shortcut to full name if provided
+        # Convert current_vendor shortcut to full name for matching logic (but use shortcut in callbacks)
         current_vendor_full = shortcut_to_vendor(current_vendor) if current_vendor else None
         
         # Parse reference time
@@ -594,8 +594,8 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
         
         # First button: Show "🔁 Same time" ONLY if vendors match
         if vendor_matches:
-            if current_vendor_full:
-                same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}|{current_vendor_full}"
+            if current_vendor:  # Use SHORTCUT in callback data to save bytes
+                same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}|{current_vendor}"
             else:
                 same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}"
             buttons.append([InlineKeyboardButton("🔁 Same time", callback_data=same_callback)])
@@ -612,9 +612,10 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
             else:
                 button_text = f"+{offset}m → ⏰ {time_str}"
             
-            # Callback includes vendor if multi-vendor
-            vendor_param = f"|{current_vendor_full}" if current_vendor_full else ""
-            callback = f"time_relative|{current_order_id}|{time_str}|{ref_order_id}{vendor_param}"
+            # Callback includes SHORTCUT (not full vendor) to save bytes
+            # ref_order_id removed - not needed by handler
+            vendor_param = f"|{current_vendor}" if current_vendor else ""
+            callback = f"time_relative|{current_order_id}|{time_str}{vendor_param}"
             
             buttons.append([InlineKeyboardButton(button_text, callback_data=callback)])
         
@@ -661,9 +662,10 @@ def group_time_adjustment_keyboard(current_order_id: str, ref_order_id: str, ref
             adjusted_time = ref_datetime + timedelta(minutes=minutes)
             time_str = adjusted_time.strftime("%H:%M")
             
-            # Build callback with vendor if multi-vendor order
+            # Build callback with SHORTCUT (not full vendor) to save bytes
+            # ref_order_id removed - not needed by handler
             vendor_param = f"|{current_vendor}" if current_vendor else ""
-            callback = f"time_group|{current_order_id}|{time_str}|{ref_order_id}{vendor_param}"
+            callback = f"time_group|{current_order_id}|{time_str}{vendor_param}"
             
             # Button text: "+3m (19:33)"
             button_text = f"{label} ({time_str})"

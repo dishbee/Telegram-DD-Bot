@@ -41,46 +41,61 @@ Format: 🔖 #{num} - dishbee
 
 Buttons (single vendor):
 [Details ▸]
-[Request ASAP] [Request TIME]
+[⚡ Asap]
+[🕒 Time picker]
+[🗂 Scheduled orders] (if recent orders available)
 
 Buttons (multi-vendor):
 [Details ▸]
-[Request JS] (one button per vendor)
-[Request LR]
-[Request DD]
+[Ask 👩‍🍳 JS] (one button per vendor, rotating chef emojis)
+[Ask 🧑‍🍳 LR]
+[Ask 👨‍🍳 DD]
 ```
 
 **MDG-ORD → After BTN-TIME clicked**
 ```
-Shows recent orders menu (if available):
-[20:46 - Ledererga. 15 (LR, #59)]
-[20:50 - Grabenga. 8 (JS+DD, #60)]
-[EXACT TIME ⏰]
+🕒 Time picker opens hour picker directly:
+[12--] [13--] [14--]... [23--]
 [← Back]
 
-Or direct to exact time picker (if no recent orders):
-[12:XX] [13:XX] [14:XX]... [23:XX]
+NOTE: No recent orders shown in this menu anymore
+```
+
+**MDG-ORD → After BTN-SCHEDULED clicked**
+```
+Shows recent orders menu:
+[🔵🔖 #59 👩‍🍳 LR: 20:46 🗺️ Lederergasse 15]
+[🟠🔖 #60 👩‍🍳 JS: 20:50 🗺️ Grabengasse 8]
+[🟠🔖 #60 🧑‍🍳 DD: 20:50 🗺️ Grabengasse 8] (multi-vendor split)
 [← Back]
+
+NOTE: Multi-vendor orders show as separate buttons (one per vendor)
+NOTE: Color circles rotate per order, chef emojis rotate per vendor
 ```
 
 **MDG-ORD → After selecting recent order**
 ```
-Shows grouping options:
-[Same] (if matching vendor)
-[+ 5 m --- 20:51]
-[+ 10 m --- 20:56]
-[+ 15 m --- 21:01]
-[+ 20 m --- 21:06]
-[EXACT TIME ⏰]
+Shows offset options (vertical layout):
+[🔁 Same time] (only if vendors match)
+[-5m → ⏰ 18:00]
+[-3m → ⏰ 18:02]
+[+3m → ⏰ 18:08]
+[+5m → ⏰ 18:10]
+[+10m → ⏰ 18:15]
+[+15m → ⏰ 18:20]
+[+20m → ⏰ 18:25]
+[+25m → ⏰ 18:30]
 [← Back]
+
+NOTE: EXACT TIME button removed from this menu
 ```
 
 **MDG-ORD → After BTN-VENDOR clicked (multi-vendor only)**
 ```
 Shows vendor-specific time menu:
-📍 Request time from {Vendor}:
-[Request ASAP]
-[Request TIME]
+�‍🍳 Request prep. time from {Vendor}:
+[⚡ Asap]
+[🕒 Time picker]
 [← Back]
 ```
 
@@ -101,7 +116,7 @@ Or: (if single vendor, no vendor name shown)
 {Total}€ (if NOT COD)
 
 [◂ Hide] button
-[Request ASAP] [Request TIME]
+[⚡ Asap] [🕒 Time picker] (or vendor buttons if multi-vendor)
 ```
 
 **MDG-CONF** - All vendors confirmed
@@ -204,25 +219,36 @@ NOTE: No delivery completion message sent to courier after BTN-DELIVERED clicked
 
 **Initial Actions:**
 ```
-BTN-ASAP        = Request ASAP
-BTN-TIME        = Request TIME (shows recent orders or exact picker)
+BTN-ASAP        = ⚡ Asap
+BTN-TIME        = 🕒 Time picker (opens hour picker directly)
                   └─ Has "← Back" button
-BTN-VENDOR      = Request {Vendor} (multi-vendor orders)
-                  └─ Opens vendor-specific ASAP/TIME menu with "← Back"
+BTN-SCHEDULED   = 🗂 Scheduled orders (shows recent orders menu)
+                  └─ Has "← Back" button
+BTN-VENDOR      = Ask {chef_emoji} {Vendor} (multi-vendor orders)
+                  └─ Opens vendor-specific ⚡/🕒 menu with "← Back"
+                  └─ Chef emojis rotate: 👩‍🍳👩🏻‍🍳👩🏼‍🍳👩🏾‍🍳🧑‍🍳🧑🏻‍🍳🧑🏼‍🍳🧑🏾‍🍳👨‍🍳👨🏻‍🍳👨🏼‍🍳👨🏾‍🍳
 ```
 
-**After BTN-TIME clicked:**
+**After BTN-SCHEDULED clicked:**
 ```
-BTN-ORD-REF     = Recent order (e.g., "20:46 - Ledererga. 15 (LR, #59)")
-                  └─ Street names abbreviated for button display
-                  └─ Shows: BTN-SAME / BTN-PLUS options
+BTN-ORD-REF     = Recent order button
+                  Format: {color}🔖 #{num} {chef} {Vendor}: {time} 🗺️ {address}
+                  Example: "🔵🔖 #59 👩‍🍳 LR: 20:46 🗺️ Lederergasse 15"
+                  
+                  └─ Multi-vendor orders: separate button per vendor, same color
+                  └─ Color circles rotate per order (🔴🟠🟡🟢🔵🟣🟤)
+                  └─ Chef emojis rotate per vendor (12 emojis)
+                  └─ Street names abbreviated for button display (2-tier system)
+                  └─ Clicking shows: BTN-SAME / BTN-OFFSET options
 ```
 
 **Time Selection:**
 ```
-BTN-SAME        = Same (send "together with" to matching vendor)
-BTN-PLUS        = +5 / +10 / +15 / +20 (from reference time)
+BTN-SAME        = 🔁 Same time (send "together with" to matching vendor)
+BTN-OFFSET      = -5m / -3m / +3m / +5m / +10m / +15m / +20m / +25m (from reference time)
+                  Format: "-5m → ⏰ 18:00" or "+5m → ⏰ 18:10"
 BTN-EXACT       = Exact time picker (hour → minute)
+                  Hour format: 12-- 13-- 14-- (not 12:XX anymore)
 BTN-BACK        = ← Back (closes menu)
 ```
 
@@ -290,8 +316,10 @@ BTN-WRONG       = ⚠️ Issue
 
 **Time Picker (from BTN-LATER or BTN-PREP):**
 ```
-BTN-TIME-OPTS   = +5 / +10 / +15 / +20 minute buttons
-                  └─ Quick selection relative to requested/current time
+BTN-TIME-OPTS   = Time offset buttons (vertical layout)
+                  Format: "⏰ {time} → in {X}m"
+                  Example: "⏰ 18:10 → in 5m"
+                  Options: in 5m, in 10m, in 15m, in 20m
                   └─ On click: Confirms time, updates STATE, notifies MDG
 
 BTN-EXACT-TIME  = EXACT TIME ⏰
@@ -305,10 +333,10 @@ BTN-BACK        = ← Back
 **Exact Time Flow:**
 ```
 BTN-EXACT-TIME  = EXACT TIME ⏰ (from time picker)
-                  └─ Opens hour picker: 12:XX, 13:XX, 14:XX... (current hour to 23:XX)
-                  └─ Has ← Back button (returns to +5/+10/+15/+20 picker)
+                  └─ Opens hour picker: 12--, 13--, 14--... (current hour to 23--)
+                  └─ Has ← Back button (returns to time offset picker)
 
-BTN-HOUR        = Hour selection (e.g., "14:XX")
+BTN-HOUR        = Hour selection (e.g., "14--")
                   └─ Opens minute picker for selected hour
                   └─ Minutes: 00, 03, 06, 09... (3-minute intervals)
                   └─ Has ◂ Back button (returns to hour selection)
@@ -355,6 +383,39 @@ BTN-WRONG       = ⚠️ Issue (main button)
 **On UPC-ASSIGN message:**
 ```
 BTN-NAVIGATE    = 🧭 Navigate (Google Maps cycling mode)
+BTN-DELAY-ORD   = ⏳ Delay (triggers delay workflow)
+                  └─ Shows picker with format: "+5m → ⏰ 09:32"
+                  └─ Options: +5m, +10m, +15m, +20m
+                  └─ Sends to vendors: "We have a delay..."
+                  └─ Confirms to courier: "✅ Delay request sent..."
+                  └─ Vendors respond with BTN-WORKS or BTN-LATER
+BTN-UNASSIGN    = 🚫 Unassign (only before delivery)
+                  └─ Removes assignment from courier
+                  └─ Deletes UPC message
+                  └─ Updates MDG order message (removes "Assigned to:" line)
+                  └─ Re-shows MDG-CONF with assignment buttons
+                  └─ Sends notification to MDG
+BTN-CALL-VEND   = {chef_emoji} Call {Shortcut} (one button per vendor)
+                  └─ Shows vendor shortcut (JS, LR, DD, etc.)
+                  └─ Chef emoji rotates per vendor
+                  └─ Placeholder for Telegram calling integration
+BTN-DELIVERED   = ✅ Delivered (completes order)
+                  ├─ Marks "delivered" → records timestamp
+                  ├─ Sends ST-DELIVERED to MDG: "🔖 #{num} was delivered by {courier} at {HH:MM}"
+                  └─ NOTE: No confirmation message sent to courier
+
+> 📝 Note: All buttons displayed vertically (one per row) for easy mobile access
+```
+
+**Delay Time Picker:**
+```
+BTN-DELAY-SEL   = Time buttons with offset format
+                  ├─ Format: "+Xm → ⏰ HH:MM" e.g., "+5m → ⏰ 14:35"
+                  └─ On click: Sends ST-UPC-DELAY to MDG: "📨 DELAY request ({time}) for 🔖 #{num} sent to {Shortcut}"
+BTN-BACK        = ← Back (closes delay menu)
+```
+```
+BTN-NAVIGATE    = 🧭 Navigate (Google Maps cycling mode)
 BTN-DELAY-ORD   = ⏰ Delay (triggers delay workflow)
                   └─ Shows picker: "14:35 (+5 mins)", "14:40 (+10 mins)", etc.
                   └─ Sends to vendors: "We have a delay..."
@@ -388,7 +449,8 @@ BTN-BACK        = ← Back (closes delay menu)
 
 **Restaurant Call Menu (multi-vendor):**
 ```
-BTN-CALL-VEND   = � Call {Shortcut} (opens phone dialer)
+BTN-CALL-VEND   = {chef_emoji} Call {Shortcut} (opens phone dialer)
+                  └─ Chef emoji rotates per vendor
 BTN-BACK        = ← Back (closes menu)
 ```
 
@@ -533,8 +595,16 @@ When dispatcher clicks **BTN-TIME**, system shows recent orders (last 50, max 1 
 ### Recent Order Display
 
 ```
-Format: {time} - {abbreviated_address} ({vendor shortcuts}, #{num})
-Example: "20:46 - Ledererga. 15 (LR, #59)"
+NEW Format: {color}🔖 #{num} {chef} {Vendor}: {time} 🗺️ {address}
+Example: "🔵🔖 #59 👩‍🍳 LR: 20:46 🗺️ Lederergasse 15"
+
+Multi-vendor orders split into separate buttons:
+🟠🔖 #60 👩‍🍳 JS: 20:50 🗺️ Grabengasse 8
+🟠🔖 #60 🧑‍🍳 DD: 20:50 🗺️ Grabengasse 8
+(same color circle, different chef emoji)
+
+Color circles rotate per order: 🔴🟠🟡🟢🔵🟣🟤
+Chef emojis rotate per vendor: 👩‍🍳👩🏻‍🍳👩🏼‍🍳👩🏾‍🍳🧑‍🍳🧑🏻‍🍳🧑🏼‍🍳🧑🏾‍🍳👨‍🍳👨🏻‍🍳👨🏼‍🍳👨🏾‍🍳
 
 Street abbreviation (2-tier system):
 
@@ -557,25 +627,32 @@ Tier 2 (Aggressive - if button exceeds 30 chars):
 
 ### Grouping Flow
 
-**Step 1: Click BTN-TIME**
+**Step 1: Click BTN-SCHEDULED**
 ```
 Shows list of recent orders:
-[20:46 - Ledererga. 15 (LR, #59)]
-[20:50 - Grabenga. 8 (JS+DD, #60)]
-[EXACT TIME ⏰]
+[🔵🔖 #59 👩‍🍳 LR: 20:46 🗺️ Lederergasse 15]
+[🟠🔖 #60 👩‍🍳 JS: 20:50 🗺️ Grabengasse 8]
+[🟠🔖 #60 🧑‍🍳 DD: 20:50 🗺️ Grabengasse 8] (multi-vendor split)
 [← Back]
+
+NOTE: Multi-vendor orders show as separate buttons (one per vendor, same color)
 ```
 
 **Step 2: Select reference order (BTN-ORD-REF)**
 ```
-Shows grouping options:
-[Same] - same time as reference (if matching vendor)
-[+ 5 m --- 20:51] - reference time +5 minutes
-[+ 10 m --- 20:56] - reference time +10 minutes
-[+ 15 m --- 21:01] - reference time +15 minutes
-[+ 20 m --- 21:06] - reference time +20 minutes
-[EXACT TIME ⏰]
+Shows offset options (vertical layout):
+[🔁 Same time] - same time as reference (if matching vendor)
+[-5m → ⏰ 18:00] - reference time -5 minutes
+[-3m → ⏰ 18:02] - reference time -3 minutes
+[+3m → ⏰ 18:08] - reference time +3 minutes
+[+5m → ⏰ 18:10] - reference time +5 minutes
+[+10m → ⏰ 18:15] - reference time +10 minutes
+[+15m → ⏰ 18:20] - reference time +15 minutes
+[+20m → ⏰ 18:25] - reference time +20 minutes
+[+25m → ⏰ 18:30] - reference time +25 minutes
 [← Back]
+
+NOTE: EXACT TIME button removed from this menu
 ```
 
 **Step 3: Choose action**
@@ -585,8 +662,8 @@ Shows grouping options:
 - **THEN** sends: `"Can you prepare {current} together with {reference} at the same time {time}?"`
 - **ELSE** sends: `"Can you prepare {current} at {time}?"` (normal time request)
 
-**BTN-PLUS** (+5/+10/+15/+20):
-- Sends time request at reference time + X minutes
+**BTN-OFFSET** (-5m / -3m / +3m / +5m / +10m / +15m / +20m / +25m):
+- Sends time request at reference time ± X minutes
 - Message: `"Can you prepare 🔖 #{num} at {time}?"`
 
 ### Multi-Vendor Behavior

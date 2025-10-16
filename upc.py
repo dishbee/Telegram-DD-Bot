@@ -225,6 +225,9 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int):
         order["assigned_at"] = now()
         order["status"] = "assigned"
         order["upc_assignment_message_id"] = msg.message_id  # Track for group updates
+        
+        # DEBUG: Track UPC message creation
+        logger.info(f"🎯 UPC-ASSIGN SENT: order_id={order_id}, user_id={user_id}, message_id={msg.message_id}")
 
         # Track assignment message
         if "assignment_messages" not in order:

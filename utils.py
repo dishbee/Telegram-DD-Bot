@@ -545,14 +545,16 @@ async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mo
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            logger.info(f"Send message attempt {attempt + 1}")
-            return await bot.send_message(
+            logger.info(f"📤 SEND_MESSAGE attempt {attempt + 1}: chat_id={chat_id}, has_keyboard={bool(reply_markup)}")
+            msg = await bot.send_message(
                 chat_id=chat_id,
                 text=text,
                 reply_markup=reply_markup,
                 parse_mode=parse_mode,
                 disable_web_page_preview=disable_web_page_preview
             )
+            logger.info(f"✅ Message sent successfully: message_id={msg.message_id}, chat_id={chat_id}")
+            return msg
         except Exception as e:
             logger.error(f"Send message attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
@@ -565,6 +567,10 @@ async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mo
 async def safe_edit_message(chat_id: int, message_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
     """Edit message with error handling"""
     try:
+        # DEBUG: Track all message edits with details
+        keyboard_status = "WITH_KEYBOARD" if reply_markup else "NO_KEYBOARD"
+        logger.info(f"🔧 EDIT_MESSAGE: chat_id={chat_id}, message_id={message_id}, keyboard={keyboard_status}")
+        
         await bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
@@ -573,8 +579,9 @@ async def safe_edit_message(chat_id: int, message_id: int, text: str, reply_mark
             parse_mode=parse_mode,
             disable_web_page_preview=disable_web_page_preview
         )
+        logger.info(f"✅ Message {message_id} edited successfully in chat {chat_id}")
     except Exception as e:
-        logger.error(f"Error editing message: {e}")
+        logger.error(f"❌ Error editing message {message_id} in chat {chat_id}: {e}")
 
 async def safe_delete_message(chat_id: int, message_id: int):
     """Delete message with error handling"""
