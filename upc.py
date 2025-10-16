@@ -243,9 +243,13 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
     """Update MDG-CONF message: remove assignment buttons, add assignment info text"""
     try:
         order = STATE.get(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found in STATE for MDG-CONF update")
+            return
+            
         mdg_conf_message_id = order.get("mdg_conf_message_id")
-        
-        if not order or not mdg_conf_message_id:
+        if not mdg_conf_message_id:
+            logger.error(f"No mdg_conf_message_id found for order {order_id}")
             return
 
         # Get assignee info
@@ -260,6 +264,11 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
         import mdg
         from main import build_assignment_confirmation_message
         vendor_conf_text = build_assignment_confirmation_message(order)
+        
+        if not vendor_conf_text:
+            logger.error(f"build_assignment_confirmation_message returned None for order {order_id}")
+            return
+            
         assignment_info = f"\n\n👉 **Assigned to** 🐝 {assignee_name} at {time_str}"
         updated_text = vendor_conf_text + assignment_info
 
@@ -274,7 +283,7 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
         logger.info(f"DEBUG: Updated MDG-CONF for order {order_id} - removed buttons, added assignment to {assignee_name} at {time_str}")
 
     except Exception as e:
-        logger.error(f"Error updating MDG with assignment: {e}")
+        logger.error(f"Error updating MDG with assignment: {e}", exc_info=True)
 
 def build_assignment_message(order: dict) -> str:
     """
@@ -411,10 +420,16 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
     try:
         order = STATE.get(order_id)
         if not order:
+            logger.error(f"Order {order_id} not found in STATE for CTA keyboard")
+            return None
+
+        customer = order.get('customer', {})
+        if not customer:
+            logger.error(f"No customer data for order {order_id}")
             return None
 
         buttons = []
-        address = order['customer'].get('original_address', order['customer']['address'])
+        address = customer.get('original_address') or customer.get('address', '')
         vendors = order.get("vendors", [])
 
         # Row 1: Navigate (single button - phone numbers are in message text)
