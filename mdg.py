@@ -297,9 +297,13 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         return f"Error formatting order {order.get('name', 'Unknown')}"
 
 
-def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
+def mdg_initial_keyboard(order_id: str, show_assignment_buttons: bool = True) -> InlineKeyboardMarkup:
     """
     Build initial MDG keyboard with Details button above time request buttons.
+    
+    Args:
+        order_id: Order ID
+        show_assignment_buttons: If False, only show Details button (for assigned orders)
     
     Layout:
     [Details ▸]
@@ -309,6 +313,9 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
     [Details ▸]
     [Request JS]
     [Request LR]
+    
+    Or for assigned orders:
+    [Details ▸]  (only button)
     """
     try:
         order = STATE.get(order_id)
@@ -331,6 +338,10 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
         )
 
         buttons = [[toggle_button]]
+        
+        # If order is assigned and caller doesn't want assignment buttons, return early
+        if not show_assignment_buttons:
+            return InlineKeyboardMarkup(buttons)
 
         if len(vendors) > 1:
             # Multi-vendor: show vendor selection buttons with rotating chef emojis

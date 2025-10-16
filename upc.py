@@ -240,7 +240,7 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int):
         logger.error(f"Error sending assignment to private chat: {e}")
 
 async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
-    """Update MDG message to show assignment status"""
+    """Update MDG message to show assignment status and remove assignment buttons"""
     try:
         order = STATE.get(order_id)
         if not order or "mdg_message_id" not in order:
@@ -250,20 +250,37 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
         assignee_info = COURIER_MAP.get(str(assigned_user_id), {})
         assignee_name = assignee_info.get("username", f"User{assigned_user_id}")
 
-        # Build updated MDG text with assignment info
+        # Build updated MDG text with assignment info including time
         import mdg
         base_text = mdg.build_mdg_dispatch_text(order)
-        assignment_info = f"\n\n👤 **Assigned to:** {assignee_name}"
+        
+        # Format assignment time
+        assigned_at = order.get("assigned_at")
+        if assigned_at:
+            assignment_time = assigned_at.strftime("%H:%M")
+            assignment_info = f"\n\n� **Assigned to** 🐝 {assignee_name} at {assignment_time}"
+        else:
+            assignment_info = f"\n\n👉 **Assigned to** 🐝 {assignee_name}"
 
         updated_text = base_text + assignment_info
 
-        # Keep vendor selection buttons visible
+        # Update MDG message WITHOUT assignment buttons (Details button only)
         await safe_edit_message(
             DISPATCH_MAIN_CHAT_ID,
             order["mdg_message_id"],
             updated_text,
-            mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
+            mdg.mdg_initial_keyboard(order_id, show_assignment_buttons=False)
         )
+
+        # Delete the MDG-CONF message (assignment confirmation message with buttons)
+        additional_messages = order.get("mdg_additional_messages", [])
+        if additional_messages:
+            # The last message in the list is usually the assignment confirmation
+            conf_msg_id = additional_messages[-1] if additional_messages else None
+            if conf_msg_id:
+                await safe_delete_message(DISPATCH_MAIN_CHAT_ID, conf_msg_id)
+                # Remove from tracking
+                order["mdg_additional_messages"].remove(conf_msg_id)
 
         logger.info(f"Updated MDG for order {order_id} - assigned to {assignee_name}")
 

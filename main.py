@@ -1282,11 +1282,12 @@ def telegram_webhook():
                     # Update MDG
                     order["requested_time"] = adjusted_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {adjusted_time}"
+                    # DON'T rebuild keyboard - just update text
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        mdg_time_request_keyboard(order_id)
+                        None  # Keep existing keyboard
                     )
                     
                     # Clean up additional MDG messages
@@ -1350,11 +1351,12 @@ def telegram_webhook():
                     # Update MDG
                     order["requested_time"] = requested_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {requested_time}"
+                    # DON'T rebuild keyboard - just update text
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        mdg_time_request_keyboard(order_id)
+                        None  # Keep existing keyboard
                     )
                     
                     # Clean up additional MDG messages
@@ -1501,11 +1503,12 @@ def telegram_webhook():
                     # Update MDG
                     order["requested_time"] = selected_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {selected_time}"
+                    # DON'T rebuild keyboard - just update text
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        mdg_time_request_keyboard(order_id)
+                        None  # Keep existing keyboard
                     )
                     
                     # Delete the time picker message
@@ -2017,6 +2020,17 @@ def telegram_webhook():
                     No cleanup: Assignment confirmation message stays in MDG permanently
                     """
                     order_id = data[1]
+                    order = STATE.get(order_id)
+                    
+                    if not order:
+                        logger.warning(f"Order {order_id} not found in STATE")
+                        return
+                    
+                    # Prevent double assignment
+                    if order.get("status") == "assigned":
+                        logger.info(f"Order {order_id} already assigned to {order.get('assigned_to')}, ignoring duplicate")
+                        return
+                    
                     user_id = cq["from"]["id"]
                     logger.info(f"User {user_id} assigning order {order_id} to themselves")
                     
