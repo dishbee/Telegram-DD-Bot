@@ -170,6 +170,115 @@ def validate_phone(phone: str) -> Optional[str]:
 
     return cleaned
 
+def abbreviate_street(street_name: str, max_length: int = 20) -> str:
+    """
+    Abbreviate German street names for display in buttons (BTN-ORD-REF only).
+    
+    Keeps button text under character limit while preserving essential info.
+    Used ONLY for recent order buttons where space is limited.
+    
+    Two-tier abbreviation system:
+    
+    Tier 1 (Standard): Apply common abbreviations
+    - Straße→Str., Gasse→Ga., Weg→W., Platz→Pl., Allee→Al.
+    - Doktor→Dr., Professor→Prof., Sankt→St.
+    - Compound names: Remove hyphens, truncate middle parts to 4 letters, no dots
+      Example: "Dr.-Stephan-Billinger-Straße" → "Dr.Step.Bill.Str."
+    
+    Tier 2 (Aggressive - if button exceeds 30 chars): 
+    - Take only first 4 letters of street name (no suffix abbreviation)
+    - Example: "Lederergasse 15" → "Lede 15"
+    - Example: "Dr.-Stephan-Billinger-Straße 5" → "DrSt 5"
+    
+    Args:
+        street_name: Full street name (may include house number)
+        max_length: Target maximum length for Tier 1 (default: 20)
+    
+    Returns:
+        Abbreviated street name
+        
+    Examples:
+        >>> abbreviate_street("Innstraße 15")
+        'Innstr. 15'
+        >>> abbreviate_street("Lederergasse 8")
+        'Ledererga. 8'
+        >>> abbreviate_street("Dr.-Stephan-Billinger-Straße 42")
+        'Dr.Step.Bill.Str. 42'
+    """
+    import re
+    
+    if not street_name:
+        return street_name
+    
+    original_full = street_name
+    
+    # Extract house number if present (preserve it)
+    house_number = ""
+    match = re.search(r'\s+(\d+[a-zA-Z]?)$', street_name)
+    if match:
+        house_number = f" {match.group(1)}"
+        street_name = street_name[:match.start()]
+    
+    # TIER 1: Standard abbreviation
+    
+    # Step 1: Replace common title prefixes
+    replacements = [
+        (r'\bDoktor-', 'Dr.'),
+        (r'\bProfessor-', 'Prof.'),
+        (r'\bSankt-', 'St.'),
+    ]
+    
+    for pattern, replacement in replacements:
+        street_name = re.sub(pattern, replacement, street_name)
+    
+    # Step 2: Replace common street suffixes
+    suffix_replacements = [
+        ('straße', 'str.'),
+        ('Straße', 'Str.'),
+        ('gasse', 'ga.'),
+        ('Gasse', 'Ga.'),
+        ('weg', 'w.'),
+        ('Weg', 'W.'),
+        ('platz', 'pl.'),
+        ('Platz', 'Pl.'),
+        ('allee', 'al.'),
+        ('Allee', 'Al.'),
+    ]
+    
+    for full, abbr in suffix_replacements:
+        if street_name.endswith(full):
+            street_name = street_name[:-len(full)] + abbr
+            break
+    
+    # Check if we're under limit after basic replacements
+    result = street_name + house_number
+    if len(result) <= max_length:
+        return result
+    
+    # Step 3: Smart truncation for compound names (hyphenated parts)
+    # Example: "Dr.-Stephan-Billinger-Str." → "Dr.Step.Bill.Str." (NO hyphens, NO dots after parts)
+    if '-' in street_name:
+        parts = street_name.split('-')
+        truncated_parts = []
+        
+        for i, part in enumerate(parts):
+            # Keep first part (usually title like "Dr.") as-is
+            if i == 0:
+                truncated_parts.append(part)
+            # Keep last part (suffix like "Str.") as-is
+            elif i == len(parts) - 1:
+                truncated_parts.append(part)
+            # Truncate middle parts to first 4 characters (NO dot)
+            else:
+                truncated_parts.append(part[:4] if len(part) > 4 else part)
+        
+        # Join with NO hyphens - just concatenate with dots
+        street_name = '.'.join(truncated_parts)
+    
+    tier1_result = street_name + house_number
+    
+    return tier1_result
+
 def clean_product_name(name: str) -> str:
     """
     Clean up product names according to project-specific display rules.

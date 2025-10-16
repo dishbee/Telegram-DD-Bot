@@ -38,9 +38,50 @@ Format: 🔖 #{num} - dishbee
         ❕ Cash: {Total}€ (if COD)
         
         [{phone}](tel:{phone}) (if phone exists)
-        
-        [Details ▸] button
-        [Request ASAP] [Request TIME] (or vendor buttons if multi-vendor)
+
+Buttons (single vendor):
+[Details ▸]
+[Request ASAP] [Request TIME]
+
+Buttons (multi-vendor):
+[Details ▸]
+[Request JS] (one button per vendor)
+[Request LR]
+[Request DD]
+```
+
+**MDG-ORD → After BTN-TIME clicked**
+```
+Shows recent orders menu (if available):
+[20:46 - Ledererga. 15 (LR, #59)]
+[20:50 - Grabenga. 8 (JS+DD, #60)]
+[EXACT TIME ⏰]
+[← Back]
+
+Or direct to exact time picker (if no recent orders):
+[12:XX] [13:XX] [14:XX]... [23:XX]
+[← Back]
+```
+
+**MDG-ORD → After selecting recent order**
+```
+Shows grouping options:
+[Same] (if matching vendor)
+[+ 5 m --- 20:51]
+[+ 10 m --- 20:56]
+[+ 15 m --- 21:01]
+[+ 20 m --- 21:06]
+[EXACT TIME ⏰]
+[← Back]
+```
+
+**MDG-ORD → After BTN-VENDOR clicked (multi-vendor only)**
+```
+Shows vendor-specific time menu:
+📍 Request time from {Vendor}:
+[Request ASAP]
+[Request TIME]
+[← Back]
 ```
 
 **MDG-ORD (Expanded)** - When Details clicked
@@ -172,7 +213,8 @@ BTN-VENDOR      = Request {Vendor} (multi-vendor orders)
 
 **After BTN-TIME clicked:**
 ```
-BTN-ORD-REF     = Recent order (e.g., "20:46 - Lederergasse 15 (LR, #59)")
+BTN-ORD-REF     = Recent order (e.g., "20:46 - Ledererga. 15 (LR, #59)")
+                  └─ Street names abbreviated for button display
                   └─ Shows: BTN-SAME / BTN-PLUS options
 ```
 
@@ -406,6 +448,9 @@ TMP-DELAY-PICK  = Delay time picker (UPC)
 
 ```
 FN-CLEAN-NAME   = Clean product names (removes prefixes, extracts quoted text)
+FN-ABBREV-STREET = Abbreviate street names for buttons (BTN-ORD-REF only)
+                   └─ Tier 1: Straße→Str., compound→Dr.Step.Bill.Str.
+                   └─ Tier 2 (>30 chars): First 4 letters only (Lede 15)
 FN-CHECK-CONF   = Check if all vendors confirmed
 FN-SEND-ASSIGN  = Send assignment to courier (UPC-ASSIGN)
 FN-UPDATE-MDG   = Update MDG message with assignment/delivery status
@@ -477,6 +522,99 @@ BTN-DELIVERED clicked
 FN-DELIVERED (update STATE, send confirmations)
     ↓
 MDG-DELIVERED + UPC-DELIVERED
+```
+
+---
+
+## 🕐 ORDER GROUPING ("Same Time As")
+
+When dispatcher clicks **BTN-TIME**, system shows recent orders (last 50, max 1 hour old, confirmed times only) to enable order grouping.
+
+### Recent Order Display
+
+```
+Format: {time} - {abbreviated_address} ({vendor shortcuts}, #{num})
+Example: "20:46 - Ledererga. 15 (LR, #59)"
+
+Street abbreviation (2-tier system):
+
+Tier 1 (Standard - under 30 chars):
+- Straße → Str., Gasse → Ga., Weg → W., Platz → Pl., Allee → Al.
+- Doktor → Dr., Professor → Prof., Sankt → St.
+- Compound: "Dr.-Stephan-Billinger-Straße" → "Dr.Step.Bill.Str." (no hyphens)
+
+Tier 2 (Aggressive - if button exceeds 30 chars):
+- First 4 letters only + house number
+- "Lederergasse 15" → "Lede 15"
+- "Dr.-Stephan-Billinger-Straße 5" → "DrSt 5"
+```
+
+**Criteria for showing in recent list:**
+- Order has `confirmed_time` (vendor confirmed)
+- Order NOT delivered yet (`status != "delivered"`)
+- Order confirmed within last 60 minutes
+- Maximum 10 most recent orders shown
+
+### Grouping Flow
+
+**Step 1: Click BTN-TIME**
+```
+Shows list of recent orders:
+[20:46 - Ledererga. 15 (LR, #59)]
+[20:50 - Grabenga. 8 (JS+DD, #60)]
+[EXACT TIME ⏰]
+[← Back]
+```
+
+**Step 2: Select reference order (BTN-ORD-REF)**
+```
+Shows grouping options:
+[Same] - same time as reference (if matching vendor)
+[+ 5 m --- 20:51] - reference time +5 minutes
+[+ 10 m --- 20:56] - reference time +10 minutes
+[+ 15 m --- 21:01] - reference time +15 minutes
+[+ 20 m --- 21:06] - reference time +20 minutes
+[EXACT TIME ⏰]
+[← Back]
+```
+
+**Step 3: Choose action**
+
+**BTN-SAME** (Same time):
+- **IF** current order has matching vendor with reference order
+- **THEN** sends: `"Can you prepare {current} together with {reference} at the same time {time}?"`
+- **ELSE** sends: `"Can you prepare {current} at {time}?"` (normal time request)
+
+**BTN-PLUS** (+5/+10/+15/+20):
+- Sends time request at reference time + X minutes
+- Message: `"Can you prepare 🔖 #{num} at {time}?"`
+
+### Multi-Vendor Behavior
+
+**Single vendor order:**
+- Shows all recent orders
+- BTN-SAME available if reference has same vendor
+
+**Multi-vendor order:**
+- Recent orders filtered by selected vendor
+- Each vendor gets individual time selection
+- BTN-SAME only available if reference matches specific vendor
+
+### State Tracking
+
+```
+RECENT_ORDERS list (max 50 orders):
+- order_id
+- order_num (display #)
+- confirmed_time
+- address (first part)
+- vendors (list)
+- timestamp (when confirmed)
+
+Cleared when:
+- Order delivered
+- Order older than 1 hour
+- List exceeds 50 items (oldest removed)
 ```
 
 ---

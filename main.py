@@ -385,20 +385,17 @@ def build_assignment_confirmation_message(order: dict) -> str:
                 product_count += 1
         vendor_counts.append(str(product_count))
     
-    # Build header
-    message = f"👍 #{order_num} - dishbee\n\n"
+    # Build header with product counts
+    counts_display = "+".join(vendor_counts)
+    message = f"👍 #{order_num} - dishbee 🍕 {counts_display}\n\n"
     
-    # Vendor details with rotating chef emojis and shortcuts
+    # Vendor details with rotating chef emojis
     for idx, vendor in enumerate(vendors):
         pickup_time = confirmed_times.get(vendor, "ASAP")
         chef_emoji = chef_emojis[idx % len(chef_emojis)]
         # Use vendor shortcut instead of full name
         vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-        message += f"{chef_emoji} {vendor_shortcut}: {pickup_time}\n\n"
-    
-    # Add product counts at the end
-    counts_display = "+".join(vendor_counts)
-    message += f"🍕 {counts_display}"
+        message += f"{chef_emoji} {vendor_shortcut}: {pickup_time}\n"
     
     return message
 

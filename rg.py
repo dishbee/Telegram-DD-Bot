@@ -103,12 +103,10 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
 
 
 def vendor_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
-    """Build time request buttons for a specific vendor."""
+    """Build time request buttons for a specific vendor. New format: ⚡ Asap, 🕒 Time picker"""
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("Request ASAP", callback_data=f"vendor_asap|{order_id}|{vendor}"),
-            InlineKeyboardButton("Request TIME", callback_data=f"vendor_time|{order_id}|{vendor}")
-        ],
+        [InlineKeyboardButton("⚡ Asap", callback_data=f"vendor_asap|{order_id}|{vendor}")],
+        [InlineKeyboardButton("🕒 Time picker", callback_data=f"vendor_time|{order_id}|{vendor}")],
         [InlineKeyboardButton("← Back", callback_data="hide")]
     ])
 
@@ -151,11 +149,11 @@ def restaurant_response_keyboard(request_type: str, order_id: str, vendor: str) 
 
 
 def vendor_exact_time_keyboard(order_id: str, vendor: str, action: str) -> InlineKeyboardMarkup:
-    """Build exact time picker for vendors - shows hours."""
+    """Build exact time picker for vendors - shows hours. Format: 12-- instead of 12:XX"""
     try:
         current_hour = now().hour
         rows: List[List[InlineKeyboardButton]] = []
-        hours: List[str] = [f"{hour:02d}:XX" for hour in range(current_hour, 24)]
+        hours: List[str] = [f"{hour:02d}--" for hour in range(current_hour, 24)]
 
         # Use shortcut to compress callback data
         vendor_short = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2])
