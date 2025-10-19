@@ -56,6 +56,7 @@ from mdg import (
     get_recent_orders_for_same_time,
     get_last_confirmed_order,
     shortcut_to_vendor,
+    CHEF_EMOJIS,
 )
 from rg import (
     build_vendor_summary_text,
