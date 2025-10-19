@@ -103,14 +103,21 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
 
 
 def vendor_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
-    """Build time request buttons for a specific vendor."""
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("Request ASAP", callback_data=f"vendor_asap|{order_id}|{vendor}"),
-            InlineKeyboardButton("Request TIME", callback_data=f"vendor_time|{order_id}|{vendor}")
-        ],
-        [InlineKeyboardButton("← Back", callback_data="hide")]
-    ])
+    """Build time request buttons for a specific vendor (vertical layout with scheduled orders)."""
+    from main import get_recent_orders_for_same_time
+    
+    buttons = []
+    buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"vendor_asap|{order_id}|{vendor}")])
+    buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{vendor}")])
+    
+    # Show "Scheduled orders" button only if recent orders exist for this vendor
+    recent_orders = get_recent_orders_for_same_time(order_id, vendor=vendor)
+    if recent_orders:
+        buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{vendor}")])
+    
+    buttons.append([InlineKeyboardButton("← Back", callback_data="hide")])
+    
+    return InlineKeyboardMarkup(buttons)
 
 
 def vendor_keyboard(order_id: str, vendor: str, expanded: bool) -> InlineKeyboardMarkup:

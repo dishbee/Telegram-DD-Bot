@@ -48,7 +48,6 @@ from mdg import (
     mdg_time_request_keyboard,
     mdg_time_submenu_keyboard,
     order_reference_options_keyboard,
-    group_time_adjustment_keyboard,
     same_time_keyboard,
     time_picker_keyboard,
     exact_time_keyboard,
@@ -691,17 +690,24 @@ def telegram_webhook():
                     order_id, vendor = data[1], data[2]
                     logger.info(f"Selected vendor {vendor} for order {order_id}")
                     
+                    # Get order to find vendor index for chef emoji
+                    order = STATE.get(order_id)
+                    if not order:
+                        return
+                    
+                    vendors = order.get("vendors", [])
+                    vendor_index = vendors.index(vendor) if vendor in vendors else 0
+                    chef_emoji = CHEF_EMOJIS[vendor_index % len(CHEF_EMOJIS)]
+                    
                     # Send vendor-specific time request buttons
                     msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"�‍🍳 Request prep. time from {vendor}:",
+                        f"Request time from {chef_emoji} **{vendor}**:",
                         vendor_time_keyboard(order_id, vendor)
                     )
                     
                     # Track additional message for cleanup
-                    order = STATE.get(order_id)
-                    if order:
-                        order["mdg_additional_messages"].append(msg.message_id)
+                    order["mdg_additional_messages"].append(msg.message_id)
                 
                 # VENDOR-SPECIFIC ACTIONS
                 elif action == "vendor_asap":
@@ -993,6 +999,40 @@ def telegram_webhook():
                         # For multi-vendor, this shouldn't happen as they have vendor buttons
                         logger.warning(f"Unexpected req_time for multi-vendor order {order_id}")
                 
+                elif action == "req_scheduled":
+                    order_id = data[1]
+                    vendor = data[2] if len(data) > 2 else None
+                    
+                    logger.info(f"Showing scheduled orders for order {order_id}, vendor: {vendor}")
+                    
+                    order = STATE.get(order_id)
+                    if not order:
+                        logger.error(f"Order {order_id} not found in STATE")
+                        return
+                    
+                    # Show recent orders list
+                    keyboard = mdg_time_submenu_keyboard(order_id, vendor)
+                    
+                    # Initialize mdg_additional_messages if not exists
+                    if "mdg_additional_messages" not in order:
+                        order["mdg_additional_messages"] = []
+                    
+                    if keyboard is None:
+                        # No recent orders available
+                        msg = await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "No recent orders available (last 5 hours)"
+                        )
+                        order["mdg_additional_messages"].append(msg.message_id)
+                    else:
+                        # Show recent orders menu
+                        msg = await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            "🗂 Select reference order:",
+                            keyboard
+                        )
+                        order["mdg_additional_messages"].append(msg.message_id)
+                
                 elif action == "time_plus":
                     order_id, minutes = data[1], int(data[2])
                     vendor = data[3] if len(data) > 3 else None
@@ -1187,103 +1227,6 @@ def telegram_webhook():
                     order["grouped_via"] = "same"
                     order["group_reference_order"] = ref_order_id
                 
-                elif action == "show_group_menu":
-                    # User clicked "Group" button - show time adjustment menu (±3m/±5m)
-                    order_id = data[1]
-                    ref_order_id = data[2]
-                    ref_time = data[3]
-                    current_vendor = data[4] if len(data) > 4 else None
-                    
-                    logger.info(f"Showing group menu for order {order_id} with reference {ref_order_id}")
-                    
-                    order = STATE.get(order_id)
-                    ref_order = STATE.get(ref_order_id)
-                    if not order or not ref_order:
-                        logger.error(f"Order {order_id} or reference order {ref_order_id} not found")
-                        return
-                    
-                    # Delete the previous message (with "Group" button)
-                    await safe_delete_message(DISPATCH_MAIN_CHAT_ID, cq["message"]["message_id"])
-                    
-                    # Show time adjustment menu
-                    ref_num = ref_order['name'][-2:] if len(ref_order['name']) >= 2 else ref_order['name']
-                    keyboard = group_time_adjustment_keyboard(order_id, ref_order_id, ref_time, current_vendor)
-                    
-                    msg = await safe_send_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        f"⏰ Adjust time for grouping with #{ref_num} ({ref_time}):",
-                        keyboard
-                    )
-                    
-                    # Track for cleanup
-                    order["mdg_additional_messages"].append(msg.message_id)
-                
-                elif action == "time_group":
-                    # User selected adjusted time from group menu (±3m/±5m)
-                    order_id = data[1]
-                    adjusted_time = data[2]
-                    ref_order_id = data[3]
-                    current_vendor_shortcut = data[4] if len(data) > 4 else None
-                    
-                    # Convert shortcut to full vendor name if provided
-                    current_vendor = shortcut_to_vendor(current_vendor_shortcut) if current_vendor_shortcut else None
-                    
-                    logger.info(f"Processing GROUP time request ({adjusted_time}) for order {order_id} with reference {ref_order_id}")
-                    
-                    order = STATE.get(order_id)
-                    if not order:
-                        logger.error(f"Order {order_id} not found in STATE")
-                        return
-                    
-                    order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
-                    
-                    # Determine which vendor(s) to send to - CURRENT order's vendors
-                    if current_vendor:
-                        vendors_to_notify = [current_vendor]
-                    else:
-                        vendors_to_notify = order.get("vendors", [])
-                    
-                    # Send time request to vendor(s)
-                    for vendor in vendors_to_notify:
-                        vendor_chat = VENDOR_GROUP_MAP.get(vendor)
-                        if vendor_chat:
-                            msg = f"Can you prepare 🔖 #{order_num} at {adjusted_time}?"
-                            
-                            await safe_send_message(
-                                vendor_chat,
-                                msg,
-                                restaurant_response_keyboard(adjusted_time, order_id, vendor)
-                            )
-                            
-                            logger.info(f"Sent group time request ({adjusted_time}) to {vendor} for order {order_id}")
-                        else:
-                            logger.warning(f"Vendor {vendor} not found in VENDOR_GROUP_MAP")
-                    
-                    # Update MDG
-                    order["requested_time"] = adjusted_time
-                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {adjusted_time}"
-                    await safe_edit_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        order["mdg_message_id"],
-                        mdg_text,
-                        mdg_time_request_keyboard(order_id)
-                    )
-                    
-                    # Clean up additional MDG messages
-                    await cleanup_mdg_messages(order_id)
-                    
-                    # Send confirmation to MDG
-                    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-                    vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
-                    await send_status_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        f"📨 TIME request ({adjusted_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
-                        auto_delete_after=20
-                    )
-                    
-                    # Mark order for grouping after vendor confirms
-                    order["grouped_via"] = "group"
-                    order["group_reference_order"] = ref_order_id
                 
                 elif action == "time_relative":
                     # User clicked +5, +10, +15, or +20

@@ -43,7 +43,7 @@ def shortcut_to_vendor(shortcut: str) -> Optional[str]:
 
 def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
     """Get recent CONFIRMED orders (last 5 hours) for 'same time as' functionality."""
-    one_hour_ago = now() - timedelta(hours=5)
+    five_hours_ago = now() - timedelta(hours=5)
     recent: List[Dict[str, str]] = []
 
     for order_id, order_data in STATE.items():
@@ -52,7 +52,7 @@ def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str
         if not order_data.get("confirmed_time"):
             continue
         created_at = order_data.get("created_at")
-        if created_at and created_at > one_hour_ago:
+        if created_at and created_at > five_hours_ago:
             if order_data.get("order_type") == "shopify":
                 display_name = f"#{order_data['name'][-2:]}"
             else:
@@ -339,11 +339,14 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
                     callback_data=f"req_vendor|{order_id}|{vendor}|{int(now().timestamp())}"
                 )])
         else:
-            # Single vendor: show ASAP/TIME buttons
-            buttons.append([
-                InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
-                InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
-            ])
+            # Single vendor: show ASAP/TIME/SCHEDULED buttons (vertical)
+            buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}")])
+            buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{int(now().timestamp())}")])
+            
+            # Show "Scheduled orders" button only if recent orders exist
+            recent_orders = get_recent_orders_for_same_time(order_id, vendor=None)
+            if recent_orders:
+                buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
 
         return InlineKeyboardMarkup(buttons)
 
@@ -392,10 +395,14 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
             return InlineKeyboardMarkup(buttons)
 
         logger.info("SINGLE VENDOR detected: %s", vendors)
-        buttons.append([
-            InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
-            InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
-        ])
+        buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}")])
+        buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{int(now().timestamp())}")])
+        
+        # Show "Scheduled orders" button only if recent orders exist
+        recent_orders = get_recent_orders_for_same_time(order_id, vendor=None)
+        if recent_orders:
+            buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
+        
         return InlineKeyboardMarkup(buttons)
 
     except Exception as exc:  # pragma: no cover - defensive
@@ -538,10 +545,6 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                     
                     buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
 
-            # Show EXACT TIME button at bottom when there are recent orders
-            vendor_param = f"|{vendor}" if vendor else ""
-            buttons.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}{vendor_param}")])
-            
             # Add Back button
             buttons.append([InlineKeyboardButton("← Back", callback_data="hide")])
         
@@ -591,20 +594,15 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
                 current_vendors = order.get("vendors", [])
                 vendor_matches = (ref_vendor_full in current_vendors)
         
-        # First row: Show BTN-SAME if vendors match, BTN-GROUP if different vendors
+        # Show "Same time" button ONLY if vendors match
         if vendor_matches:
-            # Same vendor - show "Same time" button (existing behavior)
+            # Same vendor - show "Same time" button
             if current_vendor_full:
                 same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}|{current_vendor_full}"
             else:
                 same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}"
-            buttons.append([InlineKeyboardButton("Same time", callback_data=same_callback)])
-        else:
-            # Different vendors - show "Group" button (opens time adjustment menu)
-            group_callback = f"show_group_menu|{current_order_id}|{ref_order_id}|{ref_time}"
-            if current_vendor_full:
-                group_callback += f"|{current_vendor_full}"
-            buttons.append([InlineKeyboardButton("Group", callback_data=group_callback)])
+            buttons.append([InlineKeyboardButton("🔁 Same time", callback_data=same_callback)])
+        # If vendors don't match: NO special button, just show offset buttons below
         
         # Build offset buttons: -5m, -3m, +3m, +5m, +10m, +15m, +20m, +25m (one per row)
         for minutes in [-5, -3, 3, 5, 10, 15, 20, 25]:
@@ -624,65 +622,6 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
     
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building order reference options keyboard: %s", exc)
-        return InlineKeyboardMarkup([])
-
-
-def group_time_adjustment_keyboard(current_order_id: str, ref_order_id: str, ref_time: str, current_vendor: Optional[str] = None) -> InlineKeyboardMarkup:
-    """
-    Build time adjustment menu for grouping orders with DIFFERENT vendors.
-    Shows ±3m and ±5m options relative to reference order time.
-    
-    Args:
-        current_order_id: Current order being grouped
-        ref_order_id: Reference order ID
-        ref_time: Reference order time (HH:MM)
-        current_vendor: Current vendor SHORTCUT if multi-vendor order
-    """
-    try:
-        # Parse reference time
-        ref_hour, ref_min = map(int, ref_time.split(':'))
-        ref_datetime = now().replace(hour=ref_hour, minute=ref_min, second=0, microsecond=0)
-        
-        buttons: List[List[InlineKeyboardButton]] = []
-        
-        # Build time adjustment buttons: +3m, +5m, -3m, -5m
-        adjustments = [
-            (3, "+3m"),
-            (5, "+5m"),
-            (-3, "-3m"),
-            (-5, "-5m")
-        ]
-        
-        row1 = []  # +3m, +5m
-        row2 = []  # -3m, -5m
-        
-        for minutes, label in adjustments:
-            adjusted_time = ref_datetime + timedelta(minutes=minutes)
-            time_str = adjusted_time.strftime("%H:%M")
-            
-            # Build callback with vendor if multi-vendor order
-            vendor_param = f"|{current_vendor}" if current_vendor else ""
-            callback = f"time_group|{current_order_id}|{time_str}|{ref_order_id}{vendor_param}"
-            
-            # Button text: "+3m (19:33)"
-            button_text = f"{label} ({time_str})"
-            button = InlineKeyboardButton(button_text, callback_data=callback)
-            
-            if minutes > 0:
-                row1.append(button)
-            else:
-                row2.append(button)
-        
-        buttons.append(row1)  # [+3m, +5m]
-        buttons.append(row2)  # [-3m, -5m]
-        
-        # Add Back button
-        buttons.append([InlineKeyboardButton("← Back", callback_data="hide")])
-        
-        return InlineKeyboardMarkup(buttons)
-    
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.error("Error building group time adjustment keyboard: %s", exc)
         return InlineKeyboardMarkup([])
 
 
