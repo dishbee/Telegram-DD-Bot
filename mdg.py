@@ -41,8 +41,13 @@ def shortcut_to_vendor(shortcut: str) -> Optional[str]:
     return None
 
 
-def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str]]:
-    """Get recent CONFIRMED orders (last 5 hours) for 'same time as' functionality."""
+def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str] = None) -> List[Dict[str, str]]:
+    """Get recent CONFIRMED orders (last 5 hours) for 'same time as' functionality.
+    
+    Args:
+        current_order_id: The current order to exclude from results
+        vendor: Optional vendor name to filter by (only show orders containing this vendor)
+    """
     five_hours_ago = now() - timedelta(hours=5)
     recent: List[Dict[str, str]] = []
 
@@ -51,6 +56,11 @@ def get_recent_orders_for_same_time(current_order_id: str) -> List[Dict[str, str
             continue
         if not order_data.get("confirmed_time"):
             continue
+        
+        # Filter by vendor if specified
+        if vendor and vendor not in order_data.get("vendors", []):
+            continue
+            
         created_at = order_data.get("created_at")
         if created_at and created_at > five_hours_ago:
             if order_data.get("order_type") == "shopify":
