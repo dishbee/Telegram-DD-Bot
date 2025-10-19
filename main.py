@@ -681,19 +681,9 @@ def telegram_webhook():
                 return
             
             action = data[0]
-            
-            # DEBUG: Enhanced callback logging
-            callback_msg_id = cq.get("message", {}).get("message_id")
-            callback_chat_id = cq.get("message", {}).get("chat", {}).get("id")
-            callback_user = cq.get("from", {}).get("username", "unknown")
-            
-            logger.info(f"🔔 CALLBACK RECEIVED:")
-            logger.info(f"   Action: {action}")
-            logger.info(f"   Full data: {cq.get('data')}")
-            logger.info(f"   Parsed: {data}")
-            logger.info(f"   Message ID: {callback_msg_id}")
-            logger.info(f"   Chat ID: {callback_chat_id}")
-            logger.info(f"   User: {callback_user}")
+            logger.info(f"Raw callback data: {cq.get('data')}")
+            logger.info(f"Parsed callback data: {data}")
+            logger.info(f"Processing callback: {action}")
             
             try:
                 # VENDOR SELECTION (for multi-vendor orders)
@@ -957,9 +947,8 @@ def telegram_webhook():
                     await cleanup_mdg_messages(order_id)
                 
                 elif action == "req_time":
-                    # BTN-SCHEDULED: Show recent orders menu (NOT hour picker)
                     order_id = data[1]
-                    logger.info(f"Processing SCHEDULED ORDERS request for order {order_id}")
+                    logger.info(f"Processing TIME request for order {order_id}")
                     order = STATE.get(order_id)
                     if not order:
                         logger.error(f"Order {order_id} not found in STATE")
@@ -968,51 +957,41 @@ def telegram_webhook():
                     vendors = order.get("vendors", [])
                     logger.info(f"Order {order_id} has vendors: {vendors} (count: {len(vendors)})")
                     
-                    # Show recent orders menu (scheduled orders button)
-                    if "mdg_additional_messages" not in order:
-                        order["mdg_additional_messages"] = []
-                    
-                    keyboard = mdg_time_submenu_keyboard(order_id)
-                    
-                    if keyboard is None:
-                        # No recent orders available
-                        msg = await safe_send_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            "⚠️ No recent orders available",
-                            InlineKeyboardMarkup([[InlineKeyboardButton("← Back", callback_data="hide")]])
-                        )
+                    # For single vendor, show TIME submenu per assignment
+                    if len(vendors) <= 1:
+                        logger.info(f"SINGLE VENDOR detected: {vendors}")
+                        keyboard = mdg_time_submenu_keyboard(order_id)
+                        
+                        # Initialize mdg_additional_messages if not exists
+                        if "mdg_additional_messages" not in order:
+                            order["mdg_additional_messages"] = []
+                        
+                        # If keyboard is None, no recent orders - show hour picker directly
+                        if keyboard is None:
+                            logger.info(f"No recent orders found - showing hour picker directly")
+                            msg = await safe_send_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                "🕒 Select hour:",
+                                exact_time_keyboard(order_id)
+                            )
+                            # Track additional message for cleanup
+                            order["mdg_additional_messages"].append(msg.message_id)
+                        else:
+                            # Has recent orders - show them with EXACT TIME button
+                            has_recent_orders = len(keyboard.inline_keyboard) > 1  # More than just EXACT TIME button
+                            message_text = "Select scheduled order:" if has_recent_orders else "Request exact time:"
+                            
+                            msg = await safe_send_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                message_text,
+                                keyboard
+                            )
+                            
+                            # Track additional message for cleanup (array already initialized above)
+                            order["mdg_additional_messages"].append(msg.message_id)
                     else:
-                        msg = await safe_send_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            "Select scheduled order:",
-                            keyboard
-                        )
-                    
-                    # Track additional message for cleanup
-                    order["mdg_additional_messages"].append(msg.message_id)
-                
-                elif action == "req_exact":
-                    # BTN-TIME: Show hour picker directly (no recent orders)
-                    order_id = data[1]
-                    logger.info(f"Processing TIME PICKER request for order {order_id}")
-                    order = STATE.get(order_id)
-                    if not order:
-                        logger.error(f"Order {order_id} not found in STATE")
-                        return
-                    
-                    # Initialize mdg_additional_messages if not exists
-                    if "mdg_additional_messages" not in order:
-                        order["mdg_additional_messages"] = []
-                    
-                    # Show hour picker directly
-                    msg = await safe_send_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        "🕒 Select hour:",
-                        exact_time_keyboard(order_id)
-                    )
-                    
-                    # Track additional message for cleanup
-                    order["mdg_additional_messages"].append(msg.message_id)
+                        # For multi-vendor, this shouldn't happen as they have vendor buttons
+                        logger.warning(f"Unexpected req_time for multi-vendor order {order_id}")
                 
                 elif action == "time_plus":
                     order_id, minutes = data[1], int(data[2])
@@ -1243,12 +1222,13 @@ def telegram_webhook():
                     # User selected adjusted time from group menu (±3m/±5m)
                     order_id = data[1]
                     adjusted_time = data[2]
-                    current_vendor_shortcut = data[3] if len(data) > 3 else None
+                    ref_order_id = data[3]
+                    current_vendor_shortcut = data[4] if len(data) > 4 else None
                     
                     # Convert shortcut to full vendor name if provided
                     current_vendor = shortcut_to_vendor(current_vendor_shortcut) if current_vendor_shortcut else None
                     
-                    logger.info(f"Processing GROUP time request ({adjusted_time}) for order {order_id}")
+                    logger.info(f"Processing GROUP time request ({adjusted_time}) for order {order_id} with reference {ref_order_id}")
                     
                     order = STATE.get(order_id)
                     if not order:
@@ -1282,12 +1262,11 @@ def telegram_webhook():
                     # Update MDG
                     order["requested_time"] = adjusted_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {adjusted_time}"
-                    # DON'T rebuild keyboard - just update text
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        None  # Keep existing keyboard
+                        mdg_time_request_keyboard(order_id)
                     )
                     
                     # Clean up additional MDG messages
@@ -1310,7 +1289,8 @@ def telegram_webhook():
                     # User clicked +5, +10, +15, or +20
                     order_id = data[1]
                     requested_time = data[2]
-                    current_vendor_shortcut = data[3] if len(data) > 3 else None
+                    ref_order_id = data[3]
+                    current_vendor_shortcut = data[4] if len(data) > 4 else None
                     
                     # Convert shortcut to full vendor name if provided
                     current_vendor = shortcut_to_vendor(current_vendor_shortcut) if current_vendor_shortcut else None
@@ -1351,12 +1331,11 @@ def telegram_webhook():
                     # Update MDG
                     order["requested_time"] = requested_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {requested_time}"
-                    # DON'T rebuild keyboard - just update text
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        None  # Keep existing keyboard
+                        mdg_time_request_keyboard(order_id)
                     )
                     
                     # Clean up additional MDG messages
@@ -1474,15 +1453,20 @@ def telegram_webhook():
                 
                 elif action == "exact_selected":
                     order_id, selected_time = data[1], data[2]
-                    # Note: data[3] might be timestamp from button, NOT vendor
-                    # For single-vendor orders from BTN-TIME, there is no vendor parameter
+                    vendor = data[3] if len(data) > 3 else None  # Extract vendor if provided
                     order = STATE.get(order_id)
                     if not order:
                         return
                     
-                    # Send time request to ALL vendors of current order (single-vendor scenario)
-                    target_vendors = order["vendors"]
-                    logger.info(f"Sending time request to all vendors: {target_vendors}")
+                    # Determine which vendors to send to
+                    if vendor:
+                        # Single vendor specified - send only to that vendor
+                        target_vendors = [vendor]
+                        logger.info(f"Sending time request to single vendor: {vendor}")
+                    else:
+                        # No vendor specified - send to all vendors (single-vendor orders)
+                        target_vendors = order["vendors"]
+                        logger.info(f"Sending time request to all vendors: {target_vendors}")
                     
                     # Send time request to target vendors
                     for v in target_vendors:
@@ -1503,12 +1487,11 @@ def telegram_webhook():
                     # Update MDG
                     order["requested_time"] = selected_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {selected_time}"
-                    # DON'T rebuild keyboard - just update text
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        None  # Keep existing keyboard
+                        mdg_time_request_keyboard(order_id)
                     )
                     
                     # Delete the time picker message
@@ -1846,17 +1829,14 @@ def telegram_webhook():
                         else:
                             base_time = now()
                         
-                        delay_intervals = []
+                        delay_buttons = []
                         for minutes in [5, 10, 15, 20]:
                             time_option = base_time + timedelta(minutes=minutes)
-                            delay_intervals.append(time_option.strftime("%H:%M"))
+                            time_str = time_option.strftime("%H:%M")
+                            # Format: "+5m → ⏰ 18:10"
+                            button_text = f"+{minutes}m → ⏰ {time_str}"
+                            delay_buttons.append([InlineKeyboardButton(button_text, callback_data=f"delay_time|{order_id}|{vendor}|{time_str}")])
                         
-                        delay_buttons = []
-                        for i in range(0, len(delay_intervals), 2):
-                            row = [InlineKeyboardButton(delay_intervals[i], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i]}")]
-                            if i + 1 < len(delay_intervals):
-                                row.append(InlineKeyboardButton(delay_intervals[i + 1], callback_data=f"delay_time|{order_id}|{vendor}|{delay_intervals[i + 1]}"))
-                            delay_buttons.append(row)
                         
                         await safe_send_message(
                             VENDOR_GROUP_MAP[vendor],
@@ -1970,9 +1950,10 @@ def telegram_webhook():
                                     build_assignment_confirmation_message(order),
                                     mdg_assignment_keyboard(order_id)
                                 )
-                                # Track MDG-CONF message ID for deletion after assignment
-                                order["mdg_conf_message_id"] = assignment_msg.message_id
-                                logger.info(f"DEBUG: MDG-CONF message {assignment_msg.message_id} sent for order {order_id}")
+                                # Track this message for potential cleanup
+                                if "mdg_additional_messages" not in order:
+                                    order["mdg_additional_messages"] = []
+                                order["mdg_additional_messages"].append(assignment_msg.message_id)
                             else:
                                 logger.info(f"DEBUG: All vendors confirmed but order already assigned - skipping assignment buttons")
                         else:
@@ -2019,17 +2000,6 @@ def telegram_webhook():
                     No cleanup: Assignment confirmation message stays in MDG permanently
                     """
                     order_id = data[1]
-                    order = STATE.get(order_id)
-                    
-                    if not order:
-                        logger.warning(f"Order {order_id} not found in STATE")
-                        return
-                    
-                    # Prevent double assignment
-                    if order.get("status") == "assigned":
-                        logger.info(f"Order {order_id} already assigned to {order.get('assigned_to')}, ignoring duplicate")
-                        return
-                    
                     user_id = cq["from"]["id"]
                     logger.info(f"User {user_id} assigning order {order_id} to themselves")
                     

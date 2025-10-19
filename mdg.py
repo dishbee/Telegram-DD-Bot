@@ -15,18 +15,15 @@ logger = logging.getLogger(__name__)
 # Timezone configuration for Passau, Germany (Europe/Berlin)
 TIMEZONE = ZoneInfo("Europe/Berlin")
 
-# Chef emoji rotation for vendor display
-CHEF_EMOJIS = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
-
-# Color circle emoji rotation for order distinction
-COLOR_CIRCLES = ["🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "🟤"]
-
 def now() -> datetime:
     """Get current time in Passau timezone (Europe/Berlin)."""
     return datetime.now(TIMEZONE)
 
 STATE: Dict[str, Dict[str, Any]] = {}
 RESTAURANT_SHORTCUTS: Dict[str, str] = {}
+
+# Chef emojis for rotating display in multi-vendor buttons
+CHEF_EMOJIS = ['👩‍🍳', '👩🏻‍🍳', '👩🏼‍🍳', '👩🏾‍🍳', '🧑‍🍳', '🧑🏻‍🍳', '🧑🏼‍🍳', '🧑🏾‍🍳', '👨‍🍳', '👨🏻‍🍳', '👨🏼‍🍳', '👨🏾‍🍳']
 
 
 def configure(state_ref: Dict[str, Dict[str, Any]], restaurant_shortcuts: Dict[str, str]) -> None:
@@ -297,13 +294,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         return f"Error formatting order {order.get('name', 'Unknown')}"
 
 
-def mdg_initial_keyboard(order_id: str, show_assignment_buttons: bool = True) -> InlineKeyboardMarkup:
+def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """
     Build initial MDG keyboard with Details button above time request buttons.
-    
-    Args:
-        order_id: Order ID
-        show_assignment_buttons: If False, only show Details button (for assigned orders)
     
     Layout:
     [Details ▸]
@@ -313,18 +306,15 @@ def mdg_initial_keyboard(order_id: str, show_assignment_buttons: bool = True) ->
     [Details ▸]
     [Request JS]
     [Request LR]
-    
-    Or for assigned orders:
-    [Details ▸]  (only button)
     """
     try:
         order = STATE.get(order_id)
         if not order:
             return InlineKeyboardMarkup([
-                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}")],
+                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}")],
                 [
-                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}"),
-                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}")
+                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
+                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
                 ]
             ])
 
@@ -334,33 +324,26 @@ def mdg_initial_keyboard(order_id: str, show_assignment_buttons: bool = True) ->
         is_expanded = order.get("mdg_expanded", False)
         toggle_button = InlineKeyboardButton(
             "◂ Hide" if is_expanded else "Details ▸",
-            callback_data=f"mdg_toggle|{order_id}"
+            callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}"
         )
 
         buttons = [[toggle_button]]
-        
-        # If order is assigned and caller doesn't want assignment buttons, return early
-        if not show_assignment_buttons:
-            return InlineKeyboardMarkup(buttons)
 
         if len(vendors) > 1:
-            # Multi-vendor: show vendor selection buttons with rotating chef emojis
-            for idx, vendor in enumerate(vendors):
+            # Multi-vendor: show vendor selection buttons
+            for vendor in vendors:
                 shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-                chef_emoji = CHEF_EMOJIS[idx % len(CHEF_EMOJIS)]
+                chef_emoji = CHEF_EMOJIS[vendors.index(vendor) % len(CHEF_EMOJIS)]
                 buttons.append([InlineKeyboardButton(
                     f"Ask {chef_emoji} {shortcut}",
-                    callback_data=f"req_vendor|{order_id}|{vendor}"
+                    callback_data=f"req_vendor|{order_id}|{vendor}|{int(now().timestamp())}"
                 )])
         else:
-            # Single vendor: show ⚡ Asap, 🕒 Time picker, 🗂 Scheduled orders (if available)
-            buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}")])
-            buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}")])
-            
-            # Check if there are recent orders for Scheduled orders button
-            recent_orders = get_recent_orders_for_same_time(order_id)
-            if recent_orders:
-                buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_time|{order_id}")])
+            # Single vendor: show ASAP/TIME buttons
+            buttons.append([
+                InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
+                InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
+            ])
 
         return InlineKeyboardMarkup(buttons)
 
@@ -375,10 +358,10 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
         order = STATE.get(order_id)
         if not order:
             return InlineKeyboardMarkup([
-                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}")],
+                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}")],
                 [
-                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}"),
-                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}")
+                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
+                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
                 ]
             ])
 
@@ -388,7 +371,7 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
         is_expanded = order.get("mdg_expanded", False)
         toggle_button = InlineKeyboardButton(
             "◂ Hide" if is_expanded else "Details ▸",
-            callback_data=f"mdg_toggle|{order_id}"
+            callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}"
         )
         
         buttons = [[toggle_button]]
@@ -397,26 +380,22 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
         if len(vendors) > 1:
             logger.info("MULTI-VENDOR detected: %s", vendors)
-            for idx, vendor in enumerate(vendors):
+            for vendor in vendors:
                 shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-                chef_emoji = CHEF_EMOJIS[idx % len(CHEF_EMOJIS)]
-                logger.info("Adding button for vendor: %s (shortcut: %s, emoji: %s)", vendor, shortcut, chef_emoji)
+                chef_emoji = CHEF_EMOJIS[vendors.index(vendor) % len(CHEF_EMOJIS)]
+                logger.info("Adding button for vendor: %s (shortcut: %s)", vendor, shortcut)
                 buttons.append([InlineKeyboardButton(
                     f"Ask {chef_emoji} {shortcut}",
-                    callback_data=f"req_vendor|{order_id}|{vendor}"
+                    callback_data=f"req_vendor|{order_id}|{vendor}|{int(now().timestamp())}"
                 )])
             logger.info("Sending restaurant selection with %s buttons", len(buttons))
             return InlineKeyboardMarkup(buttons)
 
         logger.info("SINGLE VENDOR detected: %s", vendors)
-        buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}")])
-        buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}")])
-        
-        # Check if there are recent orders for Scheduled orders button
-        recent_orders = get_recent_orders_for_same_time(order_id)
-        if recent_orders:
-            buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_time|{order_id}")])
-        
+        buttons.append([
+            InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
+            InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
+        ])
         return InlineKeyboardMarkup(buttons)
 
     except Exception as exc:  # pragma: no cover - defensive
@@ -477,85 +456,97 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
         logger.info(f"BTN-TIME: Found {len(recent_orders)} recent confirmed orders")
         buttons: List[List[InlineKeyboardButton]] = []
 
-        # If we have recent orders, show them (split multi-vendor into separate buttons)
+        # If we have recent orders, show them + EXACT TIME button
         if recent_orders:
-            for order_idx, recent in enumerate(recent_orders):
-                # Get color for this order (rotates through 7 colors)
-                color_emoji = COLOR_CIRCLES[order_idx % len(COLOR_CIRCLES)]
+            for recent in recent_orders:
+                chef_emoji = CHEF_EMOJIS[recent_orders.index(recent) % len(CHEF_EMOJIS)]
                 
-                # Get order data for confirmed_times (to handle multi-vendor)
-                ref_order = STATE.get(recent['order_id'], {})
-                ref_confirmed_times = ref_order.get('confirmed_times', {})
-                
-                # For multi-vendor orders, create SEPARATE button per vendor
-                vendors = recent['vendors']
-                if len(vendors) > 1:
-                    # Multi-vendor: split into separate buttons with same color
-                    for vendor_idx, vendor in enumerate(vendors):
-                        # Get vendor-specific confirmed time (may be different per vendor)
-                        vendor_time = ref_confirmed_times.get(vendor, recent['confirmed_time'])
+                # If multi-vendor reference order, create separate button per vendor
+                if len(recent["vendors"]) > 1:
+                    for ref_vendor in recent["vendors"]:
+                        ref_vendor_shortcut = RESTAURANT_SHORTCUTS.get(ref_vendor, ref_vendor[:2].upper())
                         
-                        # Get chef emoji for this vendor
-                        chef_emoji = CHEF_EMOJIS[vendor_idx % len(CHEF_EMOJIS)]
-                        
-                        # Get vendor shortcut
-                        shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-                        
-                        # Apply street abbreviation (2-tier system)
+                        # Build button text: "🔖 #59 👩‍🍳 LR: 20:46 🗺️ Lede 15"
                         abbreviated_address = abbreviate_street(recent['address'], max_length=15)
+                        button_text = f"🔖 #{recent['order_num']} {chef_emoji} {ref_vendor_shortcut}: {recent['confirmed_time']} 🗺️ {abbreviated_address}"
                         
-                        # Build button text: 🔵🔖 #59 👩‍🍳 LR: 20:46 🗺️ Lederergasse 15
-                        button_text = f"{color_emoji}🔖 #{recent['order_num']} {chef_emoji} {shortcut}: {vendor_time} 🗺️ {abbreviated_address}"
-                        
-                        # TIER 2: If button exceeds 30 chars, apply aggressive abbreviation
-                        if len(button_text) > 30:
+                        # TIER 2: If button exceeds 64 chars (Telegram limit), apply aggressive abbreviation
+                        if len(button_text) > 64:
                             import re
+                            # Extract house number from original address
                             house_match = re.search(r'\s+(\d+[a-zA-Z]?)$', recent['address'])
                             house_num = f" {house_match.group(1)}" if house_match else ""
+                            
+                            # Get street name without house number
                             street_only = recent['address'][:house_match.start()] if house_match else recent['address']
+                            
+                            # Remove all common prefixes and just take first 4 letters
                             street_clean = re.sub(r'^(Doktor-|Professor-|Sankt-|Dr\.-|Prof\.-|St\.-)', '', street_only)
+                            
+                            # If still compound (has hyphens), take first part
                             if '-' in street_clean:
                                 street_clean = street_clean.split('-')[0]
+                            
+                            # Take first 4 letters only
                             aggressive_abbr = street_clean[:4] + house_num
-                            button_text = f"{color_emoji}🔖 #{recent['order_num']} {chef_emoji} {shortcut}: {vendor_time} 🗺️ {aggressive_abbr}"
+                            button_text = f"🔖 #{recent['order_num']} {chef_emoji} {ref_vendor_shortcut}: {recent['confirmed_time']} 🗺️ {aggressive_abbr}"
                         
-                        # Callback data includes vendor for filtering
-                        callback_data = f"order_ref|{order_id}|{recent['order_id']}|{vendor_time}|{shortcut}"
+                        # Callback contains SINGLE ref vendor shortcut (not comma-separated)
+                        callback_data = f"order_ref|{order_id}|{recent['order_id']}|{recent['confirmed_time']}|{ref_vendor_shortcut}"
                         if vendor:
-                            callback_data += f"|{RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())}"
+                            # Add current vendor shortcut
+                            current_vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                            callback_data += f"|{current_vendor_shortcut}"
                         
                         buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
                 else:
-                    # Single vendor: one button
-                    vendor = vendors[0]
-                    chef_emoji = CHEF_EMOJIS[0]  # First chef emoji for single vendor
-                    shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                    # Single vendor reference order
+                    ref_vendor = recent["vendors"][0]
+                    ref_vendor_shortcut = RESTAURANT_SHORTCUTS.get(ref_vendor, ref_vendor[:2].upper())
+                    
+                    # Build button text: "🔖 #59 👩‍🍳 LR: 20:46 🗺️ Lede 15"
                     abbreviated_address = abbreviate_street(recent['address'], max_length=15)
+                    button_text = f"🔖 #{recent['order_num']} {chef_emoji} {ref_vendor_shortcut}: {recent['confirmed_time']} 🗺️ {abbreviated_address}"
                     
-                    button_text = f"{color_emoji}🔖 #{recent['order_num']} {chef_emoji} {shortcut}: {recent['confirmed_time']} 🗺️ {abbreviated_address}"
-                    
-                    # TIER 2 abbreviation if needed
-                    if len(button_text) > 30:
+                    # TIER 2: If button exceeds 64 chars (Telegram limit), apply aggressive abbreviation
+                    if len(button_text) > 64:
                         import re
+                        # Extract house number from original address
                         house_match = re.search(r'\s+(\d+[a-zA-Z]?)$', recent['address'])
                         house_num = f" {house_match.group(1)}" if house_match else ""
+                        
+                        # Get street name without house number
                         street_only = recent['address'][:house_match.start()] if house_match else recent['address']
+                        
+                        # Remove all common prefixes and just take first 4 letters
                         street_clean = re.sub(r'^(Doktor-|Professor-|Sankt-|Dr\.-|Prof\.-|St\.-)', '', street_only)
+                        
+                        # If still compound (has hyphens), take first part
                         if '-' in street_clean:
                             street_clean = street_clean.split('-')[0]
+                        
+                        # Take first 4 letters only
                         aggressive_abbr = street_clean[:4] + house_num
-                        button_text = f"{color_emoji}🔖 #{recent['order_num']} {chef_emoji} {shortcut}: {recent['confirmed_time']} 🗺️ {aggressive_abbr}"
+                        button_text = f"🔖 #{recent['order_num']} {chef_emoji} {ref_vendor_shortcut}: {recent['confirmed_time']} 🗺️ {aggressive_abbr}"
                     
-                    callback_data = f"order_ref|{order_id}|{recent['order_id']}|{recent['confirmed_time']}|{shortcut}"
+                    # Callback contains SINGLE ref vendor shortcut
+                    callback_data = f"order_ref|{order_id}|{recent['order_id']}|{recent['confirmed_time']}|{ref_vendor_shortcut}"
                     if vendor:
-                        callback_data += f"|{RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())}"
+                        # Add current vendor shortcut
+                        current_vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                        callback_data += f"|{current_vendor_shortcut}"
                     
                     buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+
+            # Show EXACT TIME button at bottom when there are recent orders
+            vendor_param = f"|{vendor}" if vendor else ""
+            buttons.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=f"req_exact|{order_id}{vendor_param}")])
             
-            # Add Back button (removed EXACT TIME button as per requirements)
+            # Add Back button
             buttons.append([InlineKeyboardButton("← Back", callback_data="hide")])
         
         # If NO recent orders, return None to signal that hour picker should be shown directly
+        # The handler in main.py will detect this and show exact_time_keyboard() immediately
         else:
             return None
 
@@ -568,24 +559,21 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
 
 def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, ref_time: str, ref_vendors_str: str, current_vendor: Optional[str] = None) -> InlineKeyboardMarkup:
     """
-    Build offset selection keyboard after user selects a reference order.
-    NEW FORMAT: Vertical layout with -5m, -3m, +3m, +5m, +10m, +15m, +20m, +25m
-    Format: "-5m → ⏰ 18:00" or "🔁 Same time" if matching vendor
+    Build Same / +5 / +10 / +15 / +20 keyboard after user selects a reference order.
     
     Args:
-        ref_vendors_str: Comma-separated vendor SHORTCUTS (e.g., "LR,SA")
+        ref_vendors_str: SINGLE vendor SHORTCUT from reference order (e.g., "LR")
         current_vendor: Current vendor SHORTCUT if multi-vendor order
-        ref_time: Reference time (HH:MM)
     """
     try:
-        # Convert shortcuts back to full vendor names for matching logic
-        ref_vendor_shortcuts = ref_vendors_str.split(",")
-        ref_vendors = [shortcut_to_vendor(s) or s for s in ref_vendor_shortcuts]
+        # Convert single ref vendor shortcut to full name
+        # Note: After Task 5 split, ref_vendors_str contains SINGLE vendor (not comma-separated)
+        ref_vendor_full = shortcut_to_vendor(ref_vendors_str) or ref_vendors_str
         
-        # Convert current_vendor shortcut to full name for matching logic (but use shortcut in callbacks)
+        # Convert current_vendor shortcut to full name if provided
         current_vendor_full = shortcut_to_vendor(current_vendor) if current_vendor else None
         
-        # Parse reference time
+        # Calculate +5, +10, +15, +20 times from reference time
         ref_hour, ref_min = map(int, ref_time.split(':'))
         ref_datetime = now().replace(hour=ref_hour, minute=ref_min, second=0, microsecond=0)
         
@@ -594,40 +582,39 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
         # Determine if vendors match between current and reference orders
         vendor_matches = False
         if current_vendor_full:
-            # Multi-vendor order - check if current vendor matches any ref vendor
-            vendor_matches = current_vendor_full in ref_vendors
+            # Multi-vendor order - check if current vendor matches THIS specific ref vendor
+            vendor_matches = (current_vendor_full == ref_vendor_full)
         else:
-            # Single vendor order - check if any current vendor matches ref vendors
+            # Single vendor order - check if ref vendor matches any current vendor
             order = STATE.get(current_order_id)
             if order:
                 current_vendors = order.get("vendors", [])
-                vendor_matches = any(v in ref_vendors for v in current_vendors)
+                vendor_matches = (ref_vendor_full in current_vendors)
         
-        # First button: Show "🔁 Same time" ONLY if vendors match
+        # First row: Show BTN-SAME if vendors match, BTN-GROUP if different vendors
         if vendor_matches:
-            if current_vendor:  # Use SHORTCUT in callback data to save bytes
-                same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}|{current_vendor}"
+            # Same vendor - show "Same time" button (existing behavior)
+            if current_vendor_full:
+                same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}|{current_vendor_full}"
             else:
                 same_callback = f"time_same|{current_order_id}|{ref_order_id}|{ref_time}"
-            buttons.append([InlineKeyboardButton("🔁 Same time", callback_data=same_callback)])
+            buttons.append([InlineKeyboardButton("Same time", callback_data=same_callback)])
+        else:
+            # Different vendors - show "Group" button (opens time adjustment menu)
+            group_callback = f"show_group_menu|{current_order_id}|{ref_order_id}|{ref_time}"
+            if current_vendor_full:
+                group_callback += f"|{current_vendor_full}"
+            buttons.append([InlineKeyboardButton("Group", callback_data=group_callback)])
         
-        # Offset buttons: -5m, -3m, +3m, +5m, +10m, +15m, +20m, +25m (vertical layout)
-        offsets = [-5, -3, 3, 5, 10, 15, 20, 25]
-        for offset in offsets:
-            new_time = ref_datetime + timedelta(minutes=offset)
+        # Build offset buttons: -5m, -3m, +3m, +5m, +10m, +15m, +20m, +25m (one per row)
+        for minutes in [-5, -3, 3, 5, 10, 15, 20, 25]:
+            new_time = ref_datetime + timedelta(minutes=minutes)
             time_str = new_time.strftime("%H:%M")
-            
-            # Format: "-5m → ⏰ 18:00" or "+5m → ⏰ 18:10"
-            if offset < 0:
-                button_text = f"{offset}m → ⏰ {time_str}"
-            else:
-                button_text = f"+{offset}m → ⏰ {time_str}"
-            
-            # Callback includes SHORTCUT (not full vendor) to save bytes
-            # ref_order_id removed - not needed by handler
-            vendor_param = f"|{current_vendor}" if current_vendor else ""
-            callback = f"time_relative|{current_order_id}|{time_str}{vendor_param}"
-            
+            # Use full vendor name in callback
+            vendor_param = f"|{current_vendor_full}" if current_vendor_full else ""
+            callback = f"time_relative|{current_order_id}|{time_str}|{ref_order_id}{vendor_param}"
+            # Format: "+5m → ⏰ 19:35" or "-5m → ⏰ 19:25"
+            button_text = f"{minutes:+d}m → ⏰ {time_str}"
             buttons.append([InlineKeyboardButton(button_text, callback_data=callback)])
         
         # Add Back button
@@ -673,10 +660,9 @@ def group_time_adjustment_keyboard(current_order_id: str, ref_order_id: str, ref
             adjusted_time = ref_datetime + timedelta(minutes=minutes)
             time_str = adjusted_time.strftime("%H:%M")
             
-            # Build callback with SHORTCUT (not full vendor) to save bytes
-            # ref_order_id removed - not needed by handler
+            # Build callback with vendor if multi-vendor order
             vendor_param = f"|{current_vendor}" if current_vendor else ""
-            callback = f"time_group|{current_order_id}|{time_str}{vendor_param}"
+            callback = f"time_group|{current_order_id}|{time_str}|{ref_order_id}{vendor_param}"
             
             # Button text: "+3m (19:33)"
             button_text = f"{label} ({time_str})"
@@ -755,14 +741,19 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
 
         rows: List[List[InlineKeyboardButton]] = []
         
+        # Determine button prefix based on action
+        # RG buttons (later_time, prepare_time) use "in", others use "+"
+        if action in ["later_time", "prepare_time"]:
+            prefix = "in"
+        else:
+            prefix = "+"
+        
         # Create one button per row (vertical layout)
         for i, time_str in enumerate(intervals):
             minutes = minute_increments[i]
-            
-            # RG buttons (later_time, prepare_time): ⏰ 18:10 → in 5m
-            # UPC buttons (delay_time): +5m → ⏰ 09:32
-            if action in ["later_time", "prepare_time"]:
-                button_text = f"⏰ {time_str} → in {minutes}m"
+            # Format: "⏰ 18:10 → in5m" (RG) or "+5m → ⏰ 18:10" (UPC)
+            if prefix == "in":
+                button_text = f"⏰ {time_str} → in{minutes}m"
             else:
                 button_text = f"+{minutes}m → ⏰ {time_str}"
             
@@ -791,17 +782,17 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
 
 
 def exact_time_keyboard(order_id: str, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
-    """Build exact time picker - shows hours. Format: 12-- instead of 12:XX"""
+    """Build exact time picker - shows hours."""
     try:
         current_hour = now().hour
         rows: List[List[InlineKeyboardButton]] = []
-        hours: List[str] = [f"{hour:02d}--" for hour in range(current_hour, 24)]
+        hours: List[str] = [f"{hour:02d}" for hour in range(current_hour, 24)]
 
         for i in range(0, len(hours), 4):
             row: List[InlineKeyboardButton] = []
             for j in range(4):
                 if i + j < len(hours):
-                    hour_str = hours[i + j].split('-')[0]  # Extract hour from "12--"
+                    hour_str = hours[i + j]  # Already just the hour number
                     # Include vendor in callback if provided
                     callback = f"exact_hour|{order_id}|{hour_str}"
                     if vendor:
