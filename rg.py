@@ -160,9 +160,15 @@ def restaurant_response_keyboard(request_type: str, order_id: str, vendor: str) 
 def vendor_exact_time_keyboard(order_id: str, vendor: str, action: str) -> InlineKeyboardMarkup:
     """Build exact time picker for vendors - shows hours."""
     try:
-        current_hour = now().hour
+        current_time = now()
+        current_hour = current_time.hour
+        current_minute = current_time.minute
+        
+        # Skip current hour if past minute 57 (no valid 3-minute intervals left)
+        start_hour = current_hour + 1 if current_minute >= 57 else current_hour
+        
         rows: List[List[InlineKeyboardButton]] = []
-        hours: List[str] = [f"{hour:02d}" for hour in range(current_hour, 24)]
+        hours: List[str] = [f"{hour:02d}" for hour in range(start_hour, 24)]
 
         # Use shortcut to compress callback data
         vendor_short = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2])

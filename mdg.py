@@ -733,9 +733,15 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
 def exact_time_keyboard(order_id: str, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
     """Build exact time picker - shows hours."""
     try:
-        current_hour = now().hour
+        current_time = now()
+        current_hour = current_time.hour
+        current_minute = current_time.minute
+        
+        # Skip current hour if past minute 57 (no valid 3-minute intervals left)
+        start_hour = current_hour + 1 if current_minute >= 57 else current_hour
+        
         rows: List[List[InlineKeyboardButton]] = []
-        hours: List[str] = [f"{hour:02d}" for hour in range(current_hour, 24)]
+        hours: List[str] = [f"{hour:02d}" for hour in range(start_hour, 24)]
 
         for i in range(0, len(hours), 4):
             row: List[InlineKeyboardButton] = []
