@@ -368,9 +368,7 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
 def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build MDG time request buttons per assignment requirements. Includes Details button."""
     try:
-        logger.info(f"DEBUG mdg_time_request_keyboard: order_id={order_id}, STATE has {len(STATE)} orders, keys={list(STATE.keys())}")
         order = STATE.get(order_id)
-        logger.info(f"DEBUG mdg_time_request_keyboard: order found={order is not None}")
         if not order:
             return InlineKeyboardMarkup([
                 [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}")],

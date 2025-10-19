@@ -104,7 +104,7 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
 
 def vendor_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
     """Build time request buttons for a specific vendor (vertical layout with scheduled orders)."""
-    from main import get_recent_orders_for_same_time
+    from mdg import get_recent_orders_for_same_time
     
     buttons = []
     buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"vendor_asap|{order_id}|{vendor}")])
