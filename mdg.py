@@ -915,7 +915,15 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
         # Extract fields for display
         order_num = order_data.get("name", "??")
         vendors = order_data.get("vendors", [])
-        confirmed_time = order_data.get("confirmed_time", "??:??")
+        
+        # Handle multi-vendor confirmed_times dict vs single confirmed_time string
+        confirmed_times = order_data.get("confirmed_times")
+        if confirmed_times and isinstance(confirmed_times, dict):
+            # Multi-vendor: use first vendor's time
+            confirmed_time = next(iter(confirmed_times.values()), "??:??")
+        else:
+            confirmed_time = order_data.get("confirmed_time", "??:??")
+        
         address = order_data.get("address", "Unknown address")
         
         # Get vendor shortcut (first vendor only for display)

@@ -1995,6 +1995,12 @@ def telegram_webhook():
                     order["group_id"] = group_id
                     order["group_color"] = group_color
                     
+                    # Auto-assign to same courier as target order
+                    if target_order.get("assigned_to"):
+                        order["assigned_to"] = target_order["assigned_to"]
+                        order["status"] = "assigned"
+                        logger.info(f"Auto-assigned order {order_id} to courier {target_order['assigned_to']}")
+                    
                     # Update positions for all group members
                     group_orders = get_group_orders(STATE, group_id)
                     for i, group_order in enumerate(group_orders, start=1):
