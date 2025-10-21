@@ -377,22 +377,22 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
     
     Layout:
     [Details ▸]
-    [Request ASAP] [Request TIME]
+    [⚡ Asap]
+    [🕒 Time picker]
+    [🗂 Scheduled orders] (conditional)
     
     Or for multi-vendor:
     [Details ▸]
-    [Request JS]
-    [Request LR]
+    [Ask 👩‍🍳 JS]
+    [Ask 👨‍🍳 LR]
     """
     try:
         order = STATE.get(order_id)
         if not order:
             return InlineKeyboardMarkup([
                 [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}")],
-                [
-                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
-                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
-                ]
+                [InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}")],
+                [InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{int(now().timestamp())}")]
             ])
 
         vendors = order.get("vendors", [])
@@ -439,10 +439,8 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
         if not order:
             return InlineKeyboardMarkup([
                 [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}")],
-                [
-                    InlineKeyboardButton("Request ASAP", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}"),
-                    InlineKeyboardButton("Request TIME", callback_data=f"req_time|{order_id}|{int(now().timestamp())}")
-                ]
+                [InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}")],
+                [InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{int(now().timestamp())}")]
             ])
 
         vendors = order.get("vendors", [])
