@@ -1154,10 +1154,6 @@ def telegram_webhook():
                         f"📨 TIME request ({ref_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
                         auto_delete_after=20
                     )
-                    
-                    # Mark order for grouping after vendor confirms
-                    order["grouped_via"] = "same"
-                    order["group_reference_order"] = ref_order_id
                 
                 
                 elif action == "time_relative":
@@ -1466,18 +1462,6 @@ def telegram_webhook():
                     status_msg = f"{vendor} replied: {confirmed_time} for 🔖 #{order_num} works 👍"
                     await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
                     
-                    # Check for pending grouping - if all vendors confirmed, create/join group
-                    if check_all_vendors_confirmed(order_id):
-                        if order.get("grouped_via") and order.get("group_reference_order"):
-                            # This order was marked for grouping via BTN-SAME or BTN-GROUP
-                            ref_order_id = order["group_reference_order"]
-                            logger.info(f"Auto-grouping order {order_id} with reference {ref_order_id} (via {order['grouped_via']})")
-                            create_or_join_group(order_id, ref_order_id)
-                            
-                            # Clear grouping markers
-                            order["grouped_via"] = None
-                            order["group_reference_order"] = None
-                    
                     # Check if all vendors confirmed - show assignment buttons
                     # CRITICAL: Only show buttons if order NOT already assigned
                     # This prevents duplicate assignment buttons appearing after delay confirmations
@@ -1542,18 +1526,6 @@ def telegram_webhook():
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
                         
-                        # Check for pending grouping - if all vendors confirmed, create/join group
-                        if check_all_vendors_confirmed(order_id):
-                            if order.get("grouped_via") and order.get("group_reference_order"):
-                                # This order was marked for grouping via BTN-SAME or BTN-GROUP
-                                ref_order_id = order["group_reference_order"]
-                                logger.info(f"Auto-grouping order {order_id} with reference {ref_order_id} (via {order['grouped_via']})")
-                                create_or_join_group(order_id, ref_order_id)
-                                
-                                # Clear grouping markers
-                                order["grouped_via"] = None
-                                order["group_reference_order"] = None
-                        
                         # Check if all vendors confirmed - show assignment buttons
                         logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
                         if check_all_vendors_confirmed(order_id):
@@ -1617,18 +1589,6 @@ def telegram_webhook():
                         await safe_delete_message(chat_id, message_id)
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
-                        
-                        # Check for pending grouping - if all vendors confirmed, create/join group
-                        if check_all_vendors_confirmed(order_id):
-                            if order.get("grouped_via") and order.get("group_reference_order"):
-                                # This order was marked for grouping via BTN-SAME or BTN-GROUP
-                                ref_order_id = order["group_reference_order"]
-                                logger.info(f"Auto-grouping order {order_id} with reference {ref_order_id} (via {order['grouped_via']})")
-                                create_or_join_group(order_id, ref_order_id)
-                                
-                                # Clear grouping markers
-                                order["grouped_via"] = None
-                                order["group_reference_order"] = None
                         
                         # Check if all vendors confirmed - show assignment buttons
                         logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
