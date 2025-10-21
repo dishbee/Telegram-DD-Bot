@@ -66,9 +66,15 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
     try:
         buttons = [
             [InlineKeyboardButton("👈 Assign to myself", callback_data=f"assign_myself|{order_id}")],
-            [InlineKeyboardButton("Assign to 👉", callback_data=f"assign_to_menu|{order_id}")],
-            [InlineKeyboardButton("📌 Assigned orders", callback_data=f"show_assigned|{order_id}|{int(now().timestamp())}")]
+            [InlineKeyboardButton("Assign to 👉", callback_data=f"assign_to_menu|{order_id}")]
         ]
+        
+        # Only show "Assigned orders" button if there are assigned orders
+        from mdg import get_assigned_orders
+        assigned_orders = get_assigned_orders(exclude_order_id=order_id)
+        if assigned_orders:
+            buttons.append([InlineKeyboardButton("📌 Assigned orders", callback_data=f"show_assigned|{order_id}|{int(now().timestamp())}")])
+        
         return InlineKeyboardMarkup(buttons)
     except Exception as e:
         logger.error(f"Error building MDG assignment keyboard: {e}")

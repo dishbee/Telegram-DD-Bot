@@ -1079,37 +1079,21 @@ async def show_combine_orders_menu(order_id: str, chat_id: int, message_id: int)
     
     logger.info(f"[PHASE 2] show_combine_orders_menu for order {order_id}")
     
+    # Get all assigned orders (excluding current)
+    assigned_orders = get_assigned_orders(exclude_order_id=order_id)
+    
+    # If no assigned orders, button shouldn't have been shown - just return silently
+    if not assigned_orders:
+        logger.info(f"No assigned orders available - button should not have been shown")
+        return
+    
     # Get current order info for header
     order = STATE.get(order_id)
     if not order:
         logger.warning(f"Order {order_id} not found in STATE")
-        await safe_edit_message(
-            chat_id=chat_id,
-            message_id=message_id,
-            text="⚠️ Order not found",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("← Back", callback_data=f"hide|{order_id}")
-            ]])
-        )
         return
     
     order_num = order.get("name", "??")
-    
-    # Get all assigned orders (excluding current)
-    assigned_orders = get_assigned_orders(exclude_order_id=order_id)
-    
-    # Handle empty list
-    if not assigned_orders:
-        logger.info(f"No assigned orders available to combine with {order_id}")
-        await safe_edit_message(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=f"📌 Combine 🔖 #{order_num} with:\n\nNo assigned orders available.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("← Back", callback_data=f"hide|{order_id}")
-            ]])
-        )
-        return
     
     # Build keyboard
     keyboard = build_combine_keyboard(order_id, assigned_orders)
