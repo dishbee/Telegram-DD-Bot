@@ -64,10 +64,23 @@ def check_all_vendors_confirmed(order_id: str) -> bool:
 def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build assignment buttons for MDG after all vendors confirm"""
     try:
-        return InlineKeyboardMarkup([
+        buttons = [
             [InlineKeyboardButton("👈 Assign to myself", callback_data=f"assign_myself|{order_id}")],
             [InlineKeyboardButton("Assign to 👉", callback_data=f"assign_to_menu|{order_id}")]
-        ])
+        ]
+        
+        # Check if there are any assigned orders in STATE (not per-order check)
+        has_assigned = False
+        for oid, order_data in STATE.items():
+            if order_data.get("assigned_to") and order_data.get("status") != "delivered":
+                has_assigned = True
+                break
+        
+        # Only show "Assigned orders" button if there are assigned orders
+        if has_assigned:
+            buttons.append([InlineKeyboardButton("📌 Assigned orders", callback_data=f"show_assigned|{order_id}|{int(now().timestamp())}")])
+        
+        return InlineKeyboardMarkup(buttons)
     except Exception as e:
         logger.error(f"Error building MDG assignment keyboard: {e}")
         return None
