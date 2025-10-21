@@ -66,7 +66,8 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
     try:
         buttons = [
             [InlineKeyboardButton("👈 Assign to myself", callback_data=f"assign_myself|{order_id}")],
-            [InlineKeyboardButton("Assign to 👉", callback_data=f"assign_to_menu|{order_id}")]
+            [InlineKeyboardButton("Assign to 👉", callback_data=f"assign_to_menu|{order_id}")],
+            [InlineKeyboardButton("📌 Assigned orders", callback_data=f"show_assigned|{order_id}|{int(now().timestamp())}")]
         ]
         return InlineKeyboardMarkup(buttons)
     except Exception as e:
@@ -202,6 +203,67 @@ async def courier_selection_keyboard(order_id: str, bot) -> InlineKeyboardMarkup
         logger.error(f"Error building courier selection keyboard: {e}")
         return None
 
+
+async def update_group_upc_messages(group_id: str):
+    """
+    Update UPC assignment messages for all orders in a group.
+    
+    Called when:
+    - New order joins group (group size changes)
+    - Order delivered (positions need recalculation - Phase 5)
+    - Group dissolved (group indicator removed - Phase 5)
+    
+    Rebuilds assignment message for each order in group to show updated:
+    - Group position (1, 2, 3...)
+    - Group total size
+    
+    Args:
+        group_id: Group identifier to update
+    """
+    try:
+        from mdg import get_group_orders
+        
+        logger.info(f"Updating UPC messages for group {group_id}")
+        
+        # Get all orders in group
+        group_orders = get_group_orders(group_id)
+        
+        if not group_orders:
+            logger.warning(f"No orders found in group {group_id}")
+            return
+        
+        # Update each order's UPC message
+        for group_order in group_orders:
+            order_id = group_order["order_id"]
+            order = STATE.get(order_id)
+            
+            if not order:
+                logger.warning(f"Order {order_id} not found in STATE")
+                continue
+            
+            # Skip if not assigned yet
+            if not order.get("assigned_to") or not order.get("upc_assignment_message_id"):
+                continue
+            
+            # Rebuild assignment message with updated group info
+            assignment_text = build_assignment_message(order)
+            
+            # Update the message
+            await safe_edit_message(
+                chat_id=order["assigned_to"],
+                message_id=order["upc_assignment_message_id"],
+                text=assignment_text,
+                reply_markup=assignment_cta_keyboard(order_id)
+            )
+            
+            logger.info(f"Updated UPC message for order {order_id} in group {group_id}")
+        
+        logger.info(f"Finished updating {len(group_orders)} UPC messages for group {group_id}")
+        
+    except Exception as e:
+        logger.error(f"Error updating group UPC messages: {e}")
+
+
 async def send_assignment_to_private_chat(order_id: str, user_id: int):
     """Send order assignment details to user's private chat"""
     try:
@@ -305,18 +367,18 @@ def build_assignment_message(order: dict) -> str:
         # Group indicator (if order is in a group)
         group_header = ""
         if order.get("group_id"):
-            group_color = order.get("group_color", "🟠")
+            from mdg import get_group_orders
+            
+            group_color = order.get("group_color", "�")
             group_position = order.get("group_position", 1)
+            group_id = order["group_id"]
             
             # Calculate total orders in group
-            group_id = order["group_id"]
-            from main import GROUPS
-            group = GROUPS.get(group_id)
-            if group:
-                group_total = len(group["order_ids"])
-                group_header = f"{group_color} Group: {group_position}/{group_total}\n\n"
+            group_orders = get_group_orders(group_id)
+            group_total = len(group_orders)
+            group_header = f"{group_color} Group: {group_position}/{group_total}\n\n"
         
-        # Header: � #34 - dishbee
+        # Header: 👉 #34 - dishbee
         if order_type == "shopify":
             order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
             header = f"👉 #{order_num} - dishbee\n"
@@ -587,7 +649,8 @@ async def handle_delivery_completion(order_id: str, user_id: int):
 async def update_group_on_delivery(delivered_order_id: str):
     """
     Update group when an order is delivered.
-    Removes order from group, recalculates positions, and updates remaining orders' UPC messages.
+    Removes group fields from delivered order, recalculates positions for remaining orders,
+    and updates their UPC messages. Dissolves group if only 1 order remains.
     """
     try:
         delivered_order = STATE.get(delivered_order_id)
@@ -598,54 +661,58 @@ async def update_group_on_delivery(delivered_order_id: str):
         if not group_id:
             return
         
-        # Import GROUPS from main
-        from main import GROUPS
+        logger.info(f"Processing delivery for order {delivered_order_id} in group {group_id}")
         
-        group = GROUPS.get(group_id)
-        if not group:
-            logger.warning(f"Group {group_id} not found in GROUPS dict")
-            return
+        # Remove group fields from delivered order
+        del delivered_order["group_id"]
+        del delivered_order["group_color"]
+        del delivered_order["group_position"]
+        logger.info(f"Removed group fields from delivered order {delivered_order_id}")
         
-        # Remove delivered order from group
-        if delivered_order_id in group["order_ids"]:
-            group["order_ids"].remove(delivered_order_id)
-            logger.info(f"Removed order {delivered_order_id} from group {group_id}")
+        # Get remaining orders in the group
+        from mdg import get_group_orders
+        remaining_orders = get_group_orders(group_id)
         
-        # Clear group fields from delivered order
-        delivered_order["group_id"] = None
-        delivered_order["group_color"] = None
-        delivered_order["group_position"] = None
-        
-        # If group is now empty, delete it
-        if not group["order_ids"]:
-            del GROUPS[group_id]
-            logger.info(f"Group {group_id} is empty, deleted")
-            return
-        
-        # Recalculate positions for remaining orders
-        new_total = len(group["order_ids"])
-        for position, order_id in enumerate(group["order_ids"], start=1):
-            order = STATE.get(order_id)
-            if order:
-                order["group_position"] = position
+        # If only 1 order remains, dissolve the group
+        if len(remaining_orders) == 1:
+            last_order_id = remaining_orders[0]["order_id"]
+            last_order = STATE.get(last_order_id)
+            
+            if last_order:
+                # Remove group fields from last order
+                del last_order["group_id"]
+                del last_order["group_color"]
+                del last_order["group_position"]
+                logger.info(f"Dissolved group {group_id} - removed fields from last order {last_order_id}")
                 
-                # Update UPC message if order is assigned
-                if order.get("status") == "assigned" and order.get("upc_assignment_message_id"):
-                    assigned_user_id = order.get("assigned_to")
+                # Update last order's UPC message (removes group indicator)
+                if last_order.get("upc_assignment_message_id"):
+                    assigned_user_id = last_order.get("assigned_to")
                     if assigned_user_id:
-                        # Rebuild assignment message with updated group position
-                        updated_text = build_assignment_message(order)
-                        
+                        updated_text = build_assignment_message(last_order)
                         await safe_edit_message(
                             assigned_user_id,
-                            order["upc_assignment_message_id"],
+                            last_order["upc_assignment_message_id"],
                             updated_text,
-                            assignment_cta_keyboard(order_id)
+                            assignment_cta_keyboard(last_order_id)
                         )
-                        
-                        logger.info(f"Updated UPC message for order {order_id} - new position {position}/{new_total}")
+                        logger.info(f"Updated UPC message for order {last_order_id} - group dissolved")
         
-        logger.info(f"Group {group_id} updated - {new_total} orders remaining")
+        # If 2+ orders remain, recalculate positions and update all UPC messages
+        elif len(remaining_orders) >= 2:
+            # Recalculate positions for remaining orders
+            for i, order_data in enumerate(remaining_orders, start=1):
+                order_id = order_data["order_id"]
+                order = STATE.get(order_id)
+                if order:
+                    order["group_position"] = i
+            
+            logger.info(f"Recalculated positions for {len(remaining_orders)} remaining orders in group {group_id}")
+            
+            # Update all UPC messages in the group
+            await update_group_upc_messages(group_id)
+        
+        logger.info(f"Group {group_id} cleanup complete - {len(remaining_orders)} orders remaining")
     
     except Exception as e:
         logger.error(f"Error updating group on delivery: {e}")

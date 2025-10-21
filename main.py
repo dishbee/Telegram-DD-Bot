@@ -122,11 +122,6 @@ bot = Bot(token=BOT_TOKEN, request=request_cfg)
 STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
 
-# --- ORDER GROUPING STATE ---
-GROUPS: Dict[str, Dict[str, Any]] = {}  # {group_id: {color, order_ids[], created_at}}
-GROUP_COLORS = ["🟠", "🔵", "🟣", "🟤", "⚫", "⚪"]
-NEXT_GROUP_COLOR_INDEX = 0
-
 # --- RESTAURANT COMMUNICATION TRACKING ---
 # Track forwarded messages from restaurants to MDG for reply functionality
 # Format: {mdg_message_id: {"vendor": "Restaurant Name", "rg_chat_id": -1234567890}}
@@ -190,70 +185,6 @@ def fmt_address(addr: Dict[str, Any]) -> str:
         logger.error(f"Address formatting error: {exc}")
         return "Address formatting error"
 
-def create_or_join_group(order_id: str, ref_order_id: str) -> None:
-    """
-    Create a new group or join an existing group when orders are grouped together.
-    Called after vendor confirms time for orders grouped via BTN-SAME or BTN-GROUP.
-    
-    Args:
-        order_id: Current order being grouped
-        ref_order_id: Reference order to group with
-    """
-    global NEXT_GROUP_COLOR_INDEX
-    
-    order = STATE.get(order_id)
-    ref_order = STATE.get(ref_order_id)
-    
-    if not order or not ref_order:
-        logger.error(f"Cannot group: order {order_id} or reference {ref_order_id} not found")
-        return
-    
-    # Check if reference order is already in a group
-    if ref_order.get("group_id"):
-        # Join existing group
-        group_id = ref_order["group_id"]
-        group = GROUPS.get(group_id)
-        
-        if group:
-            # Add current order to existing group
-            group["order_ids"].append(order_id)
-            
-            # Update current order's group fields
-            order["group_id"] = group_id
-            order["group_color"] = group["color"]
-            order["group_position"] = len(group["order_ids"])
-            
-            logger.info(f"Order {order_id} joined existing group {group_id} at position {order['group_position']}")
-        else:
-            logger.error(f"Group {group_id} not found in GROUPS dict")
-    else:
-        # Create new group with both orders
-        # Get next color
-        color = GROUP_COLORS[NEXT_GROUP_COLOR_INDEX]
-        NEXT_GROUP_COLOR_INDEX = (NEXT_GROUP_COLOR_INDEX + 1) % len(GROUP_COLORS)
-        
-        # Generate unique group ID
-        timestamp = now().strftime("%Y%m%d_%H%M%S")
-        group_id = f"group_{color}_{timestamp}"
-        
-        # Create group
-        GROUPS[group_id] = {
-            "color": color,
-            "order_ids": [ref_order_id, order_id],
-            "created_at": now()
-        }
-        
-        # Update reference order
-        ref_order["group_id"] = group_id
-        ref_order["group_color"] = color
-        ref_order["group_position"] = 1
-        
-        # Update current order
-        order["group_id"] = group_id
-        order["group_color"] = color
-        order["group_position"] = 2
-        
-        logger.info(f"Created new group {group_id} with orders {ref_order_id} (1/2) and {order_id} (2/2)")
 
 # --- ASYNC UTILITY FUNCTIONS ---
 async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
@@ -2004,6 +1935,124 @@ def telegram_webhook():
                     
                     # Update MDG with assignment info
                     await upc.update_mdg_with_assignment(order_id, target_user_id)
+                
+                elif action == "show_assigned":
+                    """
+                    Handle "📌 Assigned orders" button click - shows combine orders menu.
+                    
+                    Flow:
+                    1. User clicks "📌 Assigned orders" in MDG
+                    2. Get all assigned (not delivered) orders
+                    3. Build inline keyboard with order buttons
+                    4. Show "📌 Combine 🔖 #{num} with:" message
+                    5. User clicks order to combine with
+                    
+                    Orders shown are sorted by courier and include:
+                    - Order number
+                    - Vendor shortcut  
+                    - Confirmed time
+                    - Street abbreviation
+                    - Courier shortcut (B1, B2, B3, etc.)
+                    """
+                    order_id = data[1]
+                    logger.info(f"Showing assigned orders menu for order {order_id}")
+                    
+                    # Import combine module functions (will create in Phase 2)
+                    from mdg import show_combine_orders_menu
+                    
+                    # Show combine orders menu
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                    await show_combine_orders_menu(order_id, chat_id, message_id)
+                
+                elif action == "combine_with":
+                    """
+                    Handle order combining - creates or joins group.
+                    
+                    Flow (Phase 3):
+                    1. User clicks order to combine with from menu
+                    2. Check if target order already in group:
+                       - YES: Join existing group
+                       - NO: Create new group with both orders
+                    3. Generate/reuse group_id and assign color
+                    4. Update STATE for both orders with group info
+                    5. Update position numbers for all group members
+                    6. Update MDG messages (add group indicator)
+                    7. Show success confirmation
+                    
+                    Callback format: combine_with|{order_id}|{target_order_id}|{timestamp}
+                    """
+                    order_id = data[1]  # Current order
+                    target_order_id = data[2]  # Order to combine with
+                    
+                    logger.info(f"Combining order {order_id} with {target_order_id}")
+                    
+                    order = STATE.get(order_id)
+                    target_order = STATE.get(target_order_id)
+                    
+                    if not order or not target_order:
+                        logger.warning(f"Order(s) not found: {order_id}, {target_order_id}")
+                        await safe_edit_message(
+                            chat_id=cq["message"]["chat"]["id"],
+                            message_id=cq["message"]["message_id"],
+                            text="⚠️ Order not found",
+                            reply_markup=InlineKeyboardMarkup([[
+                                InlineKeyboardButton("← Back", callback_data=f"hide|{order_id}")
+                            ]])
+                        )
+                        return
+                    
+                    # Import group functions
+                    from mdg import generate_group_id, get_next_group_color, get_group_orders
+                    
+                    # Check if target order already in group
+                    target_group_id = target_order.get("group_id")
+                    
+                    if target_group_id:
+                        # Join existing group
+                        group_id = target_group_id
+                        group_color = target_order["group_color"]
+                        logger.info(f"Joining existing group {group_id}")
+                    else:
+                        # Create new group
+                        group_id = generate_group_id()
+                        group_color = get_next_group_color()
+                        logger.info(f"Creating new group {group_id} with color {group_color}")
+                        
+                        # Add target order to group
+                        target_order["group_id"] = group_id
+                        target_order["group_color"] = group_color
+                        target_order["group_position"] = 1
+                    
+                    # Add current order to group
+                    order["group_id"] = group_id
+                    order["group_color"] = group_color
+                    
+                    # Update positions for all group members
+                    group_orders = get_group_orders(group_id)
+                    for i, group_order in enumerate(group_orders, start=1):
+                        STATE[group_order["order_id"]]["group_position"] = i
+                    
+                    group_size = len(group_orders)
+                    logger.info(f"Group {group_id} now has {group_size} orders")
+                    
+                    # Show success message
+                    order_num = order.get("name", "??")
+                    target_num = target_order.get("name", "??")
+                    
+                    await safe_edit_message(
+                        chat_id=cq["message"]["chat"]["id"],
+                        message_id=cq["message"]["message_id"],
+                        text=f"{group_color} Combined 🔖 #{order_num} with 🔖 #{target_num}\n\nGroup: {order['group_position']}/{group_size}",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("✓ Done", callback_data=f"hide|{order_id}")
+                        ]])
+                    )
+                    
+                    # Phase 4: Update UPC messages for all group members
+                    from upc import update_group_upc_messages
+                    await update_group_upc_messages(group_id)
+                    logger.info(f"Updated UPC messages for group {group_id}")
                 
                 # UPC CTA ACTIONS
                 elif action == "delay_order":

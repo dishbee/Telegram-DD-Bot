@@ -25,6 +25,17 @@ RESTAURANT_SHORTCUTS: Dict[str, str] = {}
 # Chef emojis for rotating display in multi-vendor buttons
 CHEF_EMOJIS = ['👩‍🍳', '👩🏻‍🍳', '👩🏼‍🍳', '👩🏾‍🍳', '🧑‍🍳', '🧑🏻‍🍳', '🧑🏼‍🍳', '🧑🏾‍🍳', '👨‍🍳', '👨🏻‍🍳', '👨🏼‍🍳', '👨🏾‍🍳']
 
+# Courier shortcuts for combine orders menu
+COURIER_SHORTCUTS = {
+    "Bee 1": "B1",
+    "Bee 2": "B2",
+    "Bee 3": "B3"
+    # Others: First 2 letters of username from assigned_by field
+}
+
+# Group colors for combined orders (max 7 groups, rotating)
+GROUP_COLORS = ["🟣", "🔵", "🟢", "🟡", "🟠", "🔴", "🟤"]
+
 
 def configure(state_ref: Dict[str, Dict[str, Any]], restaurant_shortcuts: Dict[str, str]) -> None:
     """Configure module-level references used by MDG helpers."""
@@ -39,6 +50,62 @@ def shortcut_to_vendor(shortcut: str) -> Optional[str]:
         if short == shortcut:
             return full_name
     return None
+
+
+def get_courier_shortcut(courier_id: int) -> str:
+    """
+    Get courier shortcut from user_id for combine orders menu.
+    
+    Looks up courier name from DRIVERS dict, then maps to shortcut:
+    - "Bee 1" → "B1"
+    - "Bee 2" → "B2"
+    - "Bee 3" → "B3"
+    - Other couriers → First 2 letters of name (e.g., "Michael" → "MI")
+    
+    Args:
+        courier_id: Telegram user_id from order["assigned_to"]
+    
+    Returns:
+        Courier shortcut (e.g., "B1", "B2", "MI")
+    """
+    from main import DRIVERS
+    
+    # Find courier name by user_id
+    courier_name = None
+    for name, uid in DRIVERS.items():
+        if uid == courier_id:
+            courier_name = name
+            break
+    
+    # If not found in DRIVERS, return fallback
+    if not courier_name:
+        return "??"
+    
+    # Check if this is a known courier with shortcut
+    if courier_name in COURIER_SHORTCUTS:
+        return COURIER_SHORTCUTS[courier_name]
+    
+    # For unknown couriers, use first 2 letters
+    return courier_name[:2].upper() if len(courier_name) >= 2 else courier_name.upper()
+
+
+def get_vendor_shortcuts_string(vendors: List[str]) -> str:
+    """
+    Convert list of vendor names to comma-separated shortcuts.
+    
+    Args:
+        vendors: List of full vendor names
+    
+    Returns:
+        Comma-separated shortcuts (e.g., "LR,DD" for multi-vendor)
+    """
+    shortcuts = []
+    for vendor in vendors:
+        shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+        shortcuts.append(shortcut)
+    
+    # Return first shortcut only for display in combine menu
+    return shortcuts[0] if shortcuts else "??"
 
 
 def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str] = None) -> List[Dict[str, str]]:
@@ -440,10 +507,11 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                 continue
                 
             confirmed_time = order_data.get("confirmed_time")
+            confirmed_times = order_data.get("confirmed_times", {})  # Dict of vendor -> time
             status = order_data.get("status")
             created_at = order_data.get("created_at")
             
-            logger.info(f"BTN-TIME: Order {oid} - confirmed_time={confirmed_time}, status={status}, created_at={created_at}")
+            logger.info(f"BTN-TIME: Order {oid} - confirmed_time={confirmed_time}, confirmed_times={confirmed_times}, status={status}, created_at={created_at}")
             
             if not confirmed_time:
                 logger.info(f"BTN-TIME: Order {oid} - SKIP: no confirmed_time")
@@ -463,6 +531,7 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                 recent_orders.append({
                     "order_id": oid,
                     "confirmed_time": confirmed_time,
+                    "confirmed_times": confirmed_times,  # Include per-vendor times
                     "address": address_short,
                     "vendors": order_data.get("vendors", []),
                     "order_num": order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
@@ -483,9 +552,12 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                     for ref_vendor in recent["vendors"]:
                         ref_vendor_shortcut = RESTAURANT_SHORTCUTS.get(ref_vendor, ref_vendor[:2].upper())
                         
-                        # Build button text: "🔖 #59 👩‍🍳 LR: 20:46 🗺️ Lede 15"
+                        # Get vendor-specific time from confirmed_times dict, fallback to confirmed_time
+                        vendor_time = recent.get("confirmed_times", {}).get(ref_vendor, recent['confirmed_time'])
+                        
+                        # Build button text: "02 - LR - 14:15 - Grabenga. 15"
                         abbreviated_address = abbreviate_street(recent['address'], max_length=15)
-                        button_text = f"🔖 #{recent['order_num']} {chef_emoji} {ref_vendor_shortcut}: {recent['confirmed_time']} 🗺️ {abbreviated_address}"
+                        button_text = f"{recent['order_num']} - {ref_vendor_shortcut} - {vendor_time} - {abbreviated_address}"
                         
                         # TIER 2: If button exceeds 64 chars (Telegram limit), apply aggressive abbreviation
                         if len(button_text) > 64:
@@ -506,10 +578,10 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                             
                             # Take first 4 letters only
                             aggressive_abbr = street_clean[:4] + house_num
-                            button_text = f"🔖 #{recent['order_num']} {chef_emoji} {ref_vendor_shortcut}: {recent['confirmed_time']} 🗺️ {aggressive_abbr}"
+                            button_text = f"{recent['order_num']} - {ref_vendor_shortcut} - {vendor_time} - {aggressive_abbr}"
                         
-                        # Callback contains SINGLE ref vendor shortcut (not comma-separated)
-                        callback_data = f"order_ref|{order_id}|{recent['order_id']}|{recent['confirmed_time']}|{ref_vendor_shortcut}"
+                        # Callback contains SINGLE ref vendor shortcut (not comma-separated) and vendor-specific time
+                        callback_data = f"order_ref|{order_id}|{recent['order_id']}|{vendor_time}|{ref_vendor_shortcut}"
                         if vendor:
                             # Add current vendor shortcut
                             current_vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
@@ -521,9 +593,9 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                     ref_vendor = recent["vendors"][0]
                     ref_vendor_shortcut = RESTAURANT_SHORTCUTS.get(ref_vendor, ref_vendor[:2].upper())
                     
-                    # Build button text: "🔖 #59 👩‍🍳 LR: 20:46 🗺️ Lede 15"
+                    # Build button text: "02 - LR - 14:15 - Grabenga. 15"
                     abbreviated_address = abbreviate_street(recent['address'], max_length=15)
-                    button_text = f"🔖 #{recent['order_num']} {chef_emoji} {ref_vendor_shortcut}: {recent['confirmed_time']} 🗺️ {abbreviated_address}"
+                    button_text = f"{recent['order_num']} - {ref_vendor_shortcut} - {recent['confirmed_time']} - {abbreviated_address}"
                     
                     # TIER 2: If button exceeds 64 chars (Telegram limit), apply aggressive abbreviation
                     if len(button_text) > 64:
@@ -544,7 +616,7 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                         
                         # Take first 4 letters only
                         aggressive_abbr = street_clean[:4] + house_num
-                        button_text = f"🔖 #{recent['order_num']} {chef_emoji} {ref_vendor_shortcut}: {recent['confirmed_time']} 🗺️ {aggressive_abbr}"
+                        button_text = f"{recent['order_num']} - {ref_vendor_shortcut} - {recent['confirmed_time']} - {aggressive_abbr}"
                     
                     # Callback contains SINGLE ref vendor shortcut
                     callback_data = f"order_ref|{order_id}|{recent['order_id']}|{recent['confirmed_time']}|{ref_vendor_shortcut}"
@@ -803,3 +875,255 @@ def exact_hour_keyboard(order_id: str, hour: int, vendor: Optional[str] = None) 
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building exact hour keyboard: %s", exc)
         return InlineKeyboardMarkup([])
+
+
+# =============================================================================
+# ORDER COMBINING SYSTEM
+# =============================================================================
+def get_assigned_orders(exclude_order_id: str) -> List[Dict[str, str]]:
+    """
+    Get all assigned (not delivered) orders for combining menu.
+    
+    Filters STATE for orders with:
+    - assigned_to field populated
+    - status != "delivered"
+    - order_id != exclude_order_id
+    
+    Extracts relevant fields and sorts by courier shortcut.
+    
+    Args:
+        exclude_order_id: Current order ID to exclude from results
+    
+    Returns:
+        List of dicts with keys: order_id, order_num, vendor_shortcut, 
+        confirmed_time, address, assigned_to (user_id), courier_shortcut
+        Sorted by courier_shortcut alphabetically
+    """
+    from main import STATE  # Import STATE from main module
+    
+    assigned = []
+    
+    for oid, order_data in STATE.items():
+        # Skip current order
+        if oid == exclude_order_id:
+            continue
+        
+        # Check if order is assigned and not delivered
+        assigned_to = order_data.get("assigned_to")
+        status = order_data.get("status", "new")
+        
+        if not assigned_to or status == "delivered":
+            continue
+        
+        # Extract fields for display
+        order_num = order_data.get("name", "??")
+        vendors = order_data.get("vendors", [])
+        confirmed_time = order_data.get("confirmed_time", "??:??")
+        address = order_data.get("address", "Unknown address")
+        
+        # Get vendor shortcut (first vendor only for display)
+        vendor_shortcut = get_vendor_shortcuts_string(vendors)
+        
+        # Get courier shortcut from assigned_to user_id
+        courier_shortcut = get_courier_shortcut(assigned_to)
+        
+        assigned.append({
+            "order_id": oid,
+            "order_num": order_num,
+            "vendor_shortcut": vendor_shortcut,
+            "confirmed_time": confirmed_time,
+            "address": address,
+            "assigned_to": assigned_to,  # Store user_id
+            "courier_shortcut": courier_shortcut
+        })
+    
+    # Sort by courier shortcut (groups orders by courier together)
+    assigned.sort(key=lambda x: x["courier_shortcut"])
+    
+    return assigned
+
+
+def generate_group_id() -> str:
+    """
+    Generate unique group ID based on timestamp.
+    
+    Format: group_YYYYMMDD_HHMMSS
+    
+    Returns:
+        Unique group identifier string
+    """
+    return f"group_{now().strftime('%Y%m%d_%H%M%S')}"
+
+
+def get_next_group_color() -> str:
+    """
+    Get next available group color from rotation.
+    
+    Checks existing groups in STATE and returns next color in sequence.
+    Rotates through: 🟣🔵🟢🟡🟠🔴🟤 (max 7 groups simultaneously).
+    
+    Returns:
+        Color emoji string
+    """
+    from main import STATE
+    
+    # Get all currently used colors
+    used_colors = set()
+    for order_data in STATE.values():
+        color = order_data.get("group_color")
+        if color:
+            used_colors.add(color)
+    
+    # Find first unused color
+    for color in GROUP_COLORS:
+        if color not in used_colors:
+            return color
+    
+    # If all colors used, rotate from beginning
+    return GROUP_COLORS[0]
+
+
+def get_group_orders(group_id: str) -> List[Dict[str, Any]]:
+    """
+    Get all orders in a specific group.
+    
+    Args:
+        group_id: Group identifier
+    
+    Returns:
+        List of order dicts with order_id and full order data
+    """
+    from main import STATE
+    
+    group_orders = []
+    for oid, order_data in STATE.items():
+        if order_data.get("group_id") == group_id:
+            group_orders.append({
+                "order_id": oid,
+                "data": order_data
+            })
+    
+    return group_orders
+
+
+def build_combine_keyboard(order_id: str, assigned_orders: List[Dict[str, str]]) -> InlineKeyboardMarkup:
+    """
+    Build inline keyboard with assigned orders for combining.
+    
+    Each button shows: {num} - {vendor} - {time} - {address} ({courier})
+    Address uses tier 1/2 abbreviation logic (max 64 chars total).
+    
+    Args:
+        order_id: Current order ID (for callback data)
+        assigned_orders: List from get_assigned_orders()
+    
+    Returns:
+        InlineKeyboardMarkup with order buttons + Back button
+    """
+    buttons = []
+    
+    for order in assigned_orders:
+        # Abbreviate address using tier 1/2 logic
+        address = order["address"]
+        
+        # Tier 1: Remove ", Munich" / ", München"
+        address = address.replace(", Munich", "").replace(", München", "")
+        
+        # Tier 2: Shorten street names (Ledererstraße → Ledererga.)
+        if "straße" in address.lower():
+            parts = address.split(" ")
+            if parts:
+                street = parts[0]
+                # Take first 9 chars + "ga."
+                street_abbr = street[:9] + "ga." if len(street) > 9 else street
+                address = street_abbr + " " + " ".join(parts[1:])
+        elif "strasse" in address.lower():
+            parts = address.split(" ")
+            if parts:
+                street = parts[0]
+                street_abbr = street[:9] + "ga." if len(street) > 9 else street
+                address = street_abbr + " " + " ".join(parts[1:])
+        
+        # Build button text: {num} - {vendor} - {time} - {address} ({courier})
+        button_text = f"{order['order_num']} - {order['vendor_shortcut']} - {order['confirmed_time']} - {address} ({order['courier_shortcut']})"
+        
+        # Truncate to 64 chars max (Telegram button limit)
+        if len(button_text) > 64:
+            button_text = button_text[:61] + "..."
+        
+        # Callback: combine_with|{order_id}|{target_order_id}|{timestamp}
+        callback_data = f"combine_with|{order_id}|{order['order_id']}|{int(now().timestamp())}"
+        
+        buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+    
+    # Add Back button
+    buttons.append([InlineKeyboardButton("← Back", callback_data=f"hide|{order_id}")])
+    
+    return InlineKeyboardMarkup(buttons)
+
+
+async def show_combine_orders_menu(order_id: str, chat_id: int, message_id: int):
+    """
+    Show menu to select assigned order to combine with (Phase 2 implementation).
+    
+    Displays all assigned (not delivered) orders sorted by courier.
+    Each button shows: {num} - {vendor} - {time} - {address} ({courier})
+    
+    Args:
+        order_id: Current order to combine
+        chat_id: MDG chat ID
+        message_id: Message to edit with combine menu
+    """
+    from utils import safe_edit_message
+    from main import STATE
+    
+    logger.info(f"[PHASE 2] show_combine_orders_menu for order {order_id}")
+    
+    # Get current order info for header
+    order = STATE.get(order_id)
+    if not order:
+        logger.warning(f"Order {order_id} not found in STATE")
+        await safe_edit_message(
+            chat_id=chat_id,
+            message_id=message_id,
+            text="⚠️ Order not found",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("← Back", callback_data=f"hide|{order_id}")
+            ]])
+        )
+        return
+    
+    order_num = order.get("name", "??")
+    
+    # Get all assigned orders (excluding current)
+    assigned_orders = get_assigned_orders(exclude_order_id=order_id)
+    
+    # Handle empty list
+    if not assigned_orders:
+        logger.info(f"No assigned orders available to combine with {order_id}")
+        await safe_edit_message(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=f"📌 Combine 🔖 #{order_num} with:\n\nNo assigned orders available.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("← Back", callback_data=f"hide|{order_id}")
+            ]])
+        )
+        return
+    
+    # Build keyboard
+    keyboard = build_combine_keyboard(order_id, assigned_orders)
+    
+    # Edit message with combine menu
+    text = f"📌 Combine 🔖 #{order_num} with:"
+    
+    logger.info(f"Showing {len(assigned_orders)} assigned orders for combining")
+    
+    await safe_edit_message(
+        chat_id=chat_id,
+        message_id=message_id,
+        text=text,
+        reply_markup=keyboard
+    )
+
+
