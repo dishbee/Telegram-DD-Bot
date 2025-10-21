@@ -878,7 +878,7 @@ def exact_hour_keyboard(order_id: str, hour: int, vendor: Optional[str] = None) 
 # =============================================================================
 # ORDER COMBINING SYSTEM
 # =============================================================================
-def get_assigned_orders(exclude_order_id: str) -> List[Dict[str, str]]:
+def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[str, str]]:
     """
     Get all assigned (not delivered) orders for combining menu.
     
@@ -890,6 +890,7 @@ def get_assigned_orders(exclude_order_id: str) -> List[Dict[str, str]]:
     Extracts relevant fields and sorts by courier shortcut.
     
     Args:
+        state_dict: STATE dictionary passed from caller
         exclude_order_id: Current order ID to exclude from results
     
     Returns:
@@ -897,11 +898,9 @@ def get_assigned_orders(exclude_order_id: str) -> List[Dict[str, str]]:
         confirmed_time, address, assigned_to (user_id), courier_shortcut
         Sorted by courier_shortcut alphabetically
     """
-    from main import STATE  # Import STATE from main module
-    
     assigned = []
     
-    for oid, order_data in STATE.items():
+    for oid, order_data in state_dict.items():
         # Skip current order
         if oid == exclude_order_id:
             continue
@@ -953,21 +952,22 @@ def generate_group_id() -> str:
     return f"group_{now().strftime('%Y%m%d_%H%M%S')}"
 
 
-def get_next_group_color() -> str:
+def get_next_group_color(state_dict: dict) -> str:
     """
     Get next available group color from rotation.
     
     Checks existing groups in STATE and returns next color in sequence.
     Rotates through: 🟣🔵🟢🟡🟠🔴🟤 (max 7 groups simultaneously).
     
+    Args:
+        state_dict: STATE dictionary passed from caller
+    
     Returns:
         Color emoji string
     """
-    from main import STATE
-    
     # Get all currently used colors
     used_colors = set()
-    for order_data in STATE.values():
+    for order_data in state_dict.values():
         color = order_data.get("group_color")
         if color:
             used_colors.add(color)
@@ -981,20 +981,19 @@ def get_next_group_color() -> str:
     return GROUP_COLORS[0]
 
 
-def get_group_orders(group_id: str) -> List[Dict[str, Any]]:
+def get_group_orders(state_dict: dict, group_id: str) -> List[Dict[str, Any]]:
     """
     Get all orders in a specific group.
     
     Args:
+        state_dict: STATE dictionary passed from caller
         group_id: Group identifier
     
     Returns:
         List of order dicts with order_id and full order data
     """
-    from main import STATE
-    
     group_orders = []
-    for oid, order_data in STATE.items():
+    for oid, order_data in state_dict.items():
         if order_data.get("group_id") == group_id:
             group_orders.append({
                 "order_id": oid,
@@ -1060,7 +1059,7 @@ def build_combine_keyboard(order_id: str, assigned_orders: List[Dict[str, str]])
     return InlineKeyboardMarkup(buttons)
 
 
-async def show_combine_orders_menu(order_id: str, chat_id: int, message_id: int):
+async def show_combine_orders_menu(state_dict, order_id: str, chat_id: int, message_id: int):
     """
     Show menu to select assigned order to combine with (Phase 2 implementation).
     
@@ -1068,17 +1067,17 @@ async def show_combine_orders_menu(order_id: str, chat_id: int, message_id: int)
     Each button shows: {num} - {vendor} - {time} - {address} ({courier})
     
     Args:
+        state_dict: STATE dictionary from main.py
         order_id: Current order to combine
         chat_id: MDG chat ID
         message_id: Message to edit with combine menu
     """
     from utils import safe_edit_message
-    from main import STATE
     
     logger.info(f"[PHASE 2] show_combine_orders_menu for order {order_id}")
     
     # Get all assigned orders (excluding current)
-    assigned_orders = get_assigned_orders(exclude_order_id=order_id)
+    assigned_orders = get_assigned_orders(state_dict, exclude_order_id=order_id)
     
     # If no assigned orders, button shouldn't have been shown - just return silently
     if not assigned_orders:

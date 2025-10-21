@@ -1241,8 +1241,9 @@ def telegram_webhook():
                 
                 elif action == "req_exact":
                     order_id = data[1]
-                    vendor = data[2] if len(data) > 2 else None  # Extract vendor if provided
-                    logger.info(f"Processing REQUEST EXACT TIME for order {order_id}, vendor: {vendor}")
+                    # data[2] is timestamp, NOT vendor - vendor only passed for multi-vendor workflows
+                    vendor = None
+                    logger.info(f"Processing REQUEST EXACT TIME for order {order_id}")
                     
                     # Show hour picker for exact time
                     msg = await safe_send_message(
@@ -1312,7 +1313,10 @@ def telegram_webhook():
                 # EXACT TIME ACTIONS
                 elif action == "exact_hour":
                     order_id, hour = data[1], data[2]
-                    vendor = data[3] if len(data) > 3 else None  # Extract vendor if provided
+                    # data[3] might be vendor OR timestamp - check if it's a valid vendor name
+                    vendor = None
+                    if len(data) > 3 and data[3] in VENDOR_GROUP_MAP:
+                        vendor = data[3]
                     logger.info(f"Processing exact hour {hour} for order {order_id}, vendor: {vendor}")
                     
                     # Edit the current message to show minute picker
@@ -1328,7 +1332,10 @@ def telegram_webhook():
                 
                 elif action == "exact_selected":
                     order_id, selected_time = data[1], data[2]
-                    vendor = data[3] if len(data) > 3 else None  # Extract vendor if provided
+                    # data[3] might be vendor OR timestamp - check if it's a valid vendor name
+                    vendor = None
+                    if len(data) > 3 and data[3] in VENDOR_GROUP_MAP:
+                        vendor = data[3]
                     order = STATE.get(order_id)
                     if not order:
                         return
@@ -1963,7 +1970,7 @@ def telegram_webhook():
                     # Show combine orders menu
                     chat_id = cq["message"]["chat"]["id"]
                     message_id = cq["message"]["message_id"]
-                    await show_combine_orders_menu(order_id, chat_id, message_id)
+                    await show_combine_orders_menu(STATE, order_id, chat_id, message_id)
                 
                 elif action == "combine_with":
                     """
@@ -2016,7 +2023,7 @@ def telegram_webhook():
                     else:
                         # Create new group
                         group_id = generate_group_id()
-                        group_color = get_next_group_color()
+                        group_color = get_next_group_color(STATE)
                         logger.info(f"Creating new group {group_id} with color {group_color}")
                         
                         # Add target order to group
@@ -2029,7 +2036,7 @@ def telegram_webhook():
                     order["group_color"] = group_color
                     
                     # Update positions for all group members
-                    group_orders = get_group_orders(group_id)
+                    group_orders = get_group_orders(STATE, group_id)
                     for i, group_order in enumerate(group_orders, start=1):
                         STATE[group_order["order_id"]]["group_position"] = i
                     
