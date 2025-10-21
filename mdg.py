@@ -1085,7 +1085,7 @@ async def show_combine_orders_menu(state_dict, order_id: str, chat_id: int, mess
         return
     
     # Get current order info for header
-    order = STATE.get(order_id)
+    order = state_dict.get(order_id)
     if not order:
         logger.warning(f"Order {order_id} not found in STATE")
         return
