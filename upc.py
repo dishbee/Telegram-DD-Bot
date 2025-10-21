@@ -237,7 +237,7 @@ async def update_group_upc_messages(group_id: str):
         logger.info(f"Updating UPC messages for group {group_id}")
         
         # Get all orders in group
-        group_orders = get_group_orders(group_id)
+        group_orders = get_group_orders(STATE, group_id)
         
         if not group_orders:
             logger.warning(f"No orders found in group {group_id}")

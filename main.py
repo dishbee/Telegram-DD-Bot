@@ -2009,19 +2009,6 @@ def telegram_webhook():
                     group_size = len(group_orders)
                     logger.info(f"Group {group_id} now has {group_size} orders")
                     
-                    # Show success message
-                    order_num = order.get("name", "??")
-                    target_num = target_order.get("name", "??")
-                    
-                    await safe_edit_message(
-                        chat_id=cq["message"]["chat"]["id"],
-                        message_id=cq["message"]["message_id"],
-                        text=f"{group_color} Combined 🔖 #{order_num} with 🔖 #{target_num}\n\nGroup: {order['group_position']}/{group_size}",
-                        reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton("✓ Done", callback_data=f"hide|{order_id}")
-                        ]])
-                    )
-                    
                     # Phase 4: Update UPC messages for all group members
                     from upc import update_group_upc_messages
                     await update_group_upc_messages(group_id)

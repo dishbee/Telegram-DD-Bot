@@ -880,14 +880,14 @@ def exact_hour_keyboard(order_id: str, hour: int, vendor: Optional[str] = None) 
 # =============================================================================
 def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[str, str]]:
     """
-    Get all assigned (not delivered) orders for combining menu.
+    Get all assigned (not delivered) orders for combining menu (separate entry per vendor for multi-vendor).
     
     Filters STATE for orders with:
     - assigned_to field populated
     - status != "delivered"
     - order_id != exclude_order_id
     
-    Extracts relevant fields and sorts by courier shortcut.
+    Creates SEPARATE entries for each vendor in multi-vendor orders (mirrors scheduled orders format).
     
     Args:
         state_dict: STATE dictionary passed from caller
@@ -898,6 +898,9 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
         confirmed_time, address, assigned_to (user_id), courier_shortcut
         Sorted by courier_shortcut alphabetically
     """
+    from utils import RESTAURANT_SHORTCUTS, COURIER_MAP
+    import re
+    
     assigned = []
     
     for oid, order_data in state_dict.items():
@@ -912,35 +915,115 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
         if not assigned_to or status == "delivered":
             continue
         
-        # Extract fields for display
-        order_num = order_data.get("name", "??")
+        # Extract last 2 digits from order number
+        full_name = order_data.get("name", "??")
+        if full_name.startswith("#") and len(full_name) > 2:
+            order_num = full_name[-2:]
+        else:
+            order_num = full_name
+        
         vendors = order_data.get("vendors", [])
         
-        # Handle multi-vendor confirmed_times dict vs single confirmed_time string
+        # Get address from shipping_address
+        shipping_addr = order_data.get("customer", {})
+        if not shipping_addr:
+            shipping_addr = {}
+        shipping_address = shipping_addr.get("shipping_address", {})
+        street = shipping_address.get("address1", "")
+        
+        if not street:
+            street = "Unknown address"
+        
+        # Get confirmed_times dict for multi-vendor
         confirmed_times = order_data.get("confirmed_times")
-        if confirmed_times and isinstance(confirmed_times, dict):
-            # Multi-vendor: use first vendor's time
-            confirmed_time = next(iter(confirmed_times.values()), "??:??")
+        
+        # Get courier shortcut
+        bee_shortcuts = {
+            383910036: "B1",
+            6389671774: "B2",
+            8483568436: "B3"
+        }
+        
+        if assigned_to in bee_shortcuts:
+            courier_shortcut = bee_shortcuts[assigned_to]
         else:
+            courier_name = COURIER_MAP.get(str(assigned_to), {}).get("username", "")
+            if courier_name and len(courier_name) >= 2:
+                courier_shortcut = courier_name[:2].upper()
+            else:
+                courier_shortcut = "??"
+        
+        # For multi-vendor orders, create SEPARATE entry per vendor (like scheduled orders)
+        if len(vendors) > 1 and confirmed_times:
+            for vendor in vendors:
+                vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                vendor_time = confirmed_times.get(vendor, "??:??")
+                
+                # Start with full street name
+                final_address = street
+                
+                # Build button text to check length
+                button_text = f"{order_num} - {vendor_shortcut} - {vendor_time} - {final_address} ({courier_shortcut})"
+                
+                # TIER 1: If button text > 30 chars, apply standard abbreviations
+                if len(button_text) > 30:
+                    final_address = abbreviate_street(street)
+                    button_text = f"{order_num} - {vendor_shortcut} - {vendor_time} - {final_address} ({courier_shortcut})"
+                
+                # TIER 2: If button text STILL > 30 chars, apply aggressive abbreviation (first 4 letters)
+                if len(button_text) > 30:
+                    house_match = re.search(r'\s+(\d+[a-zA-Z]?)$', street)
+                    house_num = f" {house_match.group(1)}" if house_match else ""
+                    street_only = street[:house_match.start()] if house_match else street
+                    street_clean = re.sub(r'^(Doktor-|Professor-|Sankt-|Dr\.-|Prof\.-|St\.-)', '', street_only)
+                    if '-' in street_clean:
+                        street_clean = street_clean.split('-')[0]
+                    final_address = street_clean[:4] + house_num
+                
+                assigned.append({
+                    "order_id": oid,
+                    "order_num": order_num,
+                    "vendor_shortcut": vendor_shortcut,
+                    "confirmed_time": vendor_time,
+                    "address": final_address,
+                    "assigned_to": assigned_to,
+                    "courier_shortcut": courier_shortcut
+                })
+        else:
+            # Single vendor order
+            vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper()) if vendors else "??"
             confirmed_time = order_data.get("confirmed_time", "??:??")
-        
-        address = order_data.get("address", "Unknown address")
-        
-        # Get vendor shortcut (first vendor only for display)
-        vendor_shortcut = get_vendor_shortcuts_string(vendors)
-        
-        # Get courier shortcut from assigned_to user_id
-        courier_shortcut = get_courier_shortcut(assigned_to)
-        
-        assigned.append({
-            "order_id": oid,
-            "order_num": order_num,
-            "vendor_shortcut": vendor_shortcut,
-            "confirmed_time": confirmed_time,
-            "address": address,
-            "assigned_to": assigned_to,  # Store user_id
-            "courier_shortcut": courier_shortcut
-        })
+            
+            # Start with full street name
+            final_address = street
+            
+            # Build button text to check length
+            button_text = f"{order_num} - {vendor_shortcut} - {confirmed_time} - {final_address} ({courier_shortcut})"
+            
+            # TIER 1: If button text > 30 chars, apply standard abbreviations
+            if len(button_text) > 30:
+                final_address = abbreviate_street(street)
+                button_text = f"{order_num} - {vendor_shortcut} - {confirmed_time} - {final_address} ({courier_shortcut})"
+            
+            # TIER 2: If button text STILL > 30 chars, apply aggressive abbreviation (first 4 letters)
+            if len(button_text) > 30:
+                house_match = re.search(r'\s+(\d+[a-zA-Z]?)$', street)
+                house_num = f" {house_match.group(1)}" if house_match else ""
+                street_only = street[:house_match.start()] if house_match else street
+                street_clean = re.sub(r'^(Doktor-|Professor-|Sankt-|Dr\.-|Prof\.-|St\.-)', '', street_only)
+                if '-' in street_clean:
+                    street_clean = street_clean.split('-')[0]
+                final_address = street_clean[:4] + house_num
+            
+            assigned.append({
+                "order_id": oid,
+                "order_num": order_num,
+                "vendor_shortcut": vendor_shortcut,
+                "confirmed_time": confirmed_time,
+                "address": final_address,
+                "assigned_to": assigned_to,
+                "courier_shortcut": courier_shortcut
+            })
     
     # Sort by courier shortcut (groups orders by courier together)
     assigned.sort(key=lambda x: x["courier_shortcut"])
@@ -1108,11 +1191,17 @@ async def show_combine_orders_menu(state_dict, order_id: str, chat_id: int, mess
     
     logger.info(f"Showing {len(assigned_orders)} assigned orders for combining")
     
-    await safe_edit_message(
+    # Send NEW message (don't edit MDG-CONF)
+    from utils import safe_send_message
+    msg = await safe_send_message(
         chat_id=chat_id,
-        message_id=message_id,
         text=text,
         reply_markup=keyboard
     )
+    
+    # Track new message for cleanup
+    order = state_dict.get(order_id)
+    if order and msg:
+        order.setdefault("mdg_additional_messages", []).append(msg.message_id)
 
 
