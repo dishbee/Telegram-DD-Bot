@@ -924,11 +924,8 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
         
         vendors = order_data.get("vendors", [])
         
-        # Get address from shipping_address
-        shipping_addr = order_data.get("customer", {})
-        if not shipping_addr:
-            shipping_addr = {}
-        shipping_address = shipping_addr.get("shipping_address", {})
+        # Get address from shipping_address (direct path from Shopify payload)
+        shipping_address = order_data.get("shipping_address", {})
         street = shipping_address.get("address1", "")
         
         if not street:
@@ -1181,7 +1178,9 @@ async def show_combine_orders_menu(state_dict, order_id: str, chat_id: int, mess
         logger.warning(f"Order {order_id} not found in STATE")
         return
     
-    order_num = order.get("name", "??")
+    # Extract last 2 digits from order name (e.g., "dishbee #26" -> "26")
+    full_name = order.get("name", "??")
+    order_num = full_name[-2:] if len(full_name) >= 2 else full_name
     
     # Build keyboard
     keyboard = build_combine_keyboard(order_id, assigned_orders)

@@ -1997,9 +1997,15 @@ def telegram_webhook():
                     
                     # Auto-assign to same courier as target order
                     if target_order.get("assigned_to"):
-                        order["assigned_to"] = target_order["assigned_to"]
+                        courier_id = target_order["assigned_to"]
+                        order["assigned_to"] = courier_id
                         order["status"] = "assigned"
-                        logger.info(f"Auto-assigned order {order_id} to courier {target_order['assigned_to']}")
+                        logger.info(f"Auto-assigned order {order_id} to courier {courier_id}")
+                        
+                        # Send initial UPC assignment message to courier
+                        from upc import send_assignment_to_private_chat
+                        await send_assignment_to_private_chat(order_id, courier_id)
+                        logger.info(f"Sent UPC assignment message for order {order_id} to courier {courier_id}")
                     
                     # Update positions for all group members
                     group_orders = get_group_orders(STATE, group_id)

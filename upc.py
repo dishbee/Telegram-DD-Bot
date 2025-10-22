@@ -385,7 +385,8 @@ def build_assignment_message(order: dict) -> str:
             group_id = order["group_id"]
             
             # Calculate total orders in group
-            group_orders = get_group_orders(group_id)
+            from mdg import get_group_orders
+            group_orders = get_group_orders(STATE, group_id)
             group_total = len(group_orders)
             group_header = f"{group_color} Group: {group_position}/{group_total}\n\n"
         
@@ -682,7 +683,7 @@ async def update_group_on_delivery(delivered_order_id: str):
         
         # Get remaining orders in the group
         from mdg import get_group_orders
-        remaining_orders = get_group_orders(group_id)
+        remaining_orders = get_group_orders(STATE, group_id)
         
         # If only 1 order remains, dissolve the group
         if len(remaining_orders) == 1:
