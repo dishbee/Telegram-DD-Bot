@@ -218,6 +218,11 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
     - Same header but shows full product list
     """
     try:
+        from utils import build_status_lines
+        
+        # Build status lines (prepend to message)
+        status_text = build_status_lines(order, "mdg", RESTAURANT_SHORTCUTS, COURIER_SHORTCUTS)
+        
         order_type = order.get("order_type", "shopify")
         vendors = order.get("vendors", [])
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
@@ -365,7 +370,8 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
 
             text += f"{items_text}\n"
 
-        return text
+        # Prepend status lines at the top
+        return status_text + text
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building MDG text: %s", exc)
         return f"Error formatting order {order.get('name', 'Unknown')}"

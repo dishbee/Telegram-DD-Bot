@@ -666,6 +666,13 @@ def telegram_webhook():
                             restaurant_response_keyboard("ASAP", order_id, vendor)
                         )
                     
+                    # Append status to history
+                    order["status_history"].append({
+                        "type": "asap_sent",
+                        "vendor": vendor,
+                        "timestamp": now()
+                    })
+                    
                     # Update MDG status
                     vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
                     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
@@ -674,6 +681,24 @@ def telegram_webhook():
                         f"⚡ Asap request for 🔖 #{order_num} sent to {vendor_shortcut}",
                         auto_delete_after=20
                     )
+                    
+                    # Update MDG and RG messages
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                        mdg_time_request_keyboard(order_id)
+                    )
+                    
+                    vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+                    rg_msg_id = order.get("rg_message_ids", {}).get(vendor)
+                    if vendor_group_id and rg_msg_id:
+                        await safe_edit_message(
+                            vendor_group_id,
+                            rg_msg_id,
+                            build_vendor_summary_text(order, vendor),
+                            None  # No keyboard change
+                        )
                     
                     # Clean up additional MDG messages
                     await cleanup_mdg_messages(order_id)
@@ -873,6 +898,14 @@ def telegram_webhook():
                         auto_delete_after=20
                     )
                     
+                    # Append status to history (one entry per vendor)
+                    for vendor in vendors:
+                        order["status_history"].append({
+                            "type": "asap_sent",
+                            "vendor": vendor,
+                            "timestamp": now()
+                        })
+                    
                     # Update MDG with ASAP status but keep time request buttons
                     order["requested_time"] = "ASAP"
                     logger.info(f"Order {order_id} has vendors: {vendors} (count: {len(vendors)})")
@@ -882,13 +915,26 @@ def telegram_webhook():
                     else:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
                     
-                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: ASAP"
+                    # Update MDG message with new status
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
                         mdg_time_request_keyboard(order_id)  # Keep same buttons
                     )
+                    
+                    # Update RG messages with new status
+                    for vendor in vendors:
+                        vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+                        rg_msg_id = order.get("rg_message_ids", {}).get(vendor)
+                        if vendor_group_id and rg_msg_id:
+                            await safe_edit_message(
+                                vendor_group_id,
+                                rg_msg_id,
+                                build_vendor_summary_text(order, vendor),
+                                None  # No keyboard change
+                            )
                     
                     # Clean up additional MDG messages
                     await cleanup_mdg_messages(order_id)
@@ -1208,15 +1254,36 @@ def telegram_webhook():
                         else:
                             logger.warning(f"Vendor {vendor} not found in VENDOR_GROUP_MAP")
                     
+                    # Append status to history (one entry per vendor)
+                    for vendor in vendors_to_notify:
+                        order["status_history"].append({
+                            "type": "time_sent",
+                            "vendor": vendor,
+                            "time": requested_time,
+                            "timestamp": now()
+                        })
+                    
                     # Update MDG
                     order["requested_time"] = requested_time
-                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {requested_time}"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
                         mdg_time_request_keyboard(order_id)
                     )
+                    
+                    # Update RG messages with new status
+                    for vendor in vendors_to_notify:
+                        vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+                        rg_msg_id = order.get("rg_message_ids", {}).get(vendor)
+                        if vendor_group_id and rg_msg_id:
+                            await safe_edit_message(
+                                vendor_group_id,
+                                rg_msg_id,
+                                build_vendor_summary_text(order, vendor),
+                                None  # No keyboard change
+                            )
                     
                     # Clean up additional MDG messages
                     await cleanup_mdg_messages(order_id)
@@ -1371,15 +1438,36 @@ def telegram_webhook():
                                 restaurant_response_keyboard(selected_time, order_id, v)
                             )
                     
+                    # Append status to history (one entry per target vendor)
+                    for v in target_vendors:
+                        order["status_history"].append({
+                            "type": "time_sent",
+                            "vendor": v,
+                            "time": selected_time,
+                            "timestamp": now()
+                        })
+                    
                     # Update MDG
                     order["requested_time"] = selected_time
-                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {selected_time}"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
                         mdg_time_request_keyboard(order_id)
                     )
+                    
+                    # Update RG messages with new status
+                    for v in target_vendors:
+                        vendor_group_id = VENDOR_GROUP_MAP.get(v)
+                        rg_msg_id = order.get("rg_message_ids", {}).get(v)
+                        if vendor_group_id and rg_msg_id:
+                            await safe_edit_message(
+                                vendor_group_id,
+                                rg_msg_id,
+                                build_vendor_summary_text(order, v),
+                                None  # No keyboard change
+                            )
                     
                     # Delete the time picker message
                     chat_id = cq["message"]["chat"]["id"]
@@ -1462,6 +1550,14 @@ def telegram_webhook():
                         order["confirmed_time"] = confirmed_time  # Keep for backward compatibility
                         order["confirmed_by"] = vendor
                         
+                        # Append status to history
+                        order["status_history"].append({
+                            "type": "confirmed",
+                            "vendor": vendor,
+                            "time": confirmed_time,
+                            "timestamp": now()
+                        })
+                        
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
                         
                         # Get order number for display
@@ -1482,6 +1578,26 @@ def telegram_webhook():
                         )
                         if rg_conf_msg:
                             asyncio.create_task(_delete_after_delay(vendor_group_id, rg_conf_msg.message_id, 20))
+                    
+                    # Update MDG message with new status
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                        mdg_time_request_keyboard(order_id)
+                    )
+                    
+                    # Update RG message with new status
+                    rg_msg_id = order.get("rg_message_ids", {}).get(vendor) or order.get("vendor_messages", {}).get(vendor)
+                    if vendor_group_id and rg_msg_id:
+                        expanded = order.get("vendor_expanded", {}).get(vendor, False)
+                        text = build_vendor_details_text(order, vendor) if expanded else build_vendor_summary_text(order, vendor)
+                        await safe_edit_message(
+                            vendor_group_id,
+                            rg_msg_id,
+                            text,
+                            vendor_keyboard(order_id, vendor, expanded)
+                        )
                     
                     # Check if all vendors confirmed - show assignment buttons
                     # CRITICAL: Only show buttons if order NOT already assigned
@@ -1539,6 +1655,14 @@ def telegram_webhook():
                         order["confirmed_times"][vendor] = selected_time
                         order["confirmed_time"] = selected_time  # Keep for backward compatibility
                         
+                        # Append status to history
+                        order["status_history"].append({
+                            "type": "confirmed",
+                            "vendor": vendor,
+                            "time": selected_time,
+                            "timestamp": now()
+                        })
+                        
                         # Get order number for display
                         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
                         
@@ -1558,6 +1682,26 @@ def telegram_webhook():
                                 asyncio.create_task(_delete_after_delay(vendor_group_id, rg_conf_msg.message_id, 20))
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
+                        
+                        # Update MDG message with new status
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                            mdg_time_request_keyboard(order_id)
+                        )
+                        
+                        # Update RG message with new status
+                        rg_msg_id = order.get("rg_message_ids", {}).get(vendor) or order.get("vendor_messages", {}).get(vendor)
+                        if vendor_group_id and rg_msg_id:
+                            expanded = order.get("vendor_expanded", {}).get(vendor, False)
+                            text = build_vendor_details_text(order, vendor) if expanded else build_vendor_summary_text(order, vendor)
+                            await safe_edit_message(
+                                vendor_group_id,
+                                rg_msg_id,
+                                text,
+                                vendor_keyboard(order_id, vendor, expanded)
+                            )
                         
                         # Check if all vendors confirmed - show assignment buttons
                         logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
@@ -1610,6 +1754,14 @@ def telegram_webhook():
                         order["confirmed_times"][vendor] = selected_time
                         order["confirmed_time"] = selected_time  # Keep for backward compatibility
                         
+                        # Append status to history
+                        order["status_history"].append({
+                            "type": "confirmed",
+                            "vendor": vendor,
+                            "time": selected_time,
+                            "timestamp": now()
+                        })
+                        
                         # Get order number for display
                         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
                         
@@ -1627,6 +1779,26 @@ def telegram_webhook():
                             )
                             if rg_conf_msg:
                                 asyncio.create_task(_delete_after_delay(vendor_group_id, rg_conf_msg.message_id, 20))
+                        
+                        # Update MDG message with new status
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                            mdg_time_request_keyboard(order_id)
+                        )
+                        
+                        # Update RG message with new status
+                        rg_msg_id = order.get("rg_message_ids", {}).get(vendor) or order.get("vendor_messages", {}).get(vendor)
+                        if vendor_group_id and rg_msg_id:
+                            expanded = order.get("vendor_expanded", {}).get(vendor, False)
+                            text = build_vendor_details_text(order, vendor) if expanded else build_vendor_summary_text(order, vendor)
+                            await safe_edit_message(
+                                vendor_group_id,
+                                rg_msg_id,
+                                text,
+                                vendor_keyboard(order_id, vendor, expanded)
+                            )
                         
                         # Delete the time picker message (cleanup)
                         chat_id = cq["message"]["chat"]["id"]
@@ -2372,6 +2544,9 @@ def shopify_webhook():
             "confirmed_times": {},  # Track confirmed time per vendor
             "confirmed_time": None,
             "status": "new",
+            "status_history": [{"type": "new", "timestamp": now()}],  # NEW: Track all status changes
+            "rg_message_ids": {},  # NEW: Track RG message IDs (replaces vendor_messages)
+            "upc_message_id": None,  # NEW: Track UPC assignment message ID
             "mdg_additional_messages": [],  # Track additional MDG messages for cleanup
             # Order grouping fields
             "group_id": None,  # Group identifier (e.g., "group_orange_001")

@@ -297,7 +297,20 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int):
         order["assigned_to"] = user_id
         order["assigned_at"] = now()
         order["status"] = "assigned"
-        order["upc_assignment_message_id"] = msg.message_id  # Track for group updates
+        order["upc_message_id"] = msg.message_id  # Track UPC message
+        order["upc_assignment_message_id"] = msg.message_id  # Track for group updates (backwards compat)
+
+        # Append status to history
+        # Get courier info
+        courier_info = COURIER_MAP.get(str(user_id), {})
+        courier_name = courier_info.get("username", f"User{user_id}")
+        
+        order["status_history"].append({
+            "type": "assigned",
+            "courier": courier_name,
+            "courier_id": user_id,
+            "timestamp": now()
+        })
 
         # Track assignment message
         if "assignment_messages" not in order:
@@ -316,16 +329,9 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
         if not order or "mdg_message_id" not in order:
             return
 
-        # Get assignee info
-        assignee_info = COURIER_MAP.get(str(assigned_user_id), {})
-        assignee_name = assignee_info.get("username", f"User{assigned_user_id}")
-
-        # Build updated MDG text with assignment info
+        # Build updated MDG text with status line (includes assignment info)
         import mdg
-        base_text = mdg.build_mdg_dispatch_text(order)
-        assignment_info = f"\n\n👤 **Assigned to:** {assignee_name}"
-
-        updated_text = base_text + assignment_info
+        updated_text = mdg.build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
 
         # Keep vendor selection buttons visible
         await safe_edit_message(
@@ -335,7 +341,22 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
             mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
         )
 
-        logger.info(f"Updated MDG for order {order_id} - assigned to {assignee_name}")
+        # Update all RG messages with new status
+        for vendor in order.get("vendors", []):
+            vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+            rg_msg_id = order.get("rg_message_ids", {}).get(vendor) or order.get("vendor_messages", {}).get(vendor)
+            if vendor_group_id and rg_msg_id:
+                import rg
+                expanded = order.get("vendor_expanded", {}).get(vendor, False)
+                text = rg.build_vendor_details_text(order, vendor) if expanded else rg.build_vendor_summary_text(order, vendor)
+                await safe_edit_message(
+                    vendor_group_id,
+                    rg_msg_id,
+                    text,
+                    rg.vendor_keyboard(order_id, vendor, expanded)
+                )
+
+        logger.info(f"Updated MDG and RG messages for order {order_id} with assignment")
 
     except Exception as e:
         logger.error(f"Error updating MDG with assignment: {e}")
@@ -370,6 +391,16 @@ def build_assignment_message(order: dict) -> str:
         Formatted message string for private chat display
     """
     try:
+        from utils import build_status_lines
+        from mdg import COURIER_SHORTCUTS
+        
+        # Build status lines (prepend to message)
+        status_text = build_status_lines(order, "upc", RESTAURANT_SHORTCUTS, COURIER_SHORTCUTS)
+        
+        # Add empty line after status if order is in a Group (combining system)
+        if order.get("group_id") and status_text:
+            status_text += "\n"
+        
         order_type = order.get("order_type", "shopify")
         
         # Chef emojis for variety (same as MDG-CONF)
@@ -462,8 +493,8 @@ def build_assignment_message(order: dict) -> str:
         phone = order['customer']['phone']
         phone_section = f"\n☎️ {phone}\n"
         
-        # Combine all sections (group_header first if present)
-        message = group_header + header + restaurant_section + customer_section + optional_section + phone_section
+        # Combine all sections (status first, then group_header if present)
+        message = status_text + group_header + header + restaurant_section + customer_section + optional_section + phone_section
         
         return message
 
@@ -528,82 +559,6 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
         logger.error(f"Error building CTA keyboard: {e}")
         return None
 
-async def handle_assignment_callback(action: str, data: list, user_id: int):
-    """Handle assignment-related callback actions"""
-    try:
-        if action == "assign_me":
-            order_id = data[1]
-            await send_assignment_to_private_chat(order_id, user_id, "self")
-
-            # Update MDG to show assignment
-            await update_mdg_assignment_status(order_id, user_id, "self-assigned")
-
-        elif action == "assign_user":
-            order_id, target_user_id = data[1], int(data[2])
-            target_user_info = COURIER_MAP.get(int(target_user_id), {})
-            assigned_by = target_user_info.get("username", f"User{target_user_id}")
-
-            await send_assignment_to_private_chat(order_id, int(target_user_id), assigned_by)
-
-            # Update MDG to show assignment
-            await update_mdg_assignment_status(order_id, int(target_user_id), assigned_by)
-
-        elif action == "mark_delivered":
-            order_id = data[1]
-            await handle_delivery_completion(order_id, user_id)
-
-        elif action == "confirm_delivered":
-            order_id = data[1]
-            await handle_delivery_completion(order_id, user_id)
-
-        elif action == "delay_order":
-            order_id = data[1]
-            await show_delay_options(order_id, user_id)
-
-        elif action == "call_restaurant":
-            order_id, vendor = data[1], data[2]
-            await initiate_restaurant_call(order_id, vendor, user_id)
-
-        elif action == "select_restaurant":
-            order_id = data[1]
-            await show_restaurant_selection(order_id, user_id)
-
-    except Exception as e:
-        logger.error(f"Error handling assignment callback {action}: {e}")
-
-async def update_mdg_assignment_status(order_id: str, assigned_user_id: int, assigned_by: str):
-    """Update MDG message to show assignment status"""
-    try:
-        order = STATE.get(order_id)
-        if not order or "mdg_message_id" not in order:
-            return
-
-        # Get assignee info
-        assignee_info = COURIER_MAP.get(assigned_user_id, {})
-        assignee_name = assignee_info.get("username", f"User{assigned_user_id}")
-
-        # Build updated MDG text with assignment info
-        import mdg
-        base_text = mdg.build_mdg_dispatch_text(order)
-        assignment_info = f"\n\n👤 **Assigned to:** {assignee_name}"
-        if assigned_by != "self-assigned":
-            assignment_info += f" (by {assigned_by})"
-
-        updated_text = base_text + assignment_info
-
-        # Keep vendor selection buttons visible
-        await safe_edit_message(
-            DISPATCH_MAIN_CHAT_ID,
-            order["mdg_message_id"],
-            updated_text,
-            mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
-        )
-
-        logger.info(f"Updated MDG for order {order_id} - assigned to {assignee_name}")
-
-    except Exception as e:
-        logger.error(f"Error updating MDG assignment status: {e}")
-
 async def handle_delivery_completion(order_id: str, user_id: int):
     """Handle delivery completion"""
     try:
@@ -620,9 +575,17 @@ async def handle_delivery_completion(order_id: str, user_id: int):
         assignee_info = COURIER_MAP.get(str(user_id), {})
         assignee_name = assignee_info.get("username", f"User{user_id}")
         
+        # Append status to history
+        delivery_time = now().strftime("%H:%M")
+        order["status_history"].append({
+            "type": "delivered",
+            "courier": assignee_name,
+            "time": delivery_time,
+            "timestamp": now()
+        })
+        
         # Send confirmation to MDG with courier name and delivery time
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        delivery_time = order["delivered_at"].strftime("%H:%M")
         delivered_msg = f"🔖 #{order_num} was delivered by {assignee_name} at {delivery_time}"
         await safe_send_message(DISPATCH_MAIN_CHAT_ID, delivered_msg)
         
@@ -632,18 +595,42 @@ async def handle_delivery_completion(order_id: str, user_id: int):
                 await safe_delete_message(DISPATCH_MAIN_CHAT_ID, msg_id)
             order["mdg_additional_messages"] = []
         
-        # Update MDG original order message with "✅ Delivered" status
+        # Update MDG original order message with delivered status
         if "mdg_message_id" in order:
             import mdg
-            base_text = mdg.build_mdg_dispatch_text(order)
-            
-            updated_text = base_text + f"\n\n👤 **Assigned to:** {assignee_name}\n✅ **Delivered**"
+            updated_text = mdg.build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
             
             await safe_edit_message(
                 DISPATCH_MAIN_CHAT_ID,
                 order["mdg_message_id"],
                 updated_text,
                 mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
+            )
+
+        # Update all RG messages with delivered status
+        for vendor in order.get("vendors", []):
+            vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+            rg_msg_id = order.get("rg_message_ids", {}).get(vendor) or order.get("vendor_messages", {}).get(vendor)
+            if vendor_group_id and rg_msg_id:
+                import rg
+                expanded = order.get("vendor_expanded", {}).get(vendor, False)
+                text = rg.build_vendor_details_text(order, vendor) if expanded else rg.build_vendor_summary_text(order, vendor)
+                await safe_edit_message(
+                    vendor_group_id,
+                    rg_msg_id,
+                    text,
+                    rg.vendor_keyboard(order_id, vendor, expanded)
+                )
+
+        # Update UPC message with delivered status
+        upc_msg_id = order.get("upc_message_id")
+        if upc_msg_id:
+            updated_upc_text = build_assignment_message(order)
+            await safe_edit_message(
+                user_id,
+                upc_msg_id,
+                updated_upc_text,
+                assignment_cta_keyboard(order_id)  # Keep buttons (delivered button will be hidden by keyboard logic)
             )
 
         # NO confirmation message to courier (removed as per requirement)
@@ -972,6 +959,14 @@ async def send_delay_request_to_restaurants(order_id: str, new_time: str, user_i
         
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
         
+        # Append status to history
+        order["status_history"].append({
+            "type": "delay_sent",
+            "vendors": vendors_to_notify,
+            "time": new_time,
+            "timestamp": now()
+        })
+        
         # Send delay request to each vendor
         for v in vendors_to_notify:
             vendor_chat = VENDOR_GROUP_MAP.get(v)
@@ -989,6 +984,17 @@ async def send_delay_request_to_restaurants(order_id: str, new_time: str, user_i
                 )
                 
                 logger.info(f"Delay request sent to {v} for order {order_id} - new time {new_time}")
+        
+        # Update UPC message with new status
+        upc_msg_id = order.get("upc_message_id")
+        if upc_msg_id:
+            updated_upc_text = build_assignment_message(order)
+            await safe_edit_message(
+                user_id,
+                upc_msg_id,
+                updated_upc_text,
+                assignment_cta_keyboard(order_id)
+            )
         
         # Confirm to user with updated format
         vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])

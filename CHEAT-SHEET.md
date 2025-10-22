@@ -212,6 +212,13 @@ Format: 🔖 Order #{num}
 "Please call customer and ask him which product he wants instead. If he wants a refund - please write dishbee into this group."
 ```
 
+**RG-CONF** - Vendor confirmation (sent to RG after vendor confirms time)
+```
+"Confirmation was sent to dishbee. Please prepare 🔖 #{num} at {time} for courier."
+
+Sent immediately after vendor clicks BTN-WORKS, BTN-LATER, or BTN-PREP
+```
+
 **RG-DELAY-REQ** - Delay request from courier
 ```
 "We have a delay, if possible prepare #{num} at {time}. If not, please keep it warm."
@@ -457,35 +464,111 @@ BTN-BACK        = ← Back (closes menu)
 ---
 
 ## ⏱️ STATUS UPDATES
-*(Auto-delete after 20 seconds)*
 
-### From RG (Vendor responses)
+**NEW SYSTEM:** Status updates are **PREPENDED at the TOP** of message text showing current order state. Status lines **REPLACE** previous status (never accumulate).
+
+### MDG-ORD (Main Dispatch Message) - Status Lines
+
+Status appears at TOP before order details:
+
 ```
-ST-WORKS      = {Vendor} replied: {time} for 🔖 #{num} works 👍
-ST-PREP       = {Vendor} replied: Will prepare 🔖 #{num} at {time} 👍
-ST-LATER      = {Vendor} replied: Will prepare 🔖 #{num} later at {time} 👍
-ST-DELAY      = {Vendor}: We have a delay for 🔖 #{num} - new time {time}
-ST-CANCEL     = {Vendor}: Order 🔖 #{num} is canceled
-ST-WRITE      = {Vendor}: Issue with 🔖 #{num}: "{vendor's message}"
+1. 🚨 New order
+   → Initial state when order arrives from Shopify
+
+2. 📍 Sent ⚡ Asap to 👨‍🍳 {Shortcut}
+   → After BTN-ASAP clicked (req_asap / vendor_asap handler)
+   → Multi-vendor: Separate line per vendor with rotating chef emoji
+   
+3. 📍 Sent 🕒 {time} to 👨‍🍳 {Shortcut}
+   → After time request sent (exact_selected / time_relative / time_same)
+   → Multi-vendor: Separate line per vendor with rotating chef emoji
+   
+4. 📍 Confirmed 👍 {time} by 👨‍🍳 {Shortcut}
+   → After vendor confirms (BTN-WORKS / BTN-PREP / BTN-LATER)
+   → Multi-vendor: Separate line per vendor with rotating chef emoji + their confirmed time
+   
+5. � Assigned 👉 to 🐝 {courier}
+   → After BTN-ASSIGN-ME / BTN-ASSIGN-OTHER clicked
+   → Uses courier shortcut (B1, B2, B3) or username
+   
+6. 📍 Delivered ✅ at {HH:MM} by 🐝 {courier}
+   → After BTN-DELIVERED clicked
+   → Shows delivery time and courier shortcut
 ```
 
-> 📝 Note: ST-CALL removed - BTN-UNAVAIL now sends message directly to RG group instead of MDG
+**Multi-Vendor Example:**
+```
+📍 Sent ⚡ Asap to 👩‍🍳 LR
+📍 Sent ⚡ Asap to 👨‍🍳 DD
 
-### From MDG (Dispatcher actions)
-```
-ST-DELIVERED  = 🔖 #{num} was delivered by {courier} at {HH:MM}
-ST-UNASSIGNED = 🔖 #{num} was unassigned by {courier}.
-ST-ASAP-SENT  = 📨 ASAP request for 🔖 #{num} sent to {Shortcut}
-ST-TIME-SENT  = 📨 TIME request ({time}) for 🔖 #{num} sent to {Shortcut}
-```
-
-### From UPC (Courier confirmations)
-```
-ST-UPC-DELAY  = 📨 DELAY request ({time}) for 🔖 #{num} sent to {Shortcut}
-ST-UPC-ERR    = ⚠️ {Custom error description from get_error_description()}
+🔖 #58 - dishbee
+...
 ```
 
-> 📝 Note: No delivery completion message sent to courier (ST-UPC-DONE removed)
+---
+
+### RG-SUM (Restaurant Group Message) - Status Lines
+
+Status appears at TOP before product list:
+
+```
+1. 🚨 New order
+   → Initial state when order arrives
+
+2. 📍 Asked for ⚡ Asap by dishbee
+   → After ASAP request received from MDG
+
+3. 📍 Asked for 🕒 {time} by dishbee
+   → After time request received from MDG
+
+4. 📍 Prepare this order at {time} 🫕
+   → After vendor confirms (BTN-WORKS / BTN-PREP / BTN-LATER)
+   → Shows vendor's confirmed time from confirmed_times[vendor]
+
+5. 📍 Delivered ✅
+   → After BTN-DELIVERED clicked in UPC
+```
+
+---
+
+### UPC-ASSIGN (Courier Private Chat) - Status Lines
+
+Status appears at TOP before order details:
+
+```
+1. 🚨 Order assigned 👉 to you (dishbee)
+   → Initial assignment message
+
+2. 📍 Delay ⏰ sent to {Shortcut}
+   → After BTN-DELAY-ORD clicked + time selected
+   → Multi-vendor: Shows all vendor shortcuts (LR+DD)
+
+3. 📍 Delivered ✅ at {HH:MM}
+   → After BTN-DELIVERED clicked
+   → Shows delivery time
+```
+
+**Group Orders:** If order is in a Group (combining system), add **empty line** between status and order details.
+
+---
+
+### Temporary Status Messages (Auto-Delete 20s)
+
+These are **SENT as separate messages** (not part of status lines):
+
+```
+ST-WORKS      = {chef_emoji} {Vendor} replied: {time} for 🔖 #{num} works 👍
+ST-PREP       = {chef_emoji} {Vendor} replied: Will prepare 🔖 #{num} at {time} 👍
+ST-LATER      = {chef_emoji} {Vendor} replied: Will prepare 🔖 #{num} later at {time} 👍
+ST-DELAY      = {chef_emoji} {Vendor}: We have a delay for 🔖 #{num} - new time {time}
+ST-CANCEL     = {chef_emoji} {Vendor}: Order 🔖 #{num} is canceled
+ST-WRITE      = {chef_emoji} {Vendor}: Issue with 🔖 #{num}: "{vendor's message}"
+ST-ASAP-SENT  = ⚡ Asap request for 🔖 #{num} sent to {Shortcut}
+ST-TIME-SENT  = 🕒 Time request ({time}) for 🔖 #{num} sent to {Shortcut}
+ST-UPC-DELAY  = 🕒 DELAY request ({time}) for 🔖 #{num} sent to {Shortcut}
+```
+
+> 📝 Note: Chef emoji rotates through 12 variations based on vendor name hash
 
 ---
 
@@ -511,21 +594,63 @@ FN-CLEAN-NAME   = Clean product names (removes prefixes, extracts quoted text)
                   └─ 17 rules: removes burger/pizza/spätzle/pasta/roll prefixes
                   └─ Extracts quoted text: [Bio-Burger "Classic"] → Classic
                   └─ Simplifies fries/pommes: Bio-Pommes → Pommes
+                  └─ Location: utils.py clean_product_name()
+
 FN-ABBREV-STREET = Abbreviate street names for buttons (BTN-ORD-REF only)
                    └─ Tier 1: Straße→Str., compound→Dr.Step.Bill.Str.
                    └─ Tier 2 (>64 chars total): First 4 letters only (Lede 15)
+                   └─ Location: mdg.py abbreviate_street()
+
 FN-CHECK-CONF   = Check if all vendors confirmed (checks confirmed_times dict)
+                  └─ Returns True if all vendors have entry in confirmed_times
+                  └─ Location: main.py check_all_vendors_confirmed()
+
 FN-SEND-ASSIGN  = Send assignment to courier (UPC-ASSIGN)
+                  └─ Sends private message with order details + action buttons
+                  └─ Updates MDG message with assignment status
+                  └─ Location: upc.py send_assignment_to_courier()
+
 FN-UPDATE-MDG   = Update MDG message with assignment/delivery status
+                  └─ Edits original order message to add/update status lines
+                  └─ Location: main.py (inline in handlers)
+
 FN-CLEANUP      = Delete temp msgs (time pickers, selection menus)
+                  └─ Deletes all messages in order["mdg_additional_messages"]
+                  └─ Location: main.py cleanup_mdg_messages()
+
 FN-DELAY-REQ    = Send delay request to vendors
+                  └─ Sends "We have a delay..." message to RG
+                  └─ Location: main.py (inline in delay handler)
+
 FN-DELIVERED    = Mark order as delivered, update STATE
+                  └─ Sets delivered_at timestamp and delivered_by
+                  └─ Updates MDG message with ✅ Delivered status
+                  └─ Location: main.py (inline in confirm_delivered handler)
+
 FN-GET-RECENT   = Get recent orders for scheduled orders menu (vendor filter optional)
                   └─ Returns last 10 confirmed orders within 5 hours
                   └─ Includes confirmed_times dict for multi-vendor support
+                  └─ Location: mdg.py get_recent_orders_for_same_time()
+
+FN-SEND-STATUS  = Send status message with auto-delete (wrapper function)
+                  └─ Sends message to MDG and auto-deletes after X seconds (default 20s)
+                  └─ Tracks message ID for cleanup
+                  └─ Location: main.py send_status_message(), utils.py send_status_message()
+
+FN-COMBINE-KEYBOARD = Build combining orders keyboard for courier
+                      └─ Groups assigned orders by courier with color indicators
+                      └─ Shows order num, vendor shortcut, time, abbreviated address
+                      └─ Location: mdg.py build_combine_keyboard()
+
+FN-BUILD-STATUS     = Build status lines from status_history (NEW)
+                      └─ Generates current status text based on message type (mdg/rg/upc)
+                      └─ Returns formatted status line(s) to prepend to message
+                      └─ Handles multi-vendor status (separate lines per vendor)
+                      └─ Uses rotating chef emoji based on vendor name hash
+                      └─ Location: utils.py build_status_lines()
 ```
 
-**Note:** FN-GET-RECENT added for scheduled orders feature with vendor filtering and confirmed_times dict support.
+**Note:** Added FN-BUILD-STATUS for new status update system. All status updates now use single centralized function.
 
 ---
 
@@ -539,12 +664,15 @@ confirmed_time      = Single time (last vendor confirmed, backward compatibility
 confirmed_times     = {vendor: time} dict for multi-vendor per-vendor tracking
 requested_time      = Time requested by dispatcher
 status              = new/assigned/delivered
+status_history      = List tracking all status changes (NEW)
 assigned_to         = courier user_id
 assigned_by         = Who assigned (username or "self-assigned")
 delivered_at        = Timestamp of delivery
 delivered_by        = courier user_id who delivered
 mdg_message_id      = Main MDG message ID
-vendor_messages     = {vendor: message_id} dict for RG messages
+rg_message_ids      = {vendor: message_id} dict for RG messages (replaces vendor_messages)
+upc_message_id      = Message ID for courier's private chat assignment
+vendor_messages     = DEPRECATED - use rg_message_ids
 vendor_expanded     = {vendor: True/False} toggle state
 mdg_additional_messages = List of temp message IDs for cleanup
 order_type          = "shopify" or other
@@ -557,11 +685,61 @@ note                = Customer note
 created_at          = Order timestamp
 ```
 
-**Note:** `confirmed_times` dict added for multi-vendor per-vendor time tracking. Each vendor's specific confirmed time stored separately. `confirmed_time` kept for backward compatibility (always reflects last vendor's time).
+**status_history Structure (NEW):**
+```python
+status_history = [
+    {"type": "new", "timestamp": datetime},
+    {"type": "asap_sent", "vendor": "Leckerolls", "timestamp": datetime},
+    {"type": "time_sent", "vendor": "dean & david", "time": "14:30", "timestamp": datetime},
+    {"type": "confirmed", "vendor": "Leckerolls", "time": "14:35", "timestamp": datetime},
+    {"type": "assigned", "courier": "Bee 1", "courier_id": 383910036, "timestamp": datetime},
+    {"type": "delay_sent", "vendors": ["Leckerolls"], "time": "14:45", "timestamp": datetime},
+    {"type": "delivered", "courier": "Bee 1", "time": "14:52", "timestamp": datetime}
+]
+```
+
+**Notes:**
+- `status_history` tracks ALL status changes chronologically
+- `rg_message_ids` replaces `vendor_messages` (old name kept for compatibility)
+- `upc_message_id` tracks courier's private chat message for updates
+- `confirmed_times` dict for multi-vendor per-vendor time tracking
 
 ---
 
-## 🔄 FLOW
+## � AUTO-DELETE PATTERNS
+
+**20-Second Auto-Delete Timer:**
+All temporary status messages use `send_status_message(chat_id, text, auto_delete_after=20)`
+
+**Implementation:**
+```python
+asyncio.create_task(_delete_after_delay(chat_id, message_id, seconds))
+```
+
+**Messages with Auto-Delete:**
+- ✅ All vendor response statuses (ST-WORKS, ST-PREP, ST-LATER)
+- ✅ ASAP/TIME request confirmations (ST-ASAP-SENT, ST-TIME-SENT)
+- ✅ Delay request confirmations (ST-UPC-DELAY)
+- ✅ Vendor issue notifications (ST-DELAY, ST-CANCEL, ST-WRITE)
+
+**Messages WITHOUT Auto-Delete:**
+- ❌ RG-CONF (restaurant confirmation message in vendor group)
+- ❌ UPC-ASSIGN (assignment message to courier)
+- ❌ MDG-ORD (original order message - permanent)
+
+**Cleanup System:**
+- Temporary menus (time pickers, selection menus) tracked in `order["mdg_additional_messages"]`
+- Cleaned via `cleanup_mdg_messages(order_id)` after workflow completion
+- 3 retry attempts with exponential backoff for network resilience
+
+**Locations:**
+- `send_status_message()`: main.py line 234, utils.py line 587
+- `_delete_after_delay()`: main.py line 251, 1484, 1558, 1629, 1688, 1843 (6 calls)
+- `cleanup_mdg_messages()`: main.py (multiple handler locations)
+
+---
+
+## �🔄 FLOW
 
 ```
 Shopify Order
@@ -773,6 +951,38 @@ AP = Wittelsbacher Apotheke
 
 ---
 
+## 🚴 COURIERS
+
+```
+B1 = Bee 1
+B2 = Bee 2
+B3 = Bee 3
+```
+
+**Note:** Priority couriers (Bee 1, Bee 2, Bee 3) shown first in assignment menu. Other couriers displayed alphabetically by username with automatic 2-letter shortcut (first 2 letters of username).
+
+---
+
+## 🎨 VISUAL ELEMENTS
+
+### Chef Emojis (Rotating)
+```
+12 variations: 👩‍🍳👩🏻‍🍳👩🏼‍🍳👩🏾‍🍳🧑‍🍳🧑🏻‍🍳🧑🏼‍🍳🧑🏾‍🍳👨‍🍳👨🏻‍🍳👨🏼‍🍳👨🏾‍🍳
+
+Selection: hash(vendor_name) % 12
+Usage: MDG-CONF headers, status messages, vendor buttons
+```
+
+### Group Colors (Combining System)
+```
+7 colors (rotating): 🟣 🔵 🟢 🟡 🟠 🔴 🟤
+
+Used in: build_combine_keyboard() for grouping assigned orders by courier
+Max groups: 7 (reuses colors if more couriers)
+```
+
+---
+
 ## 🏙️ DISTRICTS (Passau)
 
 District detection uses Google Maps Geocoding API to automatically identify the neighborhood/district (sublocality) from the address.
@@ -791,66 +1001,174 @@ District detection uses Google Maps Geocoding API to automatically identify the 
 
 ## 🔗 CALLBACK ACTIONS
 
-### MDG Actions
+**Format:** `action|order_id|param1|param2|...|timestamp`
+
+### MDG Actions (Main Dispatch Group)
 ```
 req_asap            = Request ASAP (single vendor orders)
+                      └─ Sends "Can you prepare 🔖 #{num} ASAP?" to vendor(s)
+                      └─ Sends status: "⚡ Asap request for 🔖 #{num} sent to {Shortcut}"
+                      └─ Handler: main.py line 841 (req_asap)
+
 req_exact           = Show hour picker directly (🕒 Time picker button)
+                      └─ Opens hour selection: 12:XX, 13:XX... 23:XX
+                      └─ Skips current hour if minute >= 57
+
 req_scheduled       = Show scheduled orders list (🗂 Scheduled orders button)
+                      └─ Shows last 10 confirmed orders within 5 hours
+                      └─ Conditional: only if recent orders exist
+
 req_vendor          = Show vendor-specific action menu (multi-vendor)
+                      └─ Format: req_vendor|{order_id}|{vendor}
                       └─ Displays: ⚡ Asap, 🕒 Time picker, 🗂 Scheduled orders, ← Back
 
 vendor_asap         = ASAP request for specific vendor (multi-vendor)
-vendor_time         = TIME request for specific vendor (shows scheduled orders or hour picker)
+                      └─ Format: vendor_asap|{order_id}|{vendor}
+                      └─ Sends ASAP request to single vendor only
 
-time_plus           = Send time with +X minutes from reference order (deprecated - use time_relative)
+vendor_time         = TIME request for specific vendor (shows scheduled orders or hour picker)
+                      └─ Format: vendor_time|{order_id}|{vendor}
+                      └─ Shows vendor-filtered scheduled orders if available
+
 time_same           = Send "together with" request (if vendors match)
+                      └─ Format: time_same|{order_id}|{ref_order_id}
+                      └─ Message: "Can you prepare {current} together with {ref} at {time}?"
+                      └─ Only shown if current order shares vendor with reference
+
 time_relative       = Send time with offset (-5m to +25m) from reference order
+                      └─ Format: time_relative|{order_id}|{ref_order_id}|{offset_minutes}
+                      └─ Offsets: -5, -3, +3, +5, +10, +15, +20, +25 minutes
 
 exact_hour          = Hour selected in exact time picker
+                      └─ Format: exact_hour|{order_id}|{hour}
+                      └─ Opens minute picker (00, 03, 06... 57 in 3-min intervals)
+
 exact_selected      = Final time selected from exact picker
-exact_back_hours    = Go back to hour selection
-exact_hide          = Hide exact time picker
+                      └─ Format: exact_selected|{order_id}|{HH:MM}
+                      └─ Sends time request to vendor(s)
 
 order_ref           = Scheduled order button clicked (shows offset options + optional SAME)
+                      └─ Format: order_ref|{order_id}|{ref_order_id}|{vendor}
+                      └─ vendor="all" for single vendor orders
+                      └─ Shows: BTN-SAME (if match), BTN-OFFSET options, ← Back
 
 assign_myself       = User assigns order to themselves
+                      └─ Format: assign_myself|{order_id}
+                      └─ Self-assigns to button clicker
+
 assign_other        = Assign to specific courier
+                      └─ Format: assign_other|{order_id}|{courier_user_id}
+                      └─ Assigns to selected courier from menu
+
 assign_to           = Show courier selection menu
+                      └─ Format: assign_to|{order_id}
+                      └─ Lists: Priority couriers (B1, B2, B3) first, then others alphabetically
 
 hide                = Generic back button (deletes temporary message)
+                      └─ Format: hide|{order_id}
+                      └─ Calls cleanup_mdg_messages()
 ```
 
 ### RG Actions (Vendor responses)
 ```
 toggle              = Toggle Details ▸ / ◂ Hide
+                      └─ Format: toggle|{order_id}|{vendor}
+                      └─ Updates vendor_expanded state
+                      └─ Switches between RG-SUM and RG-DET
+
 works               = Vendor confirms time works
+                      └─ Format: works|{order_id}|{vendor}
+                      └─ Updates confirmed_times[vendor]
+                      └─ Sends ST-WORKS + RG-CONF
+                      └─ Triggers assignment buttons if all vendors confirmed
+
 later               = Show "later at" time picker
+                      └─ Format: later|{order_id}|{vendor}
+                      └─ Shows +5/+10/+15/+20, EXACT TIME ⏰, ← Back
+
 prepare             = Show "will prepare at" time picker
+                      └─ Format: prepare|{order_id}|{vendor}
+                      └─ Shows +5/+10/+15/+20, EXACT TIME ⏰, ← Back
+                      └─ Used for ASAP responses
+
 later_time          = Vendor selects later time
+                      └─ Format: later_time|{order_id}|{vendor}|{minutes}
+                      └─ Updates confirmed_times, sends ST-LATER + RG-CONF
+
 prepare_time        = Vendor selects prepare time
+                      └─ Format: prepare_time|{order_id}|{vendor}|{minutes}
+                      └─ Updates confirmed_times, sends ST-PREP + RG-CONF
 
 wrong_delay         = Vendor reports delay
+                      └─ Format: wrong_delay|{order_id}|{vendor}
+                      └─ Opens delay time picker
+
 wrong_unavailable   = Product not available
+                      └─ Format: wrong_unavailable|{order_id}|{vendor}
+                      └─ Sends RG-UNAVAIL to vendor group (NOT MDG)
+
 wrong_canceled      = Order canceled
+                      └─ Format: wrong_canceled|{order_id}|{vendor}
+                      └─ Sends ST-CANCEL to MDG
+
 wrong_other         = Other issue (text input)
+                      └─ Format: wrong_other|{order_id}|{vendor}
+                      └─ Prompts for text, sends ST-WRITE
+
 delay_time          = Vendor selects delay time
+                      └─ Format: delay_time|{order_id}|{vendor}|{minutes}
+                      └─ Updates confirmed_times, sends ST-DELAY
 
 vendor_exact_time   = Show vendor exact time (hour picker)
+                      └─ Format: vendor_exact_time|{order_id}|{vendor}
+                      └─ Opens hour picker for vendor
+
 vendor_exact_hour   = Vendor selects hour
+                      └─ Format: vendor_exact_hour|{order_id}|{vendor}|{hour}
+                      └─ Opens minute picker
+
 vendor_exact_selected = Vendor confirms exact time
-vendor_exact_back   = Back to hour picker
+                        └─ Format: vendor_exact_selected|{order_id}|{vendor}|{HH:MM}|{mode}
+                        └─ mode="later" or "prepare"
+                        └─ Updates confirmed_times, sends status
 ```
 
 ### UPC Actions (Courier)
 ```
 delay_order         = Show delay time picker
+                      └─ Format: delay_order|{order_id}
+                      └─ Shows +5/+10/+15/+20 from current time
+
 delay_selected      = Courier selects delay time
+                      └─ Format: delay_selected|{order_id}|{minutes}
+                      └─ Sends delay request to vendors
+                      └─ Sends ST-UPC-DELAY to MDG
+
 unassign_order      = Unassign order from courier (only before delivery)
+                      └─ Format: unassign_order|{order_id}
+                      └─ Removes assignment, deletes UPC message
+                      └─ Updates MDG, re-shows assignment buttons
+
 call_vendor         = Call specific vendor (single vendor direct, or after menu selection)
+                      └─ Format: call_vendor|{order_id}|{vendor}
+                      └─ Placeholder for Telegram calling integration
+
 call_vendor_menu    = Show vendor selection menu for calling
+                      └─ Format: call_vendor_menu|{order_id}
+                      └─ Lists all vendors with 🏪 Call {Shortcut} buttons
+
 confirm_delivered   = Mark order as delivered
+                      └─ Format: confirm_delivered|{order_id}
+                      └─ Sets delivered_at timestamp
+                      └─ Updates MDG with ✅ Delivered
+                      └─ NO confirmation message sent to courier
+
 navigate            = Open Google Maps
+                      └─ Format: navigate|{order_id}
+                      └─ Opens cycling mode to customer address
 ```
+
+**Note:** All callback data includes timestamp to prevent replay attacks and ensure freshness.
 
 ---
 
@@ -894,6 +1212,24 @@ navigate            = Open Google Maps
 - **Fix:** Modified mdg.py to extract vendor-specific times from `confirmed_times` dict
 - **Location:** mdg.py lines 444-488
 - **Status:** Fixed (pending commit)
+
+**Bug 6: ASAP Status Message Not Sent** ⚠️ **CRITICAL**
+- **Issue:** After clicking ⚡ Asap, status message "⚡ Asap request for 🔖 #{num} sent to {Shortcut}" not sent to MDG
+- **Root Cause:** Agent DELETED `send_status_message()` call during formatting commit e7d5c8a while claiming to only change visual formatting
+- **Symptom:** Coordinator sees vendor receives ASAP request but no confirmation in MDG
+- **Fix:** Added missing `send_status_message()` call in req_asap handler (main.py line 860-867)
+- **Location:** main.py line 860-867 (req_asap handler)
+- **Commit:** 62b7785
+- **Lesson:** NEVER delete working code during "formatting changes" - trace FULL code flow before modifying
+
+**Bug 7: Street Showing "Unkn" in Assigned Orders**
+- **Issue:** Street names displayed as "Unkn" in Combined Orders keyboard (build_combine_keyboard)
+- **Root Cause 1:** Empty street defaulted to "Unknown address" → abbreviate_street() → "Unkn"
+- **Root Cause 2:** Duplicate abbreviation in build_combine_keyboard() after address already abbreviated
+- **Fix 1:** Changed default from "Unknown address" to "Unknown" (not abbreviated)
+- **Fix 2:** Removed duplicate abbreviation call (address already abbreviated in get_assigned_orders)
+- **Location:** mdg.py line 928, lines 1094-1128
+- **Commit:** 62b7785
 
 ---
 

@@ -36,6 +36,11 @@ SHORTCUT_TO_VENDOR = {v: k for k, v in RESTAURANT_SHORTCUTS.items()}
 def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
     """Build vendor short summary (default collapsed state)."""
     try:
+        from utils import build_status_lines
+        
+        # Build status lines (prepend to message)
+        status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS)
+        
         order_type = order.get("order_type", "shopify")
 
         if order_type == "shopify":
@@ -65,7 +70,8 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         if note:
             text += f"\n\n❕ Note: {note}"
 
-        return text
+        # Prepend status lines at the top
+        return status_text + text
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building vendor summary: %s", exc)
         return f"Error formatting order for {vendor}"

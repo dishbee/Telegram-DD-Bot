@@ -545,16 +545,14 @@ async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mo
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            logger.info(f"📤 SEND_MESSAGE attempt {attempt + 1}: chat_id={chat_id}, has_keyboard={bool(reply_markup)}")
-            msg = await bot.send_message(
+            logger.info(f"Send message attempt {attempt + 1}")
+            return await bot.send_message(
                 chat_id=chat_id,
                 text=text,
                 reply_markup=reply_markup,
                 parse_mode=parse_mode,
                 disable_web_page_preview=disable_web_page_preview
             )
-            logger.info(f"✅ Message sent successfully: message_id={msg.message_id}, chat_id={chat_id}")
-            return msg
         except Exception as e:
             logger.error(f"Send message attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
@@ -567,10 +565,6 @@ async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mo
 async def safe_edit_message(chat_id: int, message_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
     """Edit message with error handling"""
     try:
-        # DEBUG: Track all message edits with details
-        keyboard_status = "WITH_KEYBOARD" if reply_markup else "NO_KEYBOARD"
-        logger.info(f"🔧 EDIT_MESSAGE: chat_id={chat_id}, message_id={message_id}, keyboard={keyboard_status}")
-        
         await bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
@@ -579,9 +573,8 @@ async def safe_edit_message(chat_id: int, message_id: int, text: str, reply_mark
             parse_mode=parse_mode,
             disable_web_page_preview=disable_web_page_preview
         )
-        logger.info(f"✅ Message {message_id} edited successfully in chat {chat_id}")
     except Exception as e:
-        logger.error(f"❌ Error editing message {message_id} in chat {chat_id}: {e}")
+        logger.error(f"Error editing message: {e}")
 
 async def safe_delete_message(chat_id: int, message_id: int):
     """Delete message with error handling"""
@@ -590,6 +583,141 @@ async def safe_delete_message(chat_id: int, message_id: int):
         logger.info(f"Successfully deleted message {message_id}")
     except Exception as e:
         logger.error(f"Error deleting message {message_id}: {e}")
+
+def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dict = None, COURIER_SHORTCUTS: dict = None) -> str:
+    """
+    Build status lines from status_history to prepend to messages.
+    
+    Status lines show current order state at TOP of message and REPLACE (never accumulate).
+    
+    Args:
+        order: Order dict from STATE with status_history
+        message_type: "mdg", "rg", or "upc"
+        RESTAURANT_SHORTCUTS: Dict mapping vendor names to shortcuts (e.g., {"Leckerolls": "LR"})
+        COURIER_SHORTCUTS: Dict mapping courier names to shortcuts (e.g., {"Bee 1": "B1"})
+        
+    Returns:
+        Formatted status line(s) with trailing newlines, or empty string if no history
+        
+    Examples:
+        MDG: "📍 Sent ⚡ Asap to 👨‍🍳 LR\n📍 Sent ⚡ Asap to 👩‍🍳 DD\n\n"
+        RG:  "📍 Asked for 🕒 14:30 by dishbee\n\n"
+        UPC: "🚨 Order assigned 👉 to you (dishbee)\n\n"
+    """
+    status_history = order.get("status_history", [])
+    if not status_history:
+        return ""
+    
+    # Chef emojis for rotation (12 variations)
+    chef_emojis = ['👩‍🍳', '👩🏻‍🍳', '👩🏼‍🍳', '👩🏾‍🍳', '🧑‍🍳', '🧑🏻‍🍳', '🧑🏼‍🍳', '🧑🏾‍🍳', '👨‍🍳', '👨🏻‍🍳', '👨🏼‍🍳', '👨🏾‍🍳']
+    
+    # Get latest status
+    latest = status_history[-1]
+    status_type = latest.get("type")
+    
+    # Helper: Get chef emoji for vendor
+    def get_chef_emoji(vendor_name):
+        return chef_emojis[hash(vendor_name) % len(chef_emojis)]
+    
+    # Helper: Get vendor shortcut
+    def get_vendor_shortcut(vendor_name):
+        if RESTAURANT_SHORTCUTS:
+            return RESTAURANT_SHORTCUTS.get(vendor_name, vendor_name[:2].upper())
+        return vendor_name[:2].upper()
+    
+    # Helper: Get courier shortcut
+    def get_courier_shortcut(courier_name):
+        if COURIER_SHORTCUTS:
+            return COURIER_SHORTCUTS.get(courier_name, courier_name[:2] if len(courier_name) >= 2 else courier_name)
+        # Default: first 2 letters
+        return courier_name[:2] if len(courier_name) >= 2 else courier_name
+    
+    # === MDG STATUS LINES ===
+    if message_type == "mdg":
+        if status_type == "new":
+            return "🚨 New order\n\n"
+        
+        elif status_type == "asap_sent":
+            # Multi-vendor: separate line per vendor
+            lines = []
+            for entry in reversed(status_history):
+                if entry.get("type") == "asap_sent":
+                    vendor = entry.get("vendor", "")
+                    chef_emoji = get_chef_emoji(vendor)
+                    shortcut = get_vendor_shortcut(vendor)
+                    lines.append(f"📍 Sent ⚡ Asap to {chef_emoji} {shortcut}")
+            return "\n".join(reversed(lines)) + "\n\n"
+        
+        elif status_type == "time_sent":
+            # Multi-vendor: separate line per vendor with their requested time
+            lines = []
+            for entry in reversed(status_history):
+                if entry.get("type") == "time_sent":
+                    vendor = entry.get("vendor", "")
+                    time = entry.get("time", "")
+                    chef_emoji = get_chef_emoji(vendor)
+                    shortcut = get_vendor_shortcut(vendor)
+                    lines.append(f"📍 Sent 🕒 {time} to {chef_emoji} {shortcut}")
+            return "\n".join(reversed(lines)) + "\n\n"
+        
+        elif status_type == "confirmed":
+            # Multi-vendor: separate line per vendor with their confirmed time
+            lines = []
+            for entry in reversed(status_history):
+                if entry.get("type") == "confirmed":
+                    vendor = entry.get("vendor", "")
+                    time = entry.get("time", "")
+                    chef_emoji = get_chef_emoji(vendor)
+                    shortcut = get_vendor_shortcut(vendor)
+                    lines.append(f"📍 Confirmed 👍 {time} by {chef_emoji} {shortcut}")
+            return "\n".join(reversed(lines)) + "\n\n"
+        
+        elif status_type == "assigned":
+            courier = latest.get("courier", "Unknown")
+            shortcut = get_courier_shortcut(courier)
+            return f"📍 Assigned 👉 to 🐝 {shortcut}\n\n"
+        
+        elif status_type == "delivered":
+            courier = latest.get("courier", "Unknown")
+            time = latest.get("time", "")
+            shortcut = get_courier_shortcut(courier)
+            return f"📍 Delivered ✅ at {time} by 🐝 {shortcut}\n\n"
+    
+    # === RG STATUS LINES ===
+    elif message_type == "rg":
+        if status_type == "new":
+            return "🚨 New order\n\n"
+        
+        elif status_type == "asap_sent":
+            return "📍 Asked for ⚡ Asap by dishbee\n\n"
+        
+        elif status_type == "time_sent":
+            time = latest.get("time", "")
+            return f"📍 Asked for 🕒 {time} by dishbee\n\n"
+        
+        elif status_type == "confirmed":
+            time = latest.get("time", "")
+            return f"📍 Prepare this order at {time} 🫕\n\n"
+        
+        elif status_type == "delivered":
+            return "📍 Delivered ✅\n\n"
+    
+    # === UPC STATUS LINES ===
+    elif message_type == "upc":
+        if status_type == "assigned":
+            return "🚨 Order assigned 👉 to you (dishbee)\n\n"
+        
+        elif status_type == "delay_sent":
+            vendors = latest.get("vendors", [])
+            shortcuts = "+".join([get_vendor_shortcut(v) for v in vendors])
+            return f"📍 Delay ⏰ sent to {shortcuts}\n\n"
+        
+        elif status_type == "delivered":
+            time = latest.get("time", "")
+            return f"📍 Delivered ✅ at {time}\n\n"
+    
+    # Default: no status line
+    return ""
 
 async def send_status_message(chat_id: int, text: str, auto_delete_after: int = 20):
     """
