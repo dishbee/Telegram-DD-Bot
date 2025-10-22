@@ -992,10 +992,15 @@ async def send_delay_request_to_restaurants(order_id: str, new_time: str, user_i
         
         # Confirm to user with updated format
         vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
-        await safe_send_message(
+        confirm_msg = await safe_send_message(
             user_id,
-            f"📨 DELAY request ({new_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}"
+            f"✅ Delay request for 🔖 #{order_num} sent to {vendor_shortcuts}"
         )
+        
+        # Auto-delete after 20 seconds
+        if confirm_msg:
+            loop = asyncio.get_event_loop()
+            loop.call_later(20, lambda: asyncio.create_task(safe_delete_message(user_id, confirm_msg.message_id)))
         
     except Exception as e:
         logger.error(f"Error sending delay request: {e}")

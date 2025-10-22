@@ -924,12 +924,9 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
         
         vendors = order_data.get("vendors", [])
         
-        # Get address from shipping_address (direct path from Shopify payload)
-        shipping_address = order_data.get("shipping_address", {})
-        street = shipping_address.get("address1", "")
-        
-        if not street:
-            street = "Unknown address"
+        # Get address from customer object (STATE structure)
+        customer = order_data.get("customer", {})
+        street = customer.get("address", "Unknown")
         
         # Get confirmed_times dict for multi-vendor
         confirmed_times = order_data.get("confirmed_times")
@@ -1071,7 +1068,7 @@ def get_next_group_color(state_dict: dict) -> str:
 
 def get_group_orders(state_dict: dict, group_id: str) -> List[Dict[str, Any]]:
     """
-    Get all orders in a specific group.
+    Get all orders in a specific group (excluding delivered orders).
     
     Args:
         state_dict: STATE dictionary passed from caller
@@ -1082,7 +1079,7 @@ def get_group_orders(state_dict: dict, group_id: str) -> List[Dict[str, Any]]:
     """
     group_orders = []
     for oid, order_data in state_dict.items():
-        if order_data.get("group_id") == group_id:
+        if order_data.get("group_id") == group_id and order_data.get("status") != "delivered":
             group_orders.append({
                 "order_id": oid,
                 "data": order_data
@@ -1096,11 +1093,11 @@ def build_combine_keyboard(order_id: str, assigned_orders: List[Dict[str, str]])
     Build inline keyboard with assigned orders for combining.
     
     Each button shows: {num} - {vendor} - {time} - {address} ({courier})
-    Address uses tier 1/2 abbreviation logic (max 64 chars total).
+    Address ALREADY abbreviated by get_assigned_orders() - just use it.
     
     Args:
         order_id: Current order ID (for callback data)
-        assigned_orders: List from get_assigned_orders()
+        assigned_orders: List from get_assigned_orders() with PRE-ABBREVIATED addresses
     
     Returns:
         InlineKeyboardMarkup with order buttons + Back button
@@ -1108,26 +1105,8 @@ def build_combine_keyboard(order_id: str, assigned_orders: List[Dict[str, str]])
     buttons = []
     
     for order in assigned_orders:
-        # Abbreviate address using tier 1/2 logic
+        # Use PRE-ABBREVIATED address from get_assigned_orders() (already tier 1/2 processed)
         address = order["address"]
-        
-        # Tier 1: Remove ", Munich" / ", München"
-        address = address.replace(", Munich", "").replace(", München", "")
-        
-        # Tier 2: Shorten street names (Ledererstraße → Ledererga.)
-        if "straße" in address.lower():
-            parts = address.split(" ")
-            if parts:
-                street = parts[0]
-                # Take first 9 chars + "ga."
-                street_abbr = street[:9] + "ga." if len(street) > 9 else street
-                address = street_abbr + " " + " ".join(parts[1:])
-        elif "strasse" in address.lower():
-            parts = address.split(" ")
-            if parts:
-                street = parts[0]
-                street_abbr = street[:9] + "ga." if len(street) > 9 else street
-                address = street_abbr + " " + " ".join(parts[1:])
         
         # Build button text: {num} - {vendor} - {time} - {address} ({courier})
         button_text = f"{order['order_num']} - {order['vendor_shortcut']} - {order['confirmed_time']} - {address} ({order['courier_shortcut']})"

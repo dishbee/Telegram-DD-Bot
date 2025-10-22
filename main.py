@@ -671,7 +671,7 @@ def telegram_webhook():
                     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"📨 ASAP request for 🔖 #{order_num} sent to {vendor_shortcut}",
+                        f"⚡ Asap request for 🔖 #{order_num} sent to {vendor_shortcut}",
                         auto_delete_after=20
                     )
                     
@@ -802,7 +802,7 @@ def telegram_webhook():
                     vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper()) if vendor != 'all' else 'vendors'
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"📨 TIME request ({selected_time}) for 🔖 #{order_num} sent to {vendor_shortcut}",
+                        f"� Time request ({selected_time}) for 🔖 #{order_num} sent to {vendor_shortcut}",
                         auto_delete_after=20
                     )
                     
@@ -863,9 +863,18 @@ def telegram_webhook():
                                 restaurant_response_keyboard("ASAP", order_id, vendor)
                             )
                     
+                    # Send status message to MDG (auto-delete after 20s)
+                    vendors = order.get("vendors", [])
+                    vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors])
+                    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                    await send_status_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"⚡ Asap request for 🔖 #{order_num} sent to {vendor_shortcuts}",
+                        auto_delete_after=20
+                    )
+                    
                     # Update MDG with ASAP status but keep time request buttons
                     order["requested_time"] = "ASAP"
-                    vendors = order.get("vendors", [])
                     logger.info(f"Order {order_id} has vendors: {vendors} (count: {len(vendors)})")
                     
                     if len(vendors) > 1:
@@ -1151,7 +1160,7 @@ def telegram_webhook():
                     vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"📨 TIME request ({ref_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
+                        f"� Time request ({ref_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
                         auto_delete_after=20
                     )
                 
@@ -1217,7 +1226,7 @@ def telegram_webhook():
                     vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"📨 TIME request ({requested_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
+                        f"� Time request ({requested_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
                         auto_delete_after=20
                     )
                 
@@ -1459,8 +1468,20 @@ def telegram_webhook():
                         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
                     
                     # Post status to MDG
-                    status_msg = f"{vendor} replied: {confirmed_time} for 🔖 #{order_num} works 👍"
+                    chef_emoji = CHEF_EMOJIS[hash(vendor) % len(CHEF_EMOJIS)]
+                    vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
+                    status_msg = f"{chef_emoji} {vendor_shortcut} replied: {confirmed_time} for 🔖 #{order_num} works 👍"
                     await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
+                    
+                    # Send confirmation to RG
+                    vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+                    if vendor_group_id:
+                        rg_conf_msg = await safe_send_message(
+                            vendor_group_id,
+                            f"Confirmation was sent to dishbee. Please prepare 🔖 #{order_num} at {confirmed_time} for courier."
+                        )
+                        if rg_conf_msg:
+                            asyncio.create_task(_delete_after_delay(vendor_group_id, rg_conf_msg.message_id, 20))
                     
                     # Check if all vendors confirmed - show assignment buttons
                     # CRITICAL: Only show buttons if order NOT already assigned
@@ -1521,8 +1542,20 @@ def telegram_webhook():
                         # Get order number for display
                         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
                         
-                        status_msg = f"{vendor} replied: Will prepare 🔖 #{order_num} later at {selected_time} 👍"
+                        chef_emoji = CHEF_EMOJIS[hash(vendor) % len(CHEF_EMOJIS)]
+                        vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
+                        status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 #{order_num} later at {selected_time} 👍"
                         await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
+                        
+                        # Send confirmation to RG
+                        vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_group_id:
+                            rg_conf_msg = await safe_send_message(
+                                vendor_group_id,
+                                f"Confirmation was sent to dishbee. Please prepare 🔖 #{order_num} at {selected_time} for courier."
+                            )
+                            if rg_conf_msg:
+                                asyncio.create_task(_delete_after_delay(vendor_group_id, rg_conf_msg.message_id, 20))
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
                         
@@ -1580,8 +1613,20 @@ def telegram_webhook():
                         # Get order number for display
                         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
                         
-                        status_msg = f"{vendor} replied: Will prepare 🔖 #{order_num} at {selected_time} 👍"
+                        chef_emoji = CHEF_EMOJIS[hash(vendor) % len(CHEF_EMOJIS)]
+                        vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
+                        status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 #{order_num} at {selected_time} 👍"
                         await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
+                        
+                        # Send confirmation to RG
+                        vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_group_id:
+                            rg_conf_msg = await safe_send_message(
+                                vendor_group_id,
+                                f"Confirmation was sent to dishbee. Please prepare 🔖 #{order_num} at {selected_time} for courier."
+                            )
+                            if rg_conf_msg:
+                                asyncio.create_task(_delete_after_delay(vendor_group_id, rg_conf_msg.message_id, 20))
                         
                         # Delete the time picker message (cleanup)
                         chat_id = cq["message"]["chat"]["id"]
@@ -1636,9 +1681,10 @@ def telegram_webhook():
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
                     order_num = order['name'][-2:] if order and len(order.get('name', '')) >= 2 else order.get('name', '') if order else order_id
+                    vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
                     
                     # ST-CANCEL format from CHEAT-SHEET (auto-delete after 20s)
-                    msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"{vendor}: Order 🔖 #{order_num} is canceled")
+                    msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"⚠️ {vendor_shortcut}: Order 🔖 #{order_num} is canceled ❌")
                     asyncio.create_task(_delete_after_delay(DISPATCH_MAIN_CHAT_ID, msg.message_id, 20))
                 
                 elif action in ["wrong_technical", "wrong_other"]:
@@ -1690,9 +1736,11 @@ def telegram_webhook():
                     order_id, vendor, delay_time = data[1], data[2], data[3]
                     order = STATE.get(order_id)
                     order_num = order['name'][-2:] if order and len(order.get('name', '')) >= 2 else order.get('name', '') if order else order_id
+                    vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
+                    chef_emoji = CHEF_EMOJIS[hash(vendor) % len(CHEF_EMOJIS)]
                     
                     # ST-DELAY format from CHEAT-SHEET
-                    await send_status_message(DISPATCH_MAIN_CHAT_ID, f"{vendor}: We have a delay for 🔖 #{order_num} - new time {delay_time}", auto_delete_after=20)
+                    await send_status_message(DISPATCH_MAIN_CHAT_ID, f"{chef_emoji} {vendor_shortcut}: We have a delay for 🔖 #{order_num} - new time {delay_time}", auto_delete_after=20)
                     
                     # Delete the delay time picker message (cleanup)
                     chat_id = cq["message"]["chat"]["id"]
@@ -1768,17 +1816,31 @@ def telegram_webhook():
                         # Get order number for display
                         order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
                         
+                        chef_emoji = CHEF_EMOJIS[hash(vendor) % len(CHEF_EMOJIS)]
+                        vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
+                        
                         # Send appropriate status message to MDG based on original action
                         if original_action == "later_time":
-                            status_msg = f"{vendor} replied: Will prepare 🔖 #{order_num} later at {selected_time} 👍"
+                            status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 #{order_num} later at {selected_time} 👍"
                         elif original_action == "prepare_time":
-                            status_msg = f"{vendor} replied: Will prepare 🔖 #{order_num} at {selected_time} 👍"
+                            status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 #{order_num} at {selected_time} 👍"
                         elif original_action == "delay_time":
-                            status_msg = f"{vendor}: We have a delay for 🔖 #{order_num} - new time {selected_time}"
+                            status_msg = f"{chef_emoji} {vendor_shortcut}: We have a delay for 🔖 #{order_num} - new time {selected_time}"
                         else:
-                            status_msg = f"{vendor} confirmed: {selected_time} for 🔖 #{order_num}"
+                            status_msg = f"{chef_emoji} {vendor_shortcut} confirmed: {selected_time} for 🔖 #{order_num}"
                         
                         await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
+                        
+                        # Send confirmation to RG for prepare/later actions
+                        if original_action in ["later_time", "prepare_time"]:
+                            vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+                            if vendor_group_id:
+                                rg_conf_msg = await safe_send_message(
+                                    vendor_group_id,
+                                    f"Confirmation was sent to dishbee. Please prepare 🔖 #{order_num} at {selected_time} for courier."
+                                )
+                                if rg_conf_msg:
+                                    asyncio.create_task(_delete_after_delay(vendor_group_id, rg_conf_msg.message_id, 20))
                         
                         logger.info(f"DEBUG: Updated STATE for {order_id} - confirmed_times now: {order['confirmed_times']}")
                         
