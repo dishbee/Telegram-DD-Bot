@@ -439,10 +439,14 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     logger.info(f"   Customer: {customer_name}")
     logger.info(f"   {asap_status}")
     
-    # Send test message to MDG
-    await safe_send_message(chat_id, smoothr_message)
+    # Parse the test message and process directly (bot messages don't trigger webhooks)
+    from utils import parse_smoothr_order
+    smoothr_data = parse_smoothr_order(smoothr_message)
     
-    logger.info(f"✅ Test Smoothr order sent to MDG, will be processed by webhook handler")
+    logger.info(f"✅ Test Smoothr order parsed: {smoothr_data['order_id']} ({smoothr_data['order_type']})")
+    
+    # Process the Smoothr order (sends MDG-ORD + RG-SUM)
+    await process_smoothr_order(smoothr_data)
 
 
 # =============================================================================
