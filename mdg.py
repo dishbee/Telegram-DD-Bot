@@ -285,7 +285,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             display_address = full_address.strip()
 
         maps_link = f"https://www.google.com/maps?q={original_address.replace(' ', '+')}"
-        address_line = f"🗺️ [{display_address}]({maps_link})"
+        address_line = f"🗺️ [{display_address}]({maps_link})\n\n"
 
         note_line = ""
         note = order.get("note", "")
@@ -307,18 +307,18 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         phone = order['customer']['phone']
         phone_line = ""
         if phone and phone != "N/A":
-            phone_line = f"[{phone}](tel:{phone})\n"
+            # Remove spaces from tel: URI for clickability (display keeps spaces)
+            phone_uri = phone.replace(" ", "")
+            phone_line = f"[{phone}](tel:{phone_uri})\n"
 
         # Build base text (always shown)
         text = f"{title}\n"
         text += f"{vendor_line}\n"
         text += f"{customer_line}\n"
-        text += f"{address_line}\n\n"
+        text += address_line  # Ends with \n\n (blank line after address)
         text += note_line
         text += tips_line
         text += payment_line
-        if note_line or tips_line or payment_line:
-            text += "\n"
         text += phone_line
 
         # Add product details if requested

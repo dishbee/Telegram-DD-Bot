@@ -422,7 +422,8 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     smoothr_message = f"""- Order: {order_code}
 - Type: delivery
 - Customer: {customer_name}
-- Address: {street}
+- Address:
+{street}
 {zip_code} {city}
 {country}
 - Phone: {phone}
@@ -528,19 +529,22 @@ async def process_smoothr_order(smoothr_data: dict):
         # Format: 🔖 #{num} (no "dishbee" in order number line)
         mdg_text = f"{status_text}\n\n" if status_text else ""
         mdg_text += f"🔖 #{order_num}\n"
-        mdg_text += f"👩‍🍳 {vendor_shortcut}\n\n"  # Just vendor, no product count (no products yet)
+        
+        # Add delivery time on line 3 (before vendor) if not ASAP
+        if not smoothr_data["is_asap"] and smoothr_data.get("requested_delivery_time"):
+            mdg_text += f"⏰ {smoothr_data['requested_delivery_time']}\n"
+        
+        mdg_text += f"👩‍🍳 {vendor_shortcut}\n"  # Just vendor, no product count (no products yet)
         mdg_text += f"👤 {customer_name}\n"
         mdg_text += f"🗺️ [{address} ({zip_code})]({f'https://www.google.com/maps?q={original_address}'})\n\n"
-        
-        # Add requested time if not ASAP
-        if not smoothr_data["is_asap"] and smoothr_data.get("requested_delivery_time"):
-            mdg_text += f"⏰ {smoothr_data['requested_delivery_time']}\n\n"
         
         # Add email (expanded view only - will be handled when Details clicked)
         # For now, just store it in STATE
         
         if phone:
-            mdg_text += f"[{phone}](tel:{phone})"
+            # Remove spaces from tel: URI for clickability (display keeps spaces)
+            phone_uri = phone.replace(" ", "")
+            mdg_text += f"[{phone}](tel:{phone_uri})"
         
         # Send MDG-ORD with initial keyboard
         keyboard = mdg_initial_keyboard(order_id)
@@ -556,8 +560,7 @@ async def process_smoothr_order(smoothr_data: dict):
             # RG message: Just order number, no products
             rg_status = build_status_lines(STATE[order_id], "rg")
             rg_text = f"{rg_status}\n\n" if rg_status else ""
-            rg_text += f"🔖 Order #{order_num}\n\n"
-            rg_text += f"📦 *Products not available yet*\n\n"  # Placeholder until Smoothr provides products
+            rg_text += f"🔖 Order #{order_num}\n"
             rg_text += f"🧑 {customer_name}\n"
             rg_text += f"🗺️ {address}\n"
             if phone:
@@ -951,7 +954,12 @@ def telegram_webhook():
                     # Send ASAP request only to specific vendor
                     vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                     if vendor_chat:
-                        order_num = order['name'][-2:] if order["order_type"] == "shopify" else None
+                        # Extract order number: Shopify uses last 2 digits, Smoothr uses full name
+                        if order["order_type"] == "shopify":
+                            order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
+                        else:
+                            order_num = order['name']  # Smoothr: use full order number (TD, 500, etc.)
+                        
                         if order_num:
                             msg = f"Can you prepare 🔖 #{order_num} ASAP?"
                         else:
@@ -965,12 +973,16 @@ def telegram_webhook():
                             restaurant_response_keyboard("ASAP", order_id, vendor)
                         )
                     
-                    # Append status to history
-                    order["status_history"].append({
-                        "type": "asap_sent",
-                        "vendor": vendor,
-                        "timestamp": now()
-                    })
+                    # Add/update status in history (deduplicate by vendor)
+                    existing_asap = next((s for s in order["status_history"] if s.get("type") == "asap_sent" and s.get("vendor") == vendor), None)
+                    if existing_asap:
+                        existing_asap["timestamp"] = now()
+                    else:
+                        order["status_history"].append({
+                            "type": "asap_sent",
+                            "vendor": vendor,
+                            "timestamp": now()
+                        })
                     
                     # Update MDG status
                     vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
@@ -1149,10 +1161,6 @@ def telegram_webhook():
                     show_details = order["mdg_expanded"]
                     mdg_text = build_mdg_dispatch_text(order, show_details=show_details)
                     
-                    # Add requested time if exists
-                    if order.get("requested_time"):
-                        mdg_text += f"\n\n⏰ Requested: {order['requested_time']}"
-                    
                     # Update message with new keyboard
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
@@ -1173,7 +1181,12 @@ def telegram_webhook():
                     for vendor in order["vendors"]:
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
-                            order_num = order['name'][-2:] if order["order_type"] == "shopify" else None
+                            # Extract order number: Shopify uses last 2 digits, Smoothr uses full name
+                            if order["order_type"] == "shopify":
+                                order_num = order['name'][-2:] if len(order['name']) >= 2 else order['name']
+                            else:
+                                order_num = order['name']  # Smoothr: use full order number (TD, 500, etc.)
+                            
                             if order_num:
                                 msg = f"Can you prepare 🔖 #{order_num} ASAP?"
                             else:
@@ -1197,13 +1210,17 @@ def telegram_webhook():
                         auto_delete_after=20
                     )
                     
-                    # Append status to history (one entry per vendor)
+                    # Add/update status in history (deduplicate by vendor)
                     for vendor in vendors:
-                        order["status_history"].append({
-                            "type": "asap_sent",
-                            "vendor": vendor,
-                            "timestamp": now()
-                        })
+                        existing_asap = next((s for s in order["status_history"] if s.get("type") == "asap_sent" and s.get("vendor") == vendor), None)
+                        if existing_asap:
+                            existing_asap["timestamp"] = now()
+                        else:
+                            order["status_history"].append({
+                                "type": "asap_sent",
+                                "vendor": vendor,
+                                "timestamp": now()
+                            })
                     
                     # Update MDG with ASAP status but keep time request buttons
                     order["requested_time"] = "ASAP"
@@ -1367,7 +1384,7 @@ def telegram_webhook():
                     
                     # Update MDG
                     order["requested_time"] = requested_time
-                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {requested_time}"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
@@ -1489,7 +1506,7 @@ def telegram_webhook():
                     
                     # Update MDG
                     order["requested_time"] = ref_time
-                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {ref_time}"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
@@ -1670,7 +1687,7 @@ def telegram_webhook():
                     
                     # Update MDG
                     order["requested_time"] = reference_time
-                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)) + f"\n\n⏰ Requested: {reference_time} (same as {reference_order.get('name', 'other order')})"
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
@@ -1745,6 +1762,15 @@ def telegram_webhook():
                             "time": selected_time,
                             "timestamp": now()
                         })
+                    
+                    # Send status message to MDG
+                    vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in target_vendors])
+                    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                    await send_status_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"🕒 Time request ({selected_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
+                        auto_delete_after=20
+                    )
                     
                     # Update MDG
                     order["requested_time"] = selected_time

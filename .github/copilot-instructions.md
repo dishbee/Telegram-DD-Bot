@@ -25,6 +25,8 @@
 - ❌ NO breaking existing working functionality
 - ❌ NO providing partial or incomplete code
 - ❌ NO claiming you understand without actually tracing the code flow
+- ❌ NO looking at existing broken code instead of reading the user's original assignment
+- ❌ **CRITICAL**: Always read the user's ORIGINAL ASSIGNMENT first, not existing code that may be wrong
 
 ### Established Failure Patterns to Avoid
 
@@ -36,6 +38,7 @@ Historical issues that have caused failures:
 5. Assuming functions exist (missing handlers broke functionality)
 6. Making changes without user confirmation (caused frustration)
 7. **CLAIMING TO UNDERSTAND WITHOUT ACTUALLY TRACING CODE FLOW** (BTN-TIME failure - modified wrong function, didn't trace actual callback handlers)
+8. **READING EXISTING BROKEN CODE INSTEAD OF USER'S ORIGINAL ASSIGNMENT** (Fix #4 failure - looked at wrong implementation instead of user's specification)
 
 ### When You Fuck Up
 
