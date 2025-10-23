@@ -565,8 +565,7 @@ async def process_smoothr_order(smoothr_data: dict):
             rg_text += f"⏰ Ordered at: {now().strftime('%H:%M')}"
             
             # Send with toggle button (Details/Hide)
-            from rg import vendor_summary_keyboard
-            rg_keyboard = vendor_summary_keyboard(order_id, vendor)
+            rg_keyboard = vendor_keyboard(order_id, vendor, False)
             
             rg_msg = await safe_send_message(vendor_chat_id, rg_text, rg_keyboard)
             
