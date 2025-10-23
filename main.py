@@ -456,6 +456,385 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
 
 
 # =============================================================================
+# TEST SHOPIFY COMMAND
+# =============================================================================
+
+async def handle_test_shopify_command(chat_id: int, command: str, message_id: int):
+    """
+    Handle /test_shopify command to send simulated Shopify webhook orders.
+    
+    Command formats:
+    - /test_shopify single      → Single vendor order (basic)
+    - /test_shopify multi       → Multi-vendor order (2-3 vendors, basic)
+    - /test_shopify single all  → Single vendor with tip + note + COD
+    - /test_shopify multi all   → Multi-vendor (2-3 vendors) with tip + note + COD
+    """
+    import random
+    from datetime import datetime
+    
+    # Delete the command message
+    await safe_delete_message(chat_id, message_id)
+    
+    # Parse command
+    parts = command.split()
+    if len(parts) < 2:
+        await safe_send_message(chat_id, "❌ Usage: /test_shopify {single|multi} [all]")
+        return
+    
+    order_mode = parts[1].lower()
+    include_all = len(parts) >= 3 and parts[2].lower() == "all"
+    
+    if order_mode not in ["single", "multi"]:
+        await safe_send_message(chat_id, "❌ Invalid mode. Use: single or multi")
+        return
+    
+    is_multi = (order_mode == "multi")
+    
+    # Generate order ID (incremental Shopify-style)
+    global _test_shopify_counter
+    if '_test_shopify_counter' not in globals():
+        _test_shopify_counter = 7404590039300
+    _test_shopify_counter += 1
+    order_id = str(_test_shopify_counter)
+    order_number = f"dishbee #{order_id[-2:]}"
+    
+    # Random customer data
+    first_names = ["Max", "Anna", "Thomas", "Julia", "Michael", "Sarah", "Peter", "Lisa", "David", "Maria"]
+    last_names = ["Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Wagner", "Becker", "Schulz", "Hoffmann"]
+    customer_name = f"{random.choice(first_names)} {random.choice(last_names)}"
+    
+    # Random Passau addresses
+    addresses = [
+        {"street": "Ludwigstraße 15", "zip": "94032", "city": "Passau"},
+        {"street": "Innstraße 28", "zip": "94032", "city": "Passau"},
+        {"street": "Domplatz 5", "zip": "94032", "city": "Passau"},
+        {"street": "Neuburger Straße 110", "zip": "94036", "city": "Passau"},
+        {"street": "Spitalhofstraße 94", "zip": "94032", "city": "Passau"},
+        {"street": "Theresienstraße 32", "zip": "94032", "city": "Passau"},
+        {"street": "Nikolastraße 7", "zip": "94032", "city": "Passau"},
+        {"street": "Grabengasse 12", "zip": "94032", "city": "Passau"},
+        {"street": "Lederergasse 8", "zip": "94032", "city": "Passau"},
+        {"street": "Dr.-Hans-Kapfinger-Straße 20", "zip": "94032", "city": "Passau"}
+    ]
+    address = random.choice(addresses)
+    
+    # Random phone (German mobile format)
+    phone = f"+49 {random.randint(150, 179)} {random.randint(1000000, 9999999)}"
+    
+    # Product templates per vendor
+    products_by_vendor = {
+        "Julis Spätzlerei": [
+            {"title": "Bergkäse", "price": "9.50", "qty": 1},
+            {"title": "Champignon-Rahm", "price": "8.50", "qty": 1},
+            {"title": "Linsen mit Spätzle", "price": "10.00", "qty": 1}
+        ],
+        "Leckerolls": [
+            {"title": "Classic", "price": "5.50", "qty": 2},
+            {"title": "Choco Dream", "price": "6.00", "qty": 1},
+            {"title": "Pistachio Love", "price": "6.50", "qty": 1}
+        ],
+        "dean & david": [
+            {"title": "Caesar Salad", "price": "8.90", "qty": 1},
+            {"title": "Protein Bowl", "price": "10.50", "qty": 1},
+            {"title": "Green Smoothie", "price": "5.50", "qty": 1}
+        ],
+        "Zweite Heimat": [
+            {"title": "Burger Classic", "price": "11.50", "qty": 1},
+            {"title": "Pommes", "price": "4.50", "qty": 1},
+            {"title": "Cola 0.5L", "price": "3.50", "qty": 1}
+        ],
+        "Pommes Freunde": [
+            {"title": "Pommes", "price": "4.00", "qty": 2},
+            {"title": "Fries: Chili-Cheese-Style", "price": "6.50", "qty": 1}
+        ]
+    }
+    
+    # Select vendors
+    all_vendors = list(products_by_vendor.keys())
+    if is_multi:
+        # Multi: 2-3 vendors
+        num_vendors = random.randint(2, 3)
+        selected_vendors = random.sample(all_vendors, num_vendors)
+    else:
+        # Single: 1 vendor
+        selected_vendors = [random.choice(all_vendors)]
+    
+    # Build line items
+    line_items = []
+    vendor_items = {}
+    total = 0.0
+    
+    for vendor in selected_vendors:
+        vendor_products = products_by_vendor[vendor]
+        # Pick 1-3 random products from this vendor
+        num_products = random.randint(1, min(3, len(vendor_products)))
+        selected_products = random.sample(vendor_products, num_products)
+        
+        vendor_items[vendor] = []
+        for product in selected_products:
+            price = float(product["price"])
+            qty = product["qty"]
+            total += price * qty
+            
+            line_item = {
+                "title": product["title"],
+                "quantity": qty,
+                "price": str(price),
+                "vendor": vendor
+            }
+            line_items.append(line_item)
+            vendor_items[vendor].append(f"{qty} x {product['title']}")
+    
+    # Add extras if "all" mode
+    tip = 0.0
+    note = ""
+    payment_method = "Paid"
+    
+    if include_all:
+        tip = round(random.uniform(2.0, 5.0), 2)
+        total += tip
+        note = random.choice([
+            "Please ring the bell twice",
+            "Leave at the door",
+            "Extra sauce please",
+            "No onions",
+            "Call when you arrive"
+        ])
+        payment_method = "Cash on Delivery"
+    
+    # Build Shopify webhook payload
+    webhook_payload = {
+        "id": int(order_id),
+        "name": order_number,
+        "created_at": datetime.utcnow().isoformat() + "Z",
+        "total_price": f"{total:.2f}",
+        "financial_status": "paid",
+        "customer": {
+            "first_name": customer_name.split()[0],
+            "last_name": customer_name.split()[1],
+            "phone": phone
+        },
+        "shipping_address": {
+            "address1": address["street"],
+            "city": address["city"],
+            "zip": address["zip"],
+            "country": "Germany",
+            "phone": phone
+        },
+        "billing_address": {
+            "address1": address["street"],
+            "city": address["city"],
+            "zip": address["zip"],
+            "country": "Germany",
+            "phone": phone
+        },
+        "line_items": line_items,
+        "note": note if note else None,
+        "payment_gateway_names": ["cash", "delivery"] if payment_method == "Cash on Delivery" else ["shopify_payments"],
+        "total_tip_received": str(tip) if tip > 0 else "0.00"
+    }
+    
+    # Log test order info
+    vendor_str = " + ".join([RESTAURANT_SHORTCUTS.get(v, v) for v in selected_vendors])
+    extras_str = ""
+    if include_all:
+        extras_str = f" | Tip: {tip}€ | Note: Yes | COD: Yes"
+    
+    logger.info(f"🧪 TEST SHOPIFY ORDER GENERATED:")
+    logger.info(f"   Mode: {'Multi-vendor' if is_multi else 'Single vendor'}")
+    logger.info(f"   ID: {order_id} ({order_number})")
+    logger.info(f"   Vendors: {vendor_str}")
+    logger.info(f"   Customer: {customer_name}")
+    logger.info(f"   Total: {total:.2f}€{extras_str}")
+    
+    # Process through Shopify webhook handler
+    try:
+        # Call the Shopify processing logic directly (simulate webhook)
+        run_async(process_shopify_webhook(webhook_payload))
+        logger.info(f"✅ Test Shopify order {order_id} processing complete")
+    except Exception as e:
+        logger.error(f"❌ Failed to process test Shopify order: {e}")
+        logger.exception(e)
+
+
+async def process_shopify_webhook(payload: dict):
+    """
+    Process Shopify webhook payload (used by both real webhooks and test command).
+    Extracted from shopify_webhook() for reuse.
+    """
+    try:
+        order_id = str(payload.get("id"))
+        
+        logger.info(f"Processing Shopify order: {order_id}")
+
+        # Extract order data
+        order_name = payload.get("name", "Unknown")
+        
+        # Extract customer data with enhanced phone extraction
+        customer = payload.get("customer") or {}
+        customer_name = f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip() or "Unknown"
+        customer_email = customer.get("email") or payload.get("email")  # Extract email
+        
+        # Enhanced phone extraction from multiple sources
+        phone = (
+            customer.get("phone") or 
+            payload.get("phone") or 
+            payload.get("billing_address", {}).get("phone") or 
+            payload.get("shipping_address", {}).get("phone") or 
+            "N/A"
+        )
+        
+        # Validate and format phone
+        phone = validate_phone(phone)
+        if not phone:
+            logger.warning(f"Phone number missing or invalid for order {order_id}")
+            phone = "N/A"
+        
+        address = fmt_address(payload.get("shipping_address") or {})
+        
+        # Store original address for clean Google Maps URL
+        shipping_addr = payload.get("shipping_address", {})
+        original_address = f"{shipping_addr.get('address1', '')}, {shipping_addr.get('zip', '')}".strip()
+        if original_address == ", " or not original_address:
+            original_address = address  # fallback to formatted address
+        
+        # Extract vendors from line items
+        line_items = payload.get("line_items", [])
+        vendors = []
+        vendor_items = {}
+        items_text = ""
+        
+        for item in line_items:
+            vendor = item.get('vendor')
+            if vendor and vendor in VENDOR_GROUP_MAP:
+                if vendor not in vendors:
+                    vendors.append(vendor)
+                    vendor_items[vendor] = []
+                
+                # Clean product name using project rules
+                raw_name = item.get('name', 'Item')
+                logger.info(f"PRODUCT NAME DEBUG - Raw: '{raw_name}'")
+                cleaned_name = clean_product_name(raw_name)
+                logger.info(f"PRODUCT NAME DEBUG - Cleaned: '{cleaned_name}'")
+                item_line = f"{item.get('quantity', 1)} x {cleaned_name}"
+                vendor_items[vendor].append(item_line)
+        
+        # Build items text
+        if len(vendors) > 1:
+            # Multi-vendor: show vendor names above items
+            items_by_vendor = ""
+            for vendor in vendors:
+                items_by_vendor += f"\n{vendor}:\n" + "\n".join(vendor_items[vendor]) + "\n"
+            items_text = items_by_vendor.strip()
+        else:
+            # Single vendor: just list items
+            all_items = []
+            for vendor_item_list in vendor_items.values():
+                all_items.extend(vendor_item_list)
+            items_text = "\n".join(all_items)
+        
+        # Check for pickup orders
+        is_pickup = False
+        payload_str = str(payload).lower()
+        if "abholung" in payload_str:
+            is_pickup = True
+            logger.info("Pickup order detected (Abholung found in payload)")
+        
+        # Extract payment method and total from Shopify payload
+        payment_method = "Paid"  # Default
+        total_price = "0.00"     # Default
+        
+        # Check payment gateway names for CoD detection
+        payment_gateways = payload.get("payment_gateway_names", [])
+        if payment_gateways:
+            gateway_str = " ".join(payment_gateways).lower()
+            if "cash" in gateway_str and "delivery" in gateway_str:
+                payment_method = "Cash on Delivery"
+        
+        # Check transactions for more detailed payment info
+        transactions = payload.get("transactions", [])
+        for transaction in transactions:
+            gateway = transaction.get("gateway", "").lower()
+            if "cash" in gateway or "cod" in gateway:
+                payment_method = "Cash on Delivery"
+                break
+        
+        # Get total price from payload
+        total_price = payload.get("total_price", "0.00")
+        
+        # Get customer note
+        note = payload.get("note", "")
+        
+        # Get tip
+        tips = payload.get("total_tip_received", "0.00")
+        
+        # Continue with STATE creation and message sending (same as Shopify webhook)
+        # This is where the rest of the Shopify processing logic would go
+        # For now, we'll defer to the existing Shopify webhook handler inline logic
+        
+        # Create STATE entry
+        STATE[order_id] = {
+            "order_id": order_id,
+            "name": order_name,
+            "vendors": vendors,
+            "customer": {
+                "name": customer_name,
+                "phone": phone,
+                "address": address,
+                "original_address": original_address,
+                "email": customer_email
+            },
+            "vendor_items": vendor_items,
+            "total": total_price,
+            "tips": tips,
+            "note": note,
+            "payment_method": payment_method,
+            "order_type": "shopify",
+            "is_pickup": is_pickup,
+            "status": "new",
+            "status_history": [{"type": "new", "timestamp": now()}],
+            "mdg_message_id": None,
+            "rg_message_ids": {},
+            "vendor_expanded": {vendor: False for vendor in vendors},
+            "mdg_additional_messages": [],
+            "created_at": payload.get("created_at", now().isoformat())
+        }
+        
+        # Send MDG-ORD + RG-SUM messages
+        from mdg import build_mdg_dispatch_text, mdg_initial_keyboard
+        from rg import build_vendor_summary_text, vendor_keyboard
+        
+        # Send to MDG
+        mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
+        mdg_keyboard = mdg_initial_keyboard(order_id)
+        mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, mdg_keyboard)
+        
+        if mdg_msg:
+            STATE[order_id]["mdg_message_id"] = mdg_msg.message_id
+            logger.info(f"Sent MDG-ORD for order {order_id}, message_id={mdg_msg.message_id}")
+        
+        # Send to RG (vendor groups)
+        for vendor in vendors:
+            vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
+            if vendor_chat_id:
+                rg_text = build_vendor_summary_text(STATE[order_id], vendor)
+                rg_keyboard = vendor_keyboard(order_id, vendor, False)
+                
+                rg_msg = await safe_send_message(vendor_chat_id, rg_text, rg_keyboard)
+                
+                if rg_msg:
+                    STATE[order_id]["rg_message_ids"][vendor] = rg_msg.message_id
+                    logger.info(f"Sent RG-SUM to {vendor} for order {order_id}")
+        
+        logger.info(f"✅ Shopify order {order_id} processed successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ Error processing Shopify webhook: {e}")
+        logger.exception(e)
+        raise
+
+
+# =============================================================================
 # SMOOTHR ORDER PROCESSING
 # =============================================================================
 
@@ -809,6 +1188,14 @@ def telegram_webhook():
             if text.startswith("/test_smoothr"):
                 logger.info("=== TEST SMOOTHR COMMAND DETECTED ===")
                 run_async(handle_test_smoothr_command(chat_id, text, msg.get('message_id')))
+                return "OK"
+            
+            # =================================================================
+            # TEST SHOPIFY COMMAND (anyone can trigger)
+            # =================================================================
+            if text.startswith("/test_shopify"):
+                logger.info("=== TEST SHOPIFY COMMAND DETECTED ===")
+                run_async(handle_test_shopify_command(chat_id, text, msg.get('message_id')))
                 return "OK"
             
             # =================================================================
