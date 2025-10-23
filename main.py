@@ -331,6 +331,121 @@ def build_assignment_confirmation_message(order: dict) -> str:
     return message
 
 # =============================================================================
+# TEST SMOOTHR ORDER COMMAND
+# =============================================================================
+
+async def handle_test_smoothr_command(chat_id: int, command: str, message_id: int):
+    """
+    Handle /test_smoothr command to send simulated Smoothr orders.
+    
+    Command formats:
+    - /test_smoothr dnd          → D&D App order (ASAP: No, with time)
+    - /test_smoothr dnd_asap     → D&D App order (ASAP: Yes)
+    - /test_smoothr lieferando   → Lieferando order (ASAP: No, with time)
+    - /test_smoothr lieferando_asap → Lieferando order (ASAP: Yes)
+    - /test_smoothr (no args)    → Random type
+    
+    Generates random customer data, address, phone, email, and order time.
+    """
+    import random
+    from datetime import timedelta
+    
+    # Delete the command message
+    await safe_delete_message(chat_id, message_id)
+    
+    # Parse command
+    parts = command.split()
+    if len(parts) == 1:
+        # Random type
+        order_type = random.choice(["dnd", "dnd_asap", "lieferando", "lieferando_asap"])
+    else:
+        order_type = parts[1].lower()
+    
+    # Determine ASAP and order source
+    is_asap = "asap" in order_type
+    is_lieferando = "lieferando" in order_type
+    
+    # Random order code
+    if is_lieferando:
+        # Lieferando: alphanumeric (e.g., 3DX8TD, 4AF2BC)
+        order_code = ''.join(random.choices('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', k=6))
+    else:
+        # D&D App: 500-series (e.g., 500, 5001, 5042)
+        order_code = str(random.randint(500, 599))
+    
+    # Random customer data
+    first_names = ["Max", "Anna", "Thomas", "Julia", "Michael", "Sarah", "Peter", "Lisa", "David", "Maria"]
+    last_names = ["Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Wagner", "Becker", "Schulz", "Hoffmann"]
+    customer_name = f"{random.choice(first_names)} {random.choice(last_names)}"
+    
+    # Random Passau addresses
+    streets = [
+        "Ludwigstraße 15",
+        "Innstraße 28",
+        "Domplatz 5",
+        "Neuburger Straße 110",
+        "Spitalhofstraße 94",
+        "Theresienstraße 32",
+        "Nikolastraße 7",
+        "Grabengasse 12",
+        "Lederergasse 8",
+        "Dr.-Hans-Kapfinger-Straße 20"
+    ]
+    street = random.choice(streets)
+    zip_code = "94032"
+    city = "Passau"
+    country = "Germany"
+    
+    # Random phone (German mobile format)
+    phone = f"+49 {random.randint(150, 179)} {random.randint(1000000, 9999999)}"
+    
+    # Random email
+    email_domains = ["gmail.com", "web.de", "gmx.de", "outlook.com", "yahoo.de"]
+    email = f"{customer_name.split()[0].lower()}.{customer_name.split()[1].lower()}@{random.choice(email_domains)}"
+    
+    # Generate order time (UTC)
+    current_time = now()
+    if is_asap:
+        # For ASAP orders, just use current time
+        order_time_utc = current_time.replace(tzinfo=None)
+    else:
+        # For scheduled orders, add random time between 30-120 minutes from now
+        minutes_ahead = random.randint(30, 120)
+        order_time_local = current_time + timedelta(minutes=minutes_ahead)
+        # Convert back to UTC (subtract 2 hours - inverse of what parser will do)
+        order_time_utc = order_time_local - timedelta(hours=2)
+    
+    # Format as ISO string (Smoothr format)
+    order_date_iso = order_time_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    
+    # Build Smoothr message
+    smoothr_message = f"""- Order: {order_code}
+- Type: delivery
+- Customer: {customer_name}
+- Address: {street}
+{zip_code} {city}
+{country}
+- Phone: {phone}
+- Email: {email}
+- ASAP: {"Yes" if is_asap else "No"}
+- Order Date: {order_date_iso}"""
+    
+    # Log test order info
+    source_name = "Lieferando" if is_lieferando else "D&D App"
+    asap_status = "ASAP: Yes" if is_asap else f"ASAP: No (Time: {order_time_local.strftime('%H:%M') if not is_asap else 'N/A'})"
+    logger.info(f"🧪 TEST SMOOTHR ORDER GENERATED:")
+    logger.info(f"   Source: {source_name}")
+    logger.info(f"   Code: {order_code}")
+    logger.info(f"   Customer: {customer_name}")
+    logger.info(f"   {asap_status}")
+    
+    # Send test message to MDG
+    await safe_send_message(chat_id, smoothr_message)
+    
+    logger.info(f"✅ Test Smoothr order sent to MDG, will be processed by webhook handler")
+
+
+# =============================================================================
 # SMOOTHR ORDER PROCESSING
 # =============================================================================
 
@@ -665,6 +780,14 @@ def telegram_webhook():
             # Flag potential spam
             if "FOXY" in text.upper() or "airdrop" in text.lower() or "t.me/" in text:
                 logger.warning(f"🚨 POTENTIAL SPAM DETECTED: {text[:100]}...")
+            
+            # =================================================================
+            # TEST SMOOTHR COMMAND (anyone can trigger)
+            # =================================================================
+            if text.startswith("/test_smoothr"):
+                logger.info("=== TEST SMOOTHR COMMAND DETECTED ===")
+                run_async(handle_test_smoothr_command(chat_id, text, msg.get('message_id')))
+                return "OK"
             
             # =================================================================
             # SMOOTHR ORDER DETECTION
