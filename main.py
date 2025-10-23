@@ -781,6 +781,9 @@ def telegram_webhook():
             if "FOXY" in text.upper() or "airdrop" in text.lower() or "t.me/" in text:
                 logger.warning(f"🚨 POTENTIAL SPAM DETECTED: {text[:100]}...")
             
+            # Get chat_id early for command detection
+            chat_id = chat.get('id')
+            
             # =================================================================
             # TEST SMOOTHR COMMAND (anyone can trigger)
             # =================================================================
@@ -794,7 +797,6 @@ def telegram_webhook():
             # =================================================================
             # Detect Smoothr orders (dean & david App + Lieferando)
             # Must check BEFORE vendor issue handling to avoid conflicts
-            chat_id = chat.get('id')
             
             if text and chat_id == DISPATCH_MAIN_CHAT_ID:
                 from utils import is_smoothr_order, parse_smoothr_order
