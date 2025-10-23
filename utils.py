@@ -635,7 +635,16 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
     # === MDG STATUS LINES ===
     if message_type == "mdg":
         if status_type == "new":
-            return "🚨 New order\n\n"
+            # Determine source: Shopify vs Smoothr
+            order_type = order.get("order_type", "shopify")
+            if order_type == "shopify":
+                return "🚨 New order (dishbee)\n\n"
+            elif order_type == "smoothr_dnd":
+                return "🚨 New order (D&D App)\n\n"
+            elif order_type == "smoothr_lieferando":
+                return "🚨 New order (Lieferando)\n\n"
+            else:
+                return "🚨 New order\n\n"
         
         elif status_type == "asap_sent":
             # Multi-vendor: separate line per vendor
@@ -855,3 +864,195 @@ def get_error_description(error: Exception) -> str:
     
     # Fallback to exception name
     return f"{error_name}: {str(error)[:50]}"
+
+
+# =============================================================================
+# SMOOTHR ORDER DETECTION AND PARSING
+# =============================================================================
+
+def is_smoothr_order(text: str) -> bool:
+    """
+    Detect if a message is a Smoothr order by checking for all required fields.
+    
+    Smoothr orders have this format:
+    - Order: {code}
+    - Type: delivery
+    - Customer: {name}
+    - Address: {multi-line}
+    - Phone: {number}
+    - Email: {email}
+    - ASAP: Yes/No
+    - Order Date: {ISO timestamp}
+    
+    Args:
+        text: Message text to check
+        
+    Returns:
+        True if all 7 required fields are present, False otherwise
+    """
+    if not text:
+        return False
+    
+    required_fields = [
+        "- Order:",
+        "- Type:",
+        "- Customer:",
+        "- Address:",
+        "- Phone:",
+        "- ASAP:",
+        "- Order Date:"
+    ]
+    
+    return all(field in text for field in required_fields)
+
+
+def get_smoothr_order_type(order_code: str) -> tuple[str, str]:
+    """
+    Determine order type and display number from Smoothr order code.
+    
+    D&D App orders: 3-4 digits starting with "500" (e.g., "500", "5001")
+    Lieferando orders: Alphanumeric code (e.g., "3DX8TD")
+    
+    Args:
+        order_code: The order code from Smoothr
+        
+    Returns:
+        Tuple of (order_type, display_num)
+        - D&D App: ("smoothr_dnd", "500") - full number
+        - Lieferando: ("smoothr_lieferando", "TD") - last 2 chars
+    """
+    order_code = order_code.strip()
+    
+    # Check if it's a D&D App order (digits starting with "500")
+    if order_code.isdigit() and order_code.startswith("500"):
+        return ("smoothr_dnd", order_code)  # Full 3-4 digits
+    else:
+        # Lieferando order - use last 2 characters
+        return ("smoothr_lieferando", order_code[-2:] if len(order_code) >= 2 else order_code)
+
+
+def parse_smoothr_order(text: str) -> dict:
+    """
+    Parse Smoothr order message into STATE-compatible dictionary.
+    
+    Extracts:
+    - Order code and type (D&D App vs Lieferando)
+    - Customer name, phone, email
+    - Address (street + building) and zip
+    - ASAP status
+    - Requested delivery time (UTC → Local +2h)
+    
+    Args:
+        text: Smoothr order message text
+        
+    Returns:
+        Dictionary with parsed order data
+        
+    Raises:
+        ValueError: If required fields are missing or parsing fails
+    """
+    from zoneinfo import ZoneInfo
+    
+    lines = text.strip().split('\n')
+    order_data = {}
+    
+    # Parse line by line
+    address_lines = []
+    in_address_block = False
+    
+    for i, line in enumerate(lines):
+        line = line.strip()
+        
+        if line.startswith("- Order:"):
+            order_code = line.split(":", 1)[1].strip()
+            order_data["order_code"] = order_code
+            order_type, display_num = get_smoothr_order_type(order_code)
+            order_data["order_type"] = order_type
+            order_data["order_num"] = display_num
+            
+        elif line.startswith("- Customer:"):
+            order_data["customer_name"] = line.split(":", 1)[1].strip()
+            
+        elif line.startswith("- Address:"):
+            in_address_block = True
+            # Address is on following lines
+            
+        elif line.startswith("- Phone:"):
+            in_address_block = False
+            phone = line.split(":", 1)[1].strip()
+            order_data["phone"] = phone
+            
+        elif line.startswith("- Email:"):
+            email = line.split(":", 1)[1].strip()
+            order_data["email"] = email if email else None
+            
+        elif line.startswith("- ASAP:"):
+            asap_value = line.split(":", 1)[1].strip()
+            order_data["is_asap"] = asap_value.lower() == "yes"
+            
+        elif line.startswith("- Order Date:"):
+            order_date_str = line.split(":", 1)[1].strip()
+            order_data["order_date_raw"] = order_date_str
+            
+            # Parse ISO timestamp and add fixed +2 hours offset (as specified by user)
+            try:
+                # Parse: 2025-10-23T10:00:00.000Z
+                dt_utc = datetime.fromisoformat(order_date_str.replace('Z', '+00:00'))
+                # Add fixed 2 hours offset (user requirement: "always add 2 hours")
+                dt_local = dt_utc + timedelta(hours=2)
+                order_data["order_datetime"] = dt_local
+                order_data["requested_delivery_time"] = dt_local.strftime("%H:%M")
+            except Exception as e:
+                logger.error(f"Failed to parse order date '{order_date_str}': {e}")
+                order_data["requested_delivery_time"] = None
+                
+        elif in_address_block and line and not line.startswith("-"):
+            # Collect address lines until next field
+            address_lines.append(line)
+    
+    # Process address lines
+    if address_lines:
+        # First line is street + building
+        order_data["street"] = address_lines[0] if len(address_lines) > 0 else ""
+        
+        # Last line usually has zip + city
+        if len(address_lines) > 1:
+            last_line = address_lines[-1]
+            # Extract zip (5 digits)
+            zip_match = None
+            for part in last_line.split():
+                if part.isdigit() and len(part) == 5:
+                    zip_match = part
+                    break
+            order_data["zip"] = zip_match if zip_match else "94032"  # Default Passau zip
+        else:
+            order_data["zip"] = "94032"
+        
+        # Full address for Google Maps
+        order_data["full_address"] = ", ".join(address_lines)
+    
+    # Validate required fields
+    required = ["order_code", "customer_name", "phone"]
+    missing = [field for field in required if not order_data.get(field)]
+    if missing:
+        raise ValueError(f"Missing required fields: {', '.join(missing)}")
+    
+    # Build STATE-compatible structure
+    result = {
+        "order_id": order_data["order_code"],
+        "order_num": order_data["order_num"],
+        "order_type": order_data["order_type"],
+        "customer": {
+            "name": order_data["customer_name"],
+            "phone": order_data["phone"],
+            "email": order_data.get("email"),
+            "address": order_data.get("street", ""),
+            "zip": order_data.get("zip", "94032"),
+            "original_address": order_data.get("full_address", "")
+        },
+        "is_asap": order_data["is_asap"],
+        "requested_delivery_time": None if order_data["is_asap"] else order_data.get("requested_delivery_time"),
+        "smoothr_raw": text  # Keep original for debugging
+    }
+    
+    return result

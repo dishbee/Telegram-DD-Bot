@@ -330,6 +330,126 @@ def build_assignment_confirmation_message(order: dict) -> str:
     
     return message
 
+# =============================================================================
+# SMOOTHR ORDER PROCESSING
+# =============================================================================
+
+async def process_smoothr_order(smoothr_data: dict):
+    """
+    Process Smoothr order: Create STATE entry and send formatted messages.
+    
+    Smoothr orders come from dean & david (D&D App + Lieferando).
+    Converts plain text Smoothr message into standard MDG-ORD + RG-SUM format.
+    
+    Args:
+        smoothr_data: Parsed Smoothr order data from parse_smoothr_order()
+    """
+    from utils import build_status_lines
+    
+    order_id = smoothr_data["order_id"]
+    order_num = smoothr_data["order_num"]
+    order_type = smoothr_data["order_type"]
+    
+    logger.info(f"Processing Smoothr order {order_id} ({order_type})")
+    
+    # Vendor is always "dean & david" for Smoothr orders
+    vendor = "dean & david"
+    vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
+    
+    # Create STATE entry
+    STATE[order_id] = {
+        "order_id": order_id,
+        "name": order_num,  # Just the display number (e.g., "500" or "TD")
+        "order_type": order_type,  # "smoothr_dnd" or "smoothr_lieferando"
+        "vendors": [vendor],
+        "vendor_items": {},  # No products yet
+        "customer": smoothr_data["customer"],
+        "total": None,  # Not available
+        "tips": None,  # Not available
+        "note": None,  # Not available
+        "payment_method": None,  # Not available
+        "requested_time": smoothr_data.get("requested_delivery_time"),
+        "confirmed_time": None,
+        "confirmed_times": {},
+        "status": "new",
+        "status_history": [{"type": "new", "timestamp": now()}],
+        "assigned_to": None,
+        "assigned_by": None,
+        "delivered_at": None,
+        "delivered_by": None,
+        "mdg_message_id": None,
+        "rg_message_ids": {},
+        "upc_message_id": None,
+        "vendor_expanded": {vendor: False},
+        "mdg_additional_messages": [],
+        "created_at": smoothr_data.get("order_datetime", now()),
+        "smoothr_raw": smoothr_data.get("smoothr_raw", ""),  # Keep original for debugging
+    }
+    
+    # Build status line
+    source_name = "D&D App" if order_type == "smoothr_dnd" else "Lieferando"
+    status_text = build_status_lines(STATE[order_id], "mdg")
+    
+    # Build MDG message text
+    customer_name = smoothr_data["customer"]["name"]
+    phone = smoothr_data["customer"]["phone"]
+    address = smoothr_data["customer"]["address"]
+    zip_code = smoothr_data["customer"]["zip"]
+    original_address = smoothr_data["customer"]["original_address"]
+    email = smoothr_data["customer"].get("email")
+    
+    # Format: 🔖 #{num} (no "dishbee" in order number line)
+    mdg_text = f"{status_text}\n\n" if status_text else ""
+    mdg_text += f"🔖 #{order_num}\n"
+    mdg_text += f"👩‍🍳 {vendor_shortcut}\n\n"  # Just vendor, no product count (no products yet)
+    mdg_text += f"👤 {customer_name}\n"
+    mdg_text += f"🗺️ [{address} ({zip_code})]({f'https://www.google.com/maps?q={original_address}'})\n\n"
+    
+    # Add requested time if not ASAP
+    if not smoothr_data["is_asap"] and smoothr_data.get("requested_delivery_time"):
+        mdg_text += f"⏰ {smoothr_data['requested_delivery_time']}\n\n"
+    
+    # Add email (expanded view only - will be handled when Details clicked)
+    # For now, just store it in STATE
+    
+    if phone:
+        mdg_text += f"[{phone}](tel:{phone})"
+    
+    # Send MDG-ORD with initial keyboard
+    keyboard = mdg_initial_keyboard(order_id, [vendor])
+    mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard)
+    
+    if mdg_msg:
+        STATE[order_id]["mdg_message_id"] = mdg_msg.message_id
+        logger.info(f"Sent MDG-ORD for Smoothr order {order_id}, message_id={mdg_msg.message_id}")
+    
+    # Send RG-SUM to dean & david group
+    vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
+    if vendor_chat_id:
+        # RG message: Just order number, no products
+        rg_status = build_status_lines(STATE[order_id], "rg")
+        rg_text = f"{rg_status}\n\n" if rg_status else ""
+        rg_text += f"🔖 Order #{order_num}\n\n"
+        rg_text += f"📦 *Products not available yet*\n\n"  # Placeholder until Smoothr provides products
+        rg_text += f"🧑 {customer_name}\n"
+        rg_text += f"🗺️ {address}\n"
+        if phone:
+            rg_text += f"📞 {phone}\n"
+        rg_text += f"⏰ Ordered at: {now().strftime('%H:%M')}"
+        
+        # Send with toggle button (Details/Hide)
+        from rg import vendor_summary_keyboard
+        rg_keyboard = vendor_summary_keyboard(order_id, vendor)
+        
+        rg_msg = await safe_send_message(vendor_chat_id, rg_text, rg_keyboard)
+        
+        if rg_msg:
+            STATE[order_id]["rg_message_ids"][vendor] = rg_msg.message_id
+            logger.info(f"Sent RG-SUM for Smoothr order {order_id} to {vendor}, message_id={rg_msg.message_id}")
+    
+    logger.info(f"✅ Smoothr order {order_id} processed successfully")
+
+
 async def cleanup_mdg_messages(order_id: str):
     """Clean up additional MDG messages, keeping only the original order message"""
     order = STATE.get(order_id)
@@ -546,8 +666,46 @@ def telegram_webhook():
             if "FOXY" in text.upper() or "airdrop" in text.lower() or "t.me/" in text:
                 logger.warning(f"🚨 POTENTIAL SPAM DETECTED: {text[:100]}...")
             
-            # Check if this is a vendor responding with issue description
+            # =================================================================
+            # SMOOTHR ORDER DETECTION
+            # =================================================================
+            # Detect Smoothr orders (dean & david App + Lieferando)
+            # Must check BEFORE vendor issue handling to avoid conflicts
             chat_id = chat.get('id')
+            
+            if text and chat_id == DISPATCH_MAIN_CHAT_ID:
+                from utils import is_smoothr_order, parse_smoothr_order
+                
+                if is_smoothr_order(text):
+                    logger.info("=== SMOOTHR ORDER DETECTED ===")
+                    logger.info(f"Message text:\n{text}")
+                    
+                    try:
+                        # Parse order data
+                        smoothr_data = parse_smoothr_order(text)
+                        order_id = smoothr_data["order_id"]
+                        logger.info(f"Parsed Smoothr order: {order_id} ({smoothr_data['order_type']})")
+                        
+                        # Delete original Smoothr message (schedule as async task)
+                        message_id_to_delete = msg.get('message_id')
+                        run_async(safe_delete_message(chat_id, message_id_to_delete))
+                        
+                        # Process Smoothr order (send formatted messages)
+                        run_async(process_smoothr_order(smoothr_data))
+                        
+                        return "OK"  # Stop further processing
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to parse Smoothr order: {e}")
+                        logger.exception(e)
+                        
+                        # Send error to MDG
+                        error_msg = f"❌ **Smoothr Order Parse Error**\n\n{str(e)[:500]}"
+                        run_async(safe_send_message(DISPATCH_MAIN_CHAT_ID, error_msg))
+                        
+                        return "OK"  # Stop further processing even on error
+            
+            # Check if this is a vendor responding with issue description
             if text and chat_id in VENDOR_GROUP_MAP.values():
                 # Find which vendor this chat belongs to
                 vendor_name = None
@@ -2407,6 +2565,7 @@ def shopify_webhook():
         # Extract customer data with enhanced phone extraction
         customer = payload.get("customer") or {}
         customer_name = f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip() or "Unknown"
+        customer_email = customer.get("email") or payload.get("email")  # Extract email
         
         # Enhanced phone extraction from multiple sources
         phone = (
@@ -2526,6 +2685,7 @@ def shopify_webhook():
             "customer": {
                 "name": customer_name,
                 "phone": phone,
+                "email": customer_email,  # Add email field
                 "address": address,
                 "original_address": original_address
             },
