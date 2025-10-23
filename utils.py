@@ -910,7 +910,7 @@ def get_smoothr_order_type(order_code: str) -> tuple[str, str]:
     """
     Determine order type and display number from Smoothr order code.
     
-    D&D App orders: 3-4 digits starting with "500" (e.g., "500", "5001")
+    D&D App orders: 3-4 digits in range 500-599 (e.g., "500", "515", "599")
     Lieferando orders: Alphanumeric code (e.g., "3DX8TD")
     
     Args:
@@ -923,8 +923,8 @@ def get_smoothr_order_type(order_code: str) -> tuple[str, str]:
     """
     order_code = order_code.strip()
     
-    # Check if it's a D&D App order (digits starting with "500")
-    if order_code.isdigit() and order_code.startswith("500"):
+    # Check if it's a D&D App order (digits in range 500-599)
+    if order_code.isdigit() and 500 <= int(order_code) <= 599:
         return ("smoothr_dnd", order_code)  # Full 3-4 digits
     else:
         # Lieferando order - use last 2 characters
@@ -994,12 +994,12 @@ def parse_smoothr_order(text: str) -> dict:
             order_date_str = line.split(":", 1)[1].strip()
             order_data["order_date_raw"] = order_date_str
             
-            # Parse ISO timestamp and add fixed +2 hours offset (as specified by user)
+            # Parse ISO timestamp and convert UTC to local (+2h for Germany)
             try:
                 # Parse: 2025-10-23T10:00:00.000Z
                 dt_utc = datetime.fromisoformat(order_date_str.replace('Z', '+00:00'))
-                # Add fixed 2 hours offset (user requirement: "always add 2 hours")
-                dt_local = dt_utc + timedelta(hours=2)
+                # Convert to Europe/Berlin timezone (UTC+1 or UTC+2 depending on DST)
+                dt_local = dt_utc.astimezone(ZoneInfo("Europe/Berlin"))
                 order_data["order_datetime"] = dt_local
                 order_data["requested_delivery_time"] = dt_local.strftime("%H:%M")
             except Exception as e:
