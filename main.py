@@ -543,7 +543,7 @@ async def process_smoothr_order(smoothr_data: dict):
             mdg_text += f"[{phone}](tel:{phone})"
         
         # Send MDG-ORD with initial keyboard
-        keyboard = mdg_initial_keyboard(order_id, [vendor])
+        keyboard = mdg_initial_keyboard(order_id)
         mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard)
         
         if mdg_msg:
