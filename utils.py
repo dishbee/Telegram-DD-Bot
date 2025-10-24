@@ -546,6 +546,11 @@ async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mo
     for attempt in range(max_retries):
         try:
             logger.info(f"Send message attempt {attempt + 1}")
+            logger.info(f"=== MESSAGE TEXT DEBUG ===")
+            logger.info(f"Text length: {len(text)}")
+            logger.info(f"Text repr: {repr(text[:100])}")
+            logger.info(f"Byte 16: {repr(text[16]) if len(text) > 16 else 'N/A'}")
+            logger.info(f"Bytes 0-20: {repr(text[:20])}")
             return await bot.send_message(
                 chat_id=chat_id,
                 text=text,
