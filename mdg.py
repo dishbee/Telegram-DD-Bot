@@ -377,7 +377,13 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 text += f"\n✉️ {email}\n"
 
         # Prepend status lines at the top
-        return status_text + text
+        final_text = status_text + text
+        logger.info(f"=== MDG TEXT DEBUG ===")
+        logger.info(f"Status text: {repr(status_text)}")
+        logger.info(f"Body text: {repr(text)}")
+        logger.info(f"Final text: {repr(final_text)}")
+        logger.info(f"Byte at offset 16: {repr(final_text[16] if len(final_text) > 16 else 'N/A')}")
+        return final_text
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building MDG text: %s", exc)
         return f"Error formatting order {order.get('name', 'Unknown')}"
