@@ -478,14 +478,14 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
     # Parse command
     parts = command.split()
     if len(parts) < 2:
-        await safe_send_message(chat_id, "❌ Usage: /test_shopify {single|multi} [all]")
+        await safe_send_message(chat_id, "❌ Usage: `/test_shopify single` or `/test_shopify multi`", parse_mode=None)
         return
     
     order_mode = parts[1].lower()
     include_all = len(parts) >= 3 and parts[2].lower() == "all"
     
     if order_mode not in ["single", "multi"]:
-        await safe_send_message(chat_id, "❌ Invalid mode. Use: single or multi")
+        await safe_send_message(chat_id, "❌ Invalid mode. Use: `single` or `multi`", parse_mode=None)
         return
     
     is_multi = (order_mode == "multi")
