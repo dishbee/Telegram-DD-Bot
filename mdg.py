@@ -258,16 +258,18 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 logger.info(f"DEBUG Product Count - {vendor}: items={items}, total_qty={total_qty}")
                 vendor_counts.append(str(total_qty))
             
-            # Use simple chef emoji (no skin tone modifiers to avoid Markdown parsing issues)
-            chef_emoji = "👨‍🍳"
+            # Use rotating chef emojis for vendors
+            chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
+            chef_emoji = chef_emojis[0]  # Use first chef emoji for vendor line
             
             if len(vendors) > 1:
                 vendor_line = f"{chef_emoji} {'+'.join(shortcuts)} 🍕 {'+'.join(vendor_counts)}"
             else:
                 vendor_line = f"{chef_emoji} {shortcuts[0]} 🍕 {vendor_counts[0]}"
         else:
-            # Fallback for non-Shopify orders (use simple chef emoji)
-            chef_emoji = "👨‍🍳"
+            # Fallback for non-Shopify orders
+            chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
+            chef_emoji = chef_emojis[0]
             vendor_line = f"{chef_emoji} {vendors[0] if vendors else 'Unknown'}"
 
         customer_line = f"👤 {order['customer']['name']}"
@@ -342,34 +344,44 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             else:
                 logger.info(f"No district found for address: {original_address}")
             
-            # Build product list
-            if order_type == "shopify" and len(vendors) > 1:
+            # Build product list (if available)
+            vendor_items = order.get("vendor_items", {})
+            has_products = False
+            
+            if order_type == "shopify" and vendor_items:
+                # Check if any vendor has products
+                has_products = any(items for items in vendor_items.values() if items)
+            
+            if has_products:
                 # Multi-vendor product display
-                vendor_items = order.get("vendor_items", {})
-                items_text_parts: List[str] = []
-                for vendor in vendors:
-                    # Use shortcut instead of full vendor name
-                    shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-                    items_text_parts.append(f"\n{shortcut}: ")
-                    vendor_products = vendor_items.get(vendor, [])
-                    for item in vendor_products:
-                        clean_item = item.lstrip('- ').strip()
-                        items_text_parts.append(clean_item)
-                items_text = "\n".join(items_text_parts)
+                if order_type == "shopify" and len(vendors) > 1:
+                    items_text_parts: List[str] = []
+                    for vendor in vendors:
+                        # Use shortcut instead of full vendor name
+                        shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                        items_text_parts.append(f"\n{shortcut}: ")
+                        vendor_products = vendor_items.get(vendor, [])
+                        for item in vendor_products:
+                            clean_item = item.lstrip('- ').strip()
+                            items_text_parts.append(clean_item)
+                    items_text = "\n".join(items_text_parts)
+                else:
+                    # Single vendor product display
+                    items_text = order.get("items_text", "")
+                    lines = items_text.split('\n')
+                    clean_lines = [line.lstrip('- ').strip() for line in lines if line.strip()]
+                    items_text = '\n'.join(clean_lines)
+
+                total = order.get("total", "0.00€")
+                if order_type == "shopify":
+                    payment = order.get("payment_method", "Paid")
+                    if payment.lower() != "cash on delivery":
+                        items_text += f"\n{total}"
+
+                text += f"{items_text}\n"
             else:
-                # Single vendor product display
-                items_text = order.get("items_text", "")
-                lines = items_text.split('\n')
-                clean_lines = [line.lstrip('- ').strip() for line in lines if line.strip()]
-                items_text = '\n'.join(clean_lines)
-
-            total = order.get("total", "0.00€")
-            if order_type == "shopify":
-                payment = order.get("payment_method", "Paid")
-                if payment.lower() != "cash on delivery":
-                    items_text += f"\n{total}"
-
-            text += f"{items_text}\n"
+                # No products available (Smoothr orders)
+                logger.info(f"No products available for order {order.get('name', 'Unknown')} - skipping product list")
             
             # Add email if available (expanded view only)
             email = order['customer'].get('email')
@@ -377,13 +389,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 text += f"\n✉️ {email}\n"
 
         # Prepend status lines at the top
-        final_text = status_text + text
-        logger.info(f"=== MDG TEXT DEBUG ===")
-        logger.info(f"Status text: {repr(status_text)}")
-        logger.info(f"Body text: {repr(text)}")
-        logger.info(f"Final text: {repr(final_text)}")
-        logger.info(f"Byte at offset 16: {repr(final_text[16] if len(final_text) > 16 else 'N/A')}")
-        return final_text
+        return status_text + text
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building MDG text: %s", exc)
         return f"Error formatting order {order.get('name', 'Unknown')}"
