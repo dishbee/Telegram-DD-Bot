@@ -344,44 +344,34 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             else:
                 logger.info(f"No district found for address: {original_address}")
             
-            # Build product list (if available)
-            vendor_items = order.get("vendor_items", {})
-            has_products = False
-            
-            if order_type == "shopify" and vendor_items:
-                # Check if any vendor has products
-                has_products = any(items for items in vendor_items.values() if items)
-            
-            if has_products:
+            # Build product list
+            if order_type == "shopify" and len(vendors) > 1:
                 # Multi-vendor product display
-                if order_type == "shopify" and len(vendors) > 1:
-                    items_text_parts: List[str] = []
-                    for vendor in vendors:
-                        # Use shortcut instead of full vendor name
-                        shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-                        items_text_parts.append(f"\n{shortcut}: ")
-                        vendor_products = vendor_items.get(vendor, [])
-                        for item in vendor_products:
-                            clean_item = item.lstrip('- ').strip()
-                            items_text_parts.append(clean_item)
-                    items_text = "\n".join(items_text_parts)
-                else:
-                    # Single vendor product display
-                    items_text = order.get("items_text", "")
-                    lines = items_text.split('\n')
-                    clean_lines = [line.lstrip('- ').strip() for line in lines if line.strip()]
-                    items_text = '\n'.join(clean_lines)
-
-                total = order.get("total", "0.00€")
-                if order_type == "shopify":
-                    payment = order.get("payment_method", "Paid")
-                    if payment.lower() != "cash on delivery":
-                        items_text += f"\n{total}"
-
-                text += f"{items_text}\n"
+                vendor_items = order.get("vendor_items", {})
+                items_text_parts: List[str] = []
+                for vendor in vendors:
+                    # Use shortcut instead of full vendor name
+                    shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                    items_text_parts.append(f"\n{shortcut}: ")
+                    vendor_products = vendor_items.get(vendor, [])
+                    for item in vendor_products:
+                        clean_item = item.lstrip('- ').strip()
+                        items_text_parts.append(clean_item)
+                items_text = "\n".join(items_text_parts)
             else:
-                # No products available (Smoothr orders)
-                logger.info(f"No products available for order {order.get('name', 'Unknown')} - skipping product list")
+                # Single vendor product display
+                items_text = order.get("items_text", "")
+                lines = items_text.split('\n')
+                clean_lines = [line.lstrip('- ').strip() for line in lines if line.strip()]
+                items_text = '\n'.join(clean_lines)
+
+            total = order.get("total", "0.00€")
+            if order_type == "shopify":
+                payment = order.get("payment_method", "Paid")
+                if payment.lower() != "cash on delivery":
+                    items_text += f"\n{total}"
+
+            text += f"{items_text}\n"
             
             # Add email if available (expanded view only)
             email = order['customer'].get('email')
