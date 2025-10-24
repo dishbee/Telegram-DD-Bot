@@ -542,13 +542,13 @@ def verify_webhook(raw: bytes, hmac_header: str) -> bool:
 # --- ASYNC UTILITY FUNCTIONS ---
 async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
     """Send message with error handling and retry logic"""
-    # DEBUG: Log text BEFORE any attempt
-    logger.info(f"=== MESSAGE TEXT DEBUG (BEFORE SEND) ===")
-    logger.info(f"Text length: {len(text)}")
-    logger.info(f"Text repr (first 100): {repr(text[:100])}")
+    # DEBUG: Use print to bypass logger filtering
+    print(f"=== MESSAGE TEXT DEBUG ===")
+    print(f"Text length: {len(text)}")
+    print(f"First 100 chars: {repr(text[:100])}")
     if len(text) > 16:
-        logger.info(f"Char at position 16: {repr(text[16])}")
-        logger.info(f"Bytes 0-20: {repr(text[:20])}")
+        print(f"Char at pos 16: {repr(text[16])}")
+        print(f"Chars 0-25: {repr(text[:25])}")
     
     max_retries = 3
     for attempt in range(max_retries):
