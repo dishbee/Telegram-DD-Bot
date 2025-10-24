@@ -872,38 +872,26 @@ def get_error_description(error: Exception) -> str:
 
 def is_smoothr_order(text: str) -> bool:
     """
-    Detect if a message is a Smoothr order by checking for all required fields.
+    Detect Smoothr orders by unique '- Order:' field format.
     
-    Smoothr orders have this format:
-    - Order: {code}
-    - Type: delivery
-    - Customer: {name}
-    - Address: {multi-line}
-    - Phone: {number}
-    - Email: {email}
-    - ASAP: Yes/No
-    - Order Date: {ISO timestamp}
+    Smoothr orders always start with hyphen and contain '- Order:' field.
+    This format is unique to Smoothr integration and won't match other messages.
+    
+    Format examples:
+    - Order: BMW74X (6 chars: letters+numbers, Lieferando)
+    - Order: 562 (3 digits starting with 500+, D&D App)
+    - Order: GHPD97 (alphanumeric, Lieferando)
     
     Args:
         text: Message text to check
         
     Returns:
-        True if all 7 required fields are present, False otherwise
+        True if text starts with hyphen and contains '- Order:' field
     """
     if not text:
         return False
     
-    required_fields = [
-        "- Order:",
-        "- Type:",
-        "- Customer:",
-        "- Address:",
-        "- Phone:",
-        "- ASAP:",
-        "- Order Date:"
-    ]
-    
-    return all(field in text for field in required_fields)
+    return text.strip().startswith("-") and "- Order:" in text
 
 
 def get_smoothr_order_type(order_code: str) -> tuple[str, str]:

@@ -1157,14 +1157,24 @@ def telegram_webhook():
         logger.info(f"Update ID: {upd.get('update_id')}")
         logger.info(f"Timestamp: {now().isoformat()}")
 
-        # Check for regular messages (potential spam source)
+        # Check for regular messages, channel posts, or edited messages
+        msg = None
         if "message" in upd:
             msg = upd["message"]
+        elif "channel_post" in upd:
+            msg = upd["channel_post"]
+        elif "edited_message" in upd:
+            msg = upd["edited_message"]
+        elif "edited_channel_post" in upd:
+            msg = upd["edited_channel_post"]
+        
+        if msg:
             from_user = msg.get("from", {})
             chat = msg.get("chat", {})
             text = msg.get("text", "")
 
             logger.info(f"MESSAGE RECEIVED:")
+            logger.info(f"  Update Type: {'message' if 'message' in upd else 'channel_post' if 'channel_post' in upd else 'edited_message' if 'edited_message' in upd else 'edited_channel_post'}")
             logger.info(f"  Chat ID: {chat.get('id')}")
             logger.info(f"  Chat Type: {chat.get('type')}")
             logger.info(f"  Chat Title: {chat.get('title', 'N/A')}")

@@ -1231,6 +1231,23 @@ navigate            = Open Google Maps
 - **Location:** mdg.py line 928, lines 1094-1128
 - **Commit:** 62b7785
 
+**Bug 8: Smoothr Orders Not Detected** ⚠️ **CRITICAL**
+- **Issue:** Real Smoothr orders not parsed/logged at all - appeared in MDG but completely ignored
+- **Symptom:** Order visible in chat but no processing, no logs showing detection
+- **Root Cause 1:** Smoothr sends messages as `channel_post` updates, not regular `message` updates
+- **Root Cause 2:** Detection checked 7 fields - brittle and prone to breaking if Smoothr changes format
+- **Fix 1:** Added support for all message types:
+  - `message` - Regular messages
+  - `channel_post` - Channel posts (Smoothr orders come this way)
+  - `edited_message` - Edited regular messages  
+  - `edited_channel_post` - Edited channel posts
+- **Fix 2:** Simplified detection to only check `"- Order:"` field (unique identifier, future-proof)
+- **Location:** 
+  - main.py telegram_webhook() lines ~1160-1190 (message type handling)
+  - utils.py is_smoothr_order() lines ~873-891 (detection logic)
+- **Testing:** Use `/test_smoothr` command to verify detection still works
+- **Commit:** Pending
+
 ---
 
 **More info:** SYSTEM-REFERENCE.md
