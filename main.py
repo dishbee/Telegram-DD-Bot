@@ -460,17 +460,19 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
         logger.error(f"Vendor {vendor} not found in VENDOR_GROUP_MAP")
         return
     
-    # Order number is just the code for display
-    order_num = order_code
-    order_id = f"{smoothr_data['source']}_{order_code}"
+    # Get order type and display number using same logic as real orders
+    from utils import get_smoothr_order_type
+    order_type, order_num = get_smoothr_order_type(order_code)
+    order_id = f"{order_type}_{order_code}"
     
     logger.info(f"  Order ID: {order_id}")
+    logger.info(f"  Order num: {order_num}")
     
     # Create STATE entry
     order = {
         "order_id": order_id,
         "name": order_num,
-        "order_type": "smoothr",
+        "order_type": order_type,
         "vendors": [vendor],
         "vendor_items": {vendor: []},
         "customer": {
@@ -519,6 +521,7 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     
     logger.info(f"Sent RG-SUM for test Smoothr order {order_code} to {vendor}, message_id={msg.message_id}")
     logger.info(f"✅ Test Smoothr order {order_code} processed successfully")
+
 
 
 # =============================================================================
