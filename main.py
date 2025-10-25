@@ -902,7 +902,7 @@ async def process_smoothr_order(smoothr_data: dict):
         email = smoothr_data["customer"].get("email")
         
         # Format: 🔖 #{num} (no "dishbee" in order number line)
-        mdg_text = f"{status_text}\n\n" if status_text else ""
+        mdg_text = status_text  # status_text already has trailing \n\n
         mdg_text += f"🔖 #{order_num}\n"
         
         # Add delivery time on line 3 (before vendor) if not ASAP
@@ -2249,7 +2249,7 @@ def telegram_webhook():
                     
                     await safe_edit_message(
                         VENDOR_GROUP_MAP[vendor],
-                        order["vendor_messages"][vendor],
+                        order["rg_message_ids"][vendor],
                         text,
                         vendor_keyboard(order_id, vendor, expanded)
                     )

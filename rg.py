@@ -41,8 +41,14 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         # Build status lines (prepend to message)
         status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS)
         
-        # Get last 2 digits of order number
-        order_number = order['name'][-2:]
+        # Get order number display
+        # For Smoothr D&D App orders (3 digits): show all 3 digits
+        # For Shopify/Lieferando orders: show last 2 digits
+        order_type = order.get("order_type", "shopify")
+        if order_type == "smoothr_dnd":
+            order_number = order['name']  # Full 3 digits (e.g., "556")
+        else:
+            order_number = order['name'][-2:]  # Last 2 digits
 
         # Build message with order number
         lines = [f"🔖 Order #{order_number}", ""]
@@ -57,6 +63,8 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         # Add customer note if exists
         note = order.get("note", "")
         if note:
+            if not vendor_items:  # Add empty line only if no products shown
+                lines.append("")
             lines.append(f"❕ Note: {note}")
 
         # Join lines and prepend status
