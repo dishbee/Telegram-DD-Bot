@@ -29,6 +29,7 @@
 7. **NO providing partial or incomplete code**
 8. **NO claiming you understand** without actually tracing code flow
 9. **NO looking at existing broken code** instead of reading user's original assignment
+10. **NO MAKING THINGS UP** - if you don't see it in the code or requirements, it doesn't exist
 
 ---
 

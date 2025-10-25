@@ -275,14 +275,21 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         customer_line = f"👤 {order['customer']['name']}"
 
         full_address = order['customer']['address']
+        zip_code = order['customer'].get('zip', '')
         original_address = order['customer'].get('original_address', full_address)
         address_parts = full_address.split(',')
+        
         if len(address_parts) >= 2:
+            # Shopify format: "Street, Zip"
             street_part = address_parts[0].strip()
             zip_part = address_parts[-1].strip().strip('()')
             display_address = f"{street_part} ({zip_part})"
         else:
-            display_address = full_address.strip()
+            # Smoothr format: street only, zip stored separately
+            if zip_code:
+                display_address = f"{full_address.strip()} ({zip_code})"
+            else:
+                display_address = full_address.strip()
 
         maps_link = f"https://www.google.com/maps?q={original_address.replace(' ', '+')}"
         address_line = f"🗺️ [{display_address}]({maps_link})\n\n"
