@@ -431,25 +431,94 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
 - ASAP: {"Yes" if is_asap else "No"}
 - Order Date: {order_date_iso}"""
     
-    # Log test order info
-    source_name = "Lieferando" if is_lieferando else "D&D App"
-    asap_status = "ASAP: Yes" if is_asap else f"ASAP: No (Time: {order_time_local.strftime('%H:%M') if not is_asap else 'N/A'})"
-    logger.info(f"🧪 TEST SMOOTHR ORDER GENERATED:")
-    logger.info(f"   Source: {source_name}")
+    # Process test order directly (webhook approach doesn't work - bot can't see own messages)
+    logger.info(f"🧪 TEST SMOOTHR ORDER - Processing directly")
+    logger.info(f"   Source: {'Lieferando' if is_lieferando else 'D&D App'}")
     logger.info(f"   Code: {order_code}")
     logger.info(f"   Customer: {customer_name}")
-    logger.info(f"   {asap_status}")
     
-    # Send the raw Smoothr message to chat (will trigger webhook detection)
-    # This simulates real Smoothr behavior better than direct processing
-    logger.info(f"📤 Sending raw Smoothr message to chat for webhook detection test")
-    await safe_send_message(chat_id, smoothr_message, parse_mode=None)
+    # Build smoothr_data directly
+    smoothr_data = {
+        'order_id': order_code,
+        'source': 'smoothr_lieferando' if is_lieferando else 'smoothr_dnd_app',
+        'customer_name': customer_name,
+        'address': street,
+        'zip_code': zip_code,
+        'city': city,
+        'country': country,
+        'phone': phone,
+        'email': email,
+        'asap': is_asap,
+        'order_date': order_date_iso,
+        'items': []  # Empty for test
+    }
     
-    # NOTE: The message above will trigger the webhook handler which will:
-    # 1. Detect it as Smoothr via is_smoothr_order()
-    # 2. Parse it via parse_smoothr_order()
-    # 3. Process it via process_smoothr_order()
-    # This tests the FULL webhook flow including detection
+    # Determine vendor (use dean & david for all test orders)
+    vendor = 'dean & david'
+    vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
+    if not vendor_chat_id:
+        logger.error(f"Vendor {vendor} not found in VENDOR_GROUP_MAP")
+        return
+    
+    # Order number is just the code for display
+    order_num = order_code
+    order_id = f"{smoothr_data['source']}_{order_code}"
+    
+    logger.info(f"  Order ID: {order_id}")
+    
+    # Create STATE entry
+    order = {
+        "order_id": order_id,
+        "name": order_num,
+        "order_type": "smoothr",
+        "vendors": [vendor],
+        "vendor_items": {vendor: []},
+        "customer": {
+            "name": smoothr_data['customer_name'],
+            "phone": smoothr_data['phone'],
+            "address": f"{smoothr_data['address']}, {smoothr_data['zip_code']} {smoothr_data['city']}, {smoothr_data['country']}",
+            "original_address": f"{smoothr_data['address']}, {smoothr_data['zip_code']} {smoothr_data['city']}, {smoothr_data['country']}"
+        },
+        "total": "0.00",
+        "tips": "0.00",
+        "payment_method": "Paid",
+        "note": "",
+        "created_at": smoothr_data['order_date'],
+        "mdg_message_id": None,
+        "rg_message_ids": {},
+        "vendor_expanded": {vendor: False},
+        "requested_time": None,
+        "confirmed_time": None,
+        "confirmed_times": {},
+        "status": "new",
+        "status_history": [{"type": "new", "timestamp": now().isoformat()}],
+        "assigned_to": None,
+        "assigned_by": None,
+        "delivered_at": None,
+        "delivered_by": None,
+        "mdg_additional_messages": []
+    }
+    
+    STATE[order_id] = order
+    
+    # Send MDG-ORD
+    mdg_text = build_mdg_dispatch_text(order, show_details=False)
+    mdg_keyboard = mdg_initial_keyboard(order_id)
+    
+    msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard=mdg_keyboard)
+    order["mdg_message_id"] = msg.message_id
+    
+    logger.info(f"Sent MDG-ORD for test Smoothr order {order_code}, message_id={msg.message_id}")
+    
+    # Send RG-SUM
+    rg_text = build_vendor_summary_text(order, vendor)
+    rg_keyboard = vendor_keyboard(order_id, vendor, expanded=False)
+    
+    msg = await safe_send_message(vendor_chat_id, rg_text, keyboard=rg_keyboard)
+    order["rg_message_ids"][vendor] = msg.message_id
+    
+    logger.info(f"Sent RG-SUM for test Smoothr order {order_code} to {vendor}, message_id={msg.message_id}")
+    logger.info(f"✅ Test Smoothr order {order_code} processed successfully")
 
 
 # =============================================================================
@@ -1156,14 +1225,20 @@ def telegram_webhook():
 
         # Check for regular messages, channel posts, or edited messages
         msg = None
+        update_type = None
         if "message" in upd:
             msg = upd["message"]
+            update_type = "message"
         elif "channel_post" in upd:
             msg = upd["channel_post"]
+            update_type = "channel_post"
+            logger.info("📢 CHANNEL POST DETECTED - This is how Smoothr sends orders!")
         elif "edited_message" in upd:
             msg = upd["edited_message"]
+            update_type = "edited_message"
         elif "edited_channel_post" in upd:
             msg = upd["edited_channel_post"]
+            update_type = "edited_channel_post"
         
         if msg:
             from_user = msg.get("from", {})
@@ -1171,11 +1246,11 @@ def telegram_webhook():
             text = msg.get("text", "")
 
             logger.info(f"MESSAGE RECEIVED:")
-            logger.info(f"  Update Type: {'message' if 'message' in upd else 'channel_post' if 'channel_post' in upd else 'edited_message' if 'edited_message' in upd else 'edited_channel_post'}")
+            logger.info(f"  Update Type: {update_type}")
             logger.info(f"  Chat ID: {chat.get('id')}")
             logger.info(f"  Chat Type: {chat.get('type')}")
             logger.info(f"  Chat Title: {chat.get('title', 'N/A')}")
-            logger.info(f"  From User ID: {from_user.get('id')}")
+            logger.info(f"  From User ID: {from_user.get('id', 'N/A')}")
             logger.info(f"  From Username: {from_user.get('username', 'N/A')}")
             logger.info(f"  From First Name: {from_user.get('first_name', 'N/A')}")
             logger.info(f"  From Last Name: {from_user.get('last_name', 'N/A')}")

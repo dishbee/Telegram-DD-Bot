@@ -41,8 +41,8 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         # Build status lines (prepend to message)
         status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS)
         
-        # Get order number
-        order_number = order['name'].split('#')[-1] if '#' in order['name'] else order['name'][-2:]
+        # Get last 2 digits of order number
+        order_number = order['name'][-2:]
 
         # Build message with order number
         lines = [f"🔖 Order #{order_number}", ""]
@@ -51,7 +51,7 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         vendor_items = order.get("vendor_items", {}).get(vendor, [])
         if vendor_items:
             for item in vendor_items:
-                lines.append(item)
+                lines.append(f"{item}")
             lines.append("")  # Empty line after products
 
         # Add customer note if exists
