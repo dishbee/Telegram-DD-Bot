@@ -932,18 +932,9 @@ async def process_smoothr_order(smoothr_data: dict):
         # Send RG-SUM to dean & david group
         vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
         if vendor_chat_id:
-            # RG message: Just order number, no products
-            rg_status = build_status_lines(STATE[order_id], "rg")
-            rg_text = f"{rg_status}\n\n" if rg_status else ""
-            rg_text += f"🔖 Order #{order_num}\n"
-            rg_text += f"🧑 {customer_name}\n"
-            rg_text += f"🗺️ {address}\n"
-            if phone:
-                rg_text += f"📞 {phone}\n"
-            rg_text += f"⏰ Ordered at: {now().strftime('%H:%M')}"
-            
-            # Send with toggle button (Details/Hide)
-            rg_keyboard = vendor_keyboard(order_id, vendor, False)
+            # Use standard RG summary builder (collapsed by default, same as Shopify)
+            rg_text = build_vendor_summary_text(STATE[order_id], vendor)
+            rg_keyboard = vendor_keyboard(order_id, vendor, expanded=False)
             
             rg_msg = await safe_send_message(vendor_chat_id, rg_text, rg_keyboard)
             

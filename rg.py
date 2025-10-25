@@ -53,12 +53,30 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
             for item in vendor_items:
                 lines.append(f"{item}")
             lines.append("")  # Empty line after products
+        else:
+            # No products - show customer details directly (Smoothr orders)
+            customer_name = order['customer']['name']
+            phone = order['customer']['phone']
+            order_time = order.get('created_at', now()).strftime('%H:%M')
+            
+            # Format address: street only
+            address = order['customer']['address']
+            address_parts = address.split(',')
+            if len(address_parts) >= 2:
+                street_part = address_parts[0].strip()
+                formatted_address = street_part
+            else:
+                formatted_address = address.strip()
+            
+            lines.append(f"👤 {customer_name}")
+            lines.append(f"🗺️ {formatted_address}")
+            lines.append(f"📞 {phone}")
+            lines.append(f"⏰ Ordered at: {order_time}")
+            lines.append("")
 
         # Add customer note if exists
         note = order.get("note", "")
         if note:
-            if not vendor_items:  # Add empty line only if no products shown
-                lines.append("")
             lines.append(f"❕ Note: {note}")
 
         # Join lines and prepend status
