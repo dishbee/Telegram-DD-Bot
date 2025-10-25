@@ -431,96 +431,23 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
 - ASAP: {"Yes" if is_asap else "No"}
 - Order Date: {order_date_iso}"""
     
-    # Process test order directly (webhook approach doesn't work - bot can't see own messages)
-    logger.info(f"🧪 TEST SMOOTHR ORDER - Processing directly")
-    logger.info(f"   Source: {'Lieferando' if is_lieferando else 'D&D App'}")
+    # Log test order info
+    source_name = "Lieferando" if is_lieferando else "D&D App"
+    asap_status = "ASAP: Yes" if is_asap else f"ASAP: No (Time: {order_time_local.strftime('%H:%M') if not is_asap else 'N/A'})"
+    logger.info(f"🧪 TEST SMOOTHR ORDER GENERATED:")
+    logger.info(f"   Source: {source_name}")
     logger.info(f"   Code: {order_code}")
     logger.info(f"   Customer: {customer_name}")
+    logger.info(f"   {asap_status}")
     
-    # Build smoothr_data directly
-    smoothr_data = {
-        'order_id': order_code,
-        'source': 'smoothr_lieferando' if is_lieferando else 'smoothr_dnd_app',
-        'customer_name': customer_name,
-        'address': street,
-        'zip_code': zip_code,
-        'city': city,
-        'country': country,
-        'phone': phone,
-        'email': email,
-        'asap': is_asap,
-        'order_date': order_date_iso,
-        'items': []  # Empty for test
-    }
+    # Parse the test message and process directly (bot messages don't trigger webhooks)
+    from utils import parse_smoothr_order
+    smoothr_data = parse_smoothr_order(smoothr_message)
     
-    # Determine vendor (use dean & david for all test orders)
-    vendor = 'dean & david'
-    vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
-    if not vendor_chat_id:
-        logger.error(f"Vendor {vendor} not found in VENDOR_GROUP_MAP")
-        return
+    logger.info(f"✅ Test Smoothr order parsed: {smoothr_data['order_id']} ({smoothr_data['order_type']})")
     
-    # Get order type and display number using same logic as real orders
-    from utils import get_smoothr_order_type
-    order_type, order_num = get_smoothr_order_type(order_code)
-    order_id = f"{order_type}_{order_code}"
-    
-    logger.info(f"  Order ID: {order_id}")
-    logger.info(f"  Order num: {order_num}")
-    
-    # Create STATE entry
-    order = {
-        "order_id": order_id,
-        "name": order_num,
-        "order_type": order_type,
-        "vendors": [vendor],
-        "vendor_items": {vendor: []},
-        "customer": {
-            "name": smoothr_data['customer_name'],
-            "phone": smoothr_data['phone'],
-            "address": f"{smoothr_data['address']}, {smoothr_data['zip_code']} {smoothr_data['city']}, {smoothr_data['country']}",
-            "original_address": f"{smoothr_data['address']}, {smoothr_data['zip_code']} {smoothr_data['city']}, {smoothr_data['country']}"
-        },
-        "total": "0.00",
-        "tips": "0.00",
-        "payment_method": "Paid",
-        "note": "",
-        "created_at": smoothr_data['order_date'],
-        "mdg_message_id": None,
-        "rg_message_ids": {},
-        "vendor_expanded": {vendor: False},
-        "requested_time": None,
-        "confirmed_time": None,
-        "confirmed_times": {},
-        "status": "new",
-        "status_history": [{"type": "new", "timestamp": now().isoformat()}],
-        "assigned_to": None,
-        "assigned_by": None,
-        "delivered_at": None,
-        "delivered_by": None,
-        "mdg_additional_messages": []
-    }
-    
-    STATE[order_id] = order
-    
-    # Send MDG-ORD
-    mdg_text = build_mdg_dispatch_text(order, show_details=False)
-    mdg_keyboard = mdg_initial_keyboard(order_id)
-    
-    msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard=mdg_keyboard)
-    order["mdg_message_id"] = msg.message_id
-    
-    logger.info(f"Sent MDG-ORD for test Smoothr order {order_code}, message_id={msg.message_id}")
-    
-    # Send RG-SUM
-    rg_text = build_vendor_summary_text(order, vendor)
-    rg_keyboard = vendor_keyboard(order_id, vendor, expanded=False)
-    
-    msg = await safe_send_message(vendor_chat_id, rg_text, keyboard=rg_keyboard)
-    order["rg_message_ids"][vendor] = msg.message_id
-    
-    logger.info(f"Sent RG-SUM for test Smoothr order {order_code} to {vendor}, message_id={msg.message_id}")
-    logger.info(f"✅ Test Smoothr order {order_code} processed successfully")
+    # Process the Smoothr order (sends MDG-ORD + RG-SUM)
+    await process_smoothr_order(smoothr_data)
 
 
 
