@@ -51,7 +51,7 @@ Historical issues that caused failures:
 ### Implementation Pattern:
 1. **Analyze**: What exactly needs to change
 2. **Propose**: Specific changes with expected outcome
-3. **Confirm**: Get user approval before proceeding
+3. **Confirm**: Get user approval before proceeding - **MUST include visual representation of all affected UI elements**
 4. **Implement**: Complete working solution
 5. **Verify**: Ensure fix works without breaking other things
 
@@ -221,11 +221,12 @@ When user requests a change:
 ## Analysis
 [What exactly needs to change and why]
 
-## Proposed Changes
+## Pre-Change Checklist
 **File**: [filename]
 **Lines**: [line numbers]
 **Change**: [specific modification]
 **Expected Outcome**: [what will happen]
+**Visual Result**: [Show exact UI/message format for all affected elements]
 
 ## Pre-Change Checklist
 - [ ] Surgical change only

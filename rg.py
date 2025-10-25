@@ -82,7 +82,15 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
 
         customer_name = order['customer']['name']
         phone = order['customer']['phone']
-        order_time = order.get('created_at', now()).strftime('%H:%M')
+        
+        # Handle both string (Shopify ISO format) and datetime (Smoothr) for created_at
+        created_at = order.get('created_at', now())
+        if isinstance(created_at, str):
+            # Shopify: Extract HH:MM from ISO string "YYYY-MM-DDTHH:MM:SS..."
+            order_time = created_at[11:16]
+        else:
+            # Smoothr: datetime object
+            order_time = created_at.strftime('%H:%M')
         
         # Format address: street + building (zip)
         address = order['customer']['address']

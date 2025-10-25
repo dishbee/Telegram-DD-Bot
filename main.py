@@ -2249,7 +2249,7 @@ def telegram_webhook():
                     
                     await safe_edit_message(
                         VENDOR_GROUP_MAP[vendor],
-                        order["rg_message_ids"][vendor],
+                        order.get("rg_message_ids", {}).get(vendor),
                         text,
                         vendor_keyboard(order_id, vendor, expanded)
                     )
