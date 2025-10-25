@@ -41,36 +41,28 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         # Build status lines (prepend to message)
         status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS)
         
-        order_type = order.get("order_type", "shopify")
+        # Get order number
+        order_number = order['name'].split('#')[-1] if '#' in order['name'] else order['name'][-2:]
 
-        if order_type == "shopify":
-            order_number = order['name'][-2:] if len(order['name']) >= 2 else order['name']
-        else:
-            address_parts = order['customer']['address'].split(',')
-            order_number = address_parts[0] if address_parts else "Unknown"
+        # Build message with order number
+        lines = [f"🔖 Order #{order_number}", ""]
 
-        # Get vendor items and clean up formatting
+        # Get vendor items - ONLY show products if they exist
         vendor_items = order.get("vendor_items", {}).get(vendor, [])
         if vendor_items:
-            # Remove "- " prefix from each item line
-            cleaned_items = []
             for item in vendor_items:
-                cleaned_item = item.lstrip('- ').strip()
-                cleaned_items.append(cleaned_item)
-            items_text = "\n".join(cleaned_items)
-        else:
-            items_text = order.get("items_text", "")
+                lines.append(item)
+            lines.append("")  # Empty line after products
 
+        # Add customer note if exists
         note = order.get("note", "")
-
-        # Build message
-        text = f"🔖 Order #{order_number}\n\n"
-        text += items_text
-        
         if note:
-            text += f"\n\n❕ Note: {note}"
+            if not vendor_items:  # Add empty line only if no products shown
+                lines.append("")
+            lines.append(f"❕ Note: {note}")
 
-        # Prepend status lines at the top
+        # Join lines and prepend status
+        text = "\n".join(lines)
         return status_text + text
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building vendor summary: %s", exc)
