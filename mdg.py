@@ -563,8 +563,18 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
             if status == "delivered":
                 logger.info(f"BTN-TIME: Order {oid} - SKIP: status is delivered")
                 continue
+            
+            # Normalize created_at to datetime for comparison
+            if isinstance(created_at, str):
+                try:
+                    created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                except:
+                    logger.info(f"BTN-TIME: Order {oid} - SKIP: invalid created_at format")
+                    continue
+            else:
+                created_dt = created_at
                 
-            if created_at and created_at > one_hour_ago:
+            if created_dt and created_dt > one_hour_ago:
                 # Safe access to customer address
                 address = order_data.get('customer', {}).get('address', 'Unknown')
                 address_short = address.split(',')[0].strip() if ',' in address else address
