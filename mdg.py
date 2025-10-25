@@ -129,7 +129,19 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
             continue
             
         created_at = order_data.get("created_at")
-        if created_at and created_at > five_hours_ago:
+        if not created_at:
+            continue
+        
+        # Handle both string (Shopify) and datetime (Smoothr)
+        if isinstance(created_at, str):
+            try:
+                created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            except:
+                continue
+        else:
+            created_dt = created_at
+        
+        if created_dt > five_hours_ago:
             if order_data.get("order_type") == "shopify":
                 display_name = f"#{order_data['name'][-2:]}"
             else:
@@ -153,7 +165,19 @@ def get_last_confirmed_order(vendor: Optional[str] = None) -> Optional[Dict[str,
 
     for order_data in STATE.values():
         created_at = order_data.get("created_at")
-        if not created_at or created_at.date() != today:
+        if not created_at:
+            continue
+        
+        # Handle both string (Shopify) and datetime (Smoothr)
+        if isinstance(created_at, str):
+            try:
+                created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            except:
+                continue
+        else:
+            created_dt = created_at
+        
+        if created_dt.date() != today:
             continue
         if not order_data.get("confirmed_time"):
             continue
