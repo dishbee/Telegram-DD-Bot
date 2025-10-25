@@ -934,6 +934,7 @@ async def process_smoothr_order(smoothr_data: dict):
         if vendor_chat_id:
             # Use standard RG summary builder (collapsed by default, same as Shopify)
             rg_text = build_vendor_summary_text(STATE[order_id], vendor)
+            logger.info(f"DEBUG RG-SUM TEXT:\n{rg_text}")
             rg_keyboard = vendor_keyboard(order_id, vendor, expanded=False)
             
             rg_msg = await safe_send_message(vendor_chat_id, rg_text, rg_keyboard)
