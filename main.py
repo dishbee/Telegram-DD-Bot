@@ -1095,6 +1095,79 @@ def health_check():
         "timestamp": now().isoformat()
     }), 200
 
+
+@app.route("/smoothr", methods=["POST"])
+def smoothr_webhook():
+    """
+    Receive Smoothr orders via direct HTTP POST.
+    
+    This endpoint bypasses Telegram bot-to-bot message limitations by allowing
+    Smoothr to send orders directly to our server via HTTP POST.
+    
+    Expected JSON payload:
+    {
+        "text": "- Order: JMKBK4\\n- Type: delivery\\n- Customer: John Doe\\n...",
+        "secret": "smoothr_webhook_secret_2025"
+    }
+    
+    Returns:
+        200: Order processed successfully
+        401: Invalid secret
+        400: Missing required fields or parse error
+        500: Server error
+    """
+    try:
+        data = request.get_json(force=True)
+        
+        # Validate secret
+        secret = data.get("secret")
+        if secret != "smoothr_webhook_secret_2025":
+            logger.warning(f"Invalid Smoothr webhook secret received")
+            return jsonify({"error": "Unauthorized"}), 401
+        
+        # Get order text
+        order_text = data.get("text")
+        if not order_text:
+            logger.error("Smoothr webhook: missing 'text' field")
+            return jsonify({"error": "Missing 'text' field"}), 400
+        
+        logger.info("=== SMOOTHR HTTP WEBHOOK RECEIVED ===")
+        logger.info(f"Order text length: {len(order_text)} characters")
+        logger.info(f"Order text preview:\n{order_text[:200]}...")
+        
+        # Import parsing functions
+        from utils import is_smoothr_order, parse_smoothr_order
+        
+        # Validate format
+        if not is_smoothr_order(order_text):
+            logger.error("Smoothr webhook: text is not a valid Smoothr order format")
+            return jsonify({"error": "Invalid Smoothr order format"}), 400
+        
+        # Parse order data
+        smoothr_data = parse_smoothr_order(order_text)
+        order_id = smoothr_data["order_id"]
+        
+        logger.info(f"✅ Parsed Smoothr order: {order_id} ({smoothr_data['order_type']})")
+        
+        # Process order asynchronously (same as Telegram channel_post flow)
+        run_async(process_smoothr_order(smoothr_data))
+        
+        return jsonify({
+            "status": "success",
+            "order_id": order_id,
+            "order_type": smoothr_data["order_type"]
+        }), 200
+        
+    except ValueError as e:
+        logger.error(f"Smoothr webhook parse error: {e}")
+        return jsonify({"error": f"Parse error: {str(e)}"}), 400
+        
+    except Exception as e:
+        logger.error(f"Smoothr webhook error: {e}")
+        logger.exception(e)
+        return jsonify({"error": "Internal server error"}), 500
+
+
 # --- TELEGRAM WEBHOOK ---
 # =============================================================================
 # ASSIGNMENT SYSTEM ARCHITECTURE
