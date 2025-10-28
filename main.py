@@ -86,6 +86,7 @@ app = Flask(__name__)
 # --- ENVIRONMENT VARIABLES ---
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBHOOK_SECRET = os.environ["SHOPIFY_WEBHOOK_SECRET"]
+SMOOTHR_WEBHOOK_SECRET = os.environ.get("SMOOTHR_WEBHOOK_SECRET", "8Lfwef9XRhmCaOnR0GizQd53VXLCiPdF")
 DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
 VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
@@ -1121,7 +1122,7 @@ def smoothr_webhook():
         
         # Validate secret
         secret = data.get("secret")
-        if secret != "smoothr_webhook_secret_2025":
+        if secret != SMOOTHR_WEBHOOK_SECRET:
             logger.warning(f"Invalid Smoothr webhook secret received")
             return jsonify({"error": "Unauthorized"}), 401
         
