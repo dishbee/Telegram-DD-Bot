@@ -622,15 +622,19 @@ async def handle_delivery_completion(order_id: str, user_id: int):
                     rg.vendor_keyboard(order_id, vendor, expanded)
                 )
 
-        # Update UPC message with delivered status
+        # Update UPC message with delivered status and replace keyboard with Undeliver button
         upc_msg_id = order.get("upc_message_id")
         if upc_msg_id:
             updated_upc_text = build_assignment_message(order)
+            # Replace entire keyboard with single Undeliver button
+            undeliver_keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("❌ Undeliver", callback_data=f"undeliver_order|{order_id}|{int(now().timestamp())}")
+            ]])
             await safe_edit_message(
                 user_id,
                 upc_msg_id,
                 updated_upc_text,
-                assignment_cta_keyboard(order_id)  # Keep buttons (delivered button will be hidden by keyboard logic)
+                undeliver_keyboard
             )
 
         # NO confirmation message to courier (removed as per requirement)
@@ -643,6 +647,95 @@ async def handle_delivery_completion(order_id: str, user_id: int):
 
     except Exception as e:
         logger.error(f"Error handling delivery completion: {e}")
+
+
+async def handle_undelivery(order_id: str, user_id: int):
+    """
+    Handle order undelivery - revert delivered status back to assigned.
+    
+    Flow:
+    1. Courier clicks "❌ Undeliver" button in their private chat
+    2. Revert STATE: remove delivered_at, delivered_by, pop last delivered history entry
+    3. Status changes from "delivered" back to "assigned"
+    4. Update all messages (MDG, RG, UPC) to show assigned status
+    5. Restore full UPC keyboard with all CTA buttons
+    6. Send notification to MDG about undelivery
+    
+    Args:
+        order_id: Order ID
+        user_id: Courier's Telegram user_id who is undelivering
+    """
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found for undelivery")
+            return
+        
+        if order.get("status") != "delivered":
+            logger.warning(f"Order {order_id} is not delivered, cannot undeliver")
+            return
+        
+        # Get courier name for notification
+        courier_info = COURIER_MAP.get(str(user_id), {})
+        courier_name = courier_info.get("username", f"User{user_id}")
+        
+        # Revert STATE fields
+        order["status"] = "assigned"
+        order.pop("delivered_at", None)
+        order.pop("delivered_by", None)
+        
+        # Remove last delivered entry from status_history
+        if order["status_history"] and order["status_history"][-1].get("type") == "delivered":
+            order["status_history"].pop()
+            logger.info(f"Removed delivered entry from status_history for order {order_id}")
+        
+        # Send notification to MDG
+        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+        undeliver_msg = f"🔖 #{order_num} was undelivered by {courier_name} at {now().strftime('%H:%M')}"
+        await safe_send_message(DISPATCH_MAIN_CHAT_ID, undeliver_msg)
+        
+        # Update MDG original order message to remove delivered status
+        if "mdg_message_id" in order:
+            import mdg
+            updated_text = mdg.build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
+            await safe_edit_message(
+                DISPATCH_MAIN_CHAT_ID,
+                order["mdg_message_id"],
+                updated_text,
+                mdg.mdg_time_request_keyboard(order_id)
+            )
+        
+        # Update all RG messages to remove delivered status
+        for vendor in order.get("vendors", []):
+            vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+            rg_msg_id = order.get("rg_message_ids", {}).get(vendor) or order.get("vendor_messages", {}).get(vendor)
+            if vendor_group_id and rg_msg_id:
+                import rg
+                expanded = order.get("vendor_expanded", {}).get(vendor, False)
+                text = rg.build_vendor_details_text(order, vendor) if expanded else rg.build_vendor_summary_text(order, vendor)
+                await safe_edit_message(
+                    vendor_group_id,
+                    rg_msg_id,
+                    text,
+                    rg.vendor_keyboard(order_id, vendor, expanded)
+                )
+        
+        # Update UPC message - restore full keyboard
+        upc_msg_id = order.get("upc_message_id")
+        if upc_msg_id:
+            updated_upc_text = build_assignment_message(order)
+            # Restore original full CTA keyboard
+            await safe_edit_message(
+                user_id,
+                upc_msg_id,
+                updated_upc_text,
+                assignment_cta_keyboard(order_id)
+            )
+        
+        logger.info(f"Order {order_id} undelivered by user {user_id} ({courier_name})")
+        
+    except Exception as e:
+        logger.error(f"Error handling undelivery: {e}")
 
 
 async def update_group_on_delivery(delivered_order_id: str):

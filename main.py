@@ -1426,10 +1426,10 @@ def telegram_webhook():
                             order_num = order['name']  # Smoothr: use full order number (TD, 500, etc.)
                         
                         if order_num:
-                            msg = f"Can you prepare 🔖 #{order_num} ASAP?"
+                            msg = f"Can you prepare 🔖 #{order_num} ⚡ Asap?"
                         else:
                             addr = order['customer']['address'].split(',')[0]
-                            msg = f"Can you prepare *{addr}* ASAP?"
+                            msg = f"Can you prepare *{addr}* ⚡ Asap?"
                         
                         # Send with restaurant response buttons
                         await safe_send_message(
@@ -1653,10 +1653,10 @@ def telegram_webhook():
                                 order_num = order['name']  # Smoothr: use full order number (TD, 500, etc.)
                             
                             if order_num:
-                                msg = f"Can you prepare 🔖 #{order_num} ASAP?"
+                                msg = f"Can you prepare 🔖 #{order_num} ⚡ Asap?"
                             else:
                                 addr = order['customer']['address'].split(',')[0]
-                                msg = f"Can you prepare *{addr}* ASAP?"
+                                msg = f"Can you prepare *{addr}* ⚡ Asap?"
                             
                             # ASAP request buttons
                             await safe_send_message(
@@ -3164,6 +3164,20 @@ def telegram_webhook():
                     
                     await upc.handle_delivery_completion(order_id, user_id)
                 
+                elif action == "undeliver_order":
+                    """
+                    Courier reverts order from delivered back to assigned status.
+                    
+                    Flow: Removes delivered_at/delivered_by, pops delivered history entry,
+                    updates all messages (MDG/RG/UPC) to show assigned status,
+                    restores full UPC keyboard with CTA buttons.
+                    """
+                    order_id = data[1]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} undelivering order {order_id}")
+                    
+                    await upc.handle_undelivery(order_id, user_id)
+            
             except Exception as e:
                 logger.error(f"Callback processing error: {e}")
         
