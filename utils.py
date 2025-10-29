@@ -656,15 +656,11 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
                 return "🚨 New order\n\n"
         
         elif status_type == "asap_sent":
-            # Multi-vendor: separate line per vendor
-            lines = []
-            for entry in reversed(status_history):
-                if entry.get("type") == "asap_sent":
-                    vendor = entry.get("vendor", "")
-                    chef_emoji = get_chef_emoji(vendor)
-                    shortcut = get_vendor_shortcut(vendor)
-                    lines.append(f"📍 Sent ⚡ Asap to {chef_emoji} {shortcut}")
-            return "\n".join(reversed(lines)) + "\n\n"
+            # Show only LATEST asap_sent status (replace, don't accumulate)
+            vendor = latest.get("vendor", "")
+            chef_emoji = get_chef_emoji(vendor)
+            shortcut = get_vendor_shortcut(vendor)
+            return f"📍 Sent ⚡ Asap to {chef_emoji} {shortcut}\n\n"
         
         elif status_type == "time_sent":
             # Multi-vendor: separate line per vendor with their requested time
@@ -883,8 +879,9 @@ def is_smoothr_order(text: str) -> bool:
     """
     Detect Smoothr orders by unique '- Order:' field format.
     
-    Smoothr orders always start with hyphen and contain '- Order:' field.
-    This format is unique to Smoothr integration and won't match other messages.
+    Smoothr orders contain '- Order:' field and other hyphen-prefixed fields.
+    The message may have "Smoothr BOT" as first line (sent by Smoothr Bot),
+    or start directly with "-" (sent by channel).
     
     Format examples:
     - Order: BMW74X (6 chars: letters+numbers, Lieferando)
@@ -895,12 +892,13 @@ def is_smoothr_order(text: str) -> bool:
         text: Message text to check
         
     Returns:
-        True if text starts with hyphen and contains '- Order:' field
+        True if text contains '- Order:' field
     """
     if not text:
         return False
     
-    return text.strip().startswith("-") and "- Order:" in text
+    # Check if message contains Smoothr order format (regardless of first line)
+    return "- Order:" in text and "- Customer:" in text
 
 
 def get_smoothr_order_type(order_code: str) -> tuple[str, str]:

@@ -283,25 +283,12 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int):
             logger.error(f"Order {order_id} not found for assignment")
             return
 
-        # Build assignment message
-        assignment_text = build_assignment_message(order)
-
-        # Send to user's private chat
-        msg = await safe_send_message(
-            user_id,
-            assignment_text,
-            assignment_cta_keyboard(order_id)
-        )
-
-        # Update order status
+        # Update order status and history BEFORE building message
         order["assigned_to"] = user_id
         order["assigned_at"] = now()
         order["status"] = "assigned"
-        order["upc_message_id"] = msg.message_id  # Track UPC message
-        order["upc_assignment_message_id"] = msg.message_id  # Track for group updates (backwards compat)
-
-        # Append status to history
-        # Get courier info
+        
+        # Append status to history BEFORE building message
         courier_info = COURIER_MAP.get(str(user_id), {})
         courier_name = courier_info.get("username", f"User{user_id}")
         
@@ -311,6 +298,20 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int):
             "courier_id": user_id,
             "timestamp": now()
         })
+
+        # Build assignment message (now has status in history)
+        assignment_text = build_assignment_message(order)
+
+        # Send to user's private chat
+        msg = await safe_send_message(
+            user_id,
+            assignment_text,
+            assignment_cta_keyboard(order_id)
+        )
+
+        # Track UPC message IDs
+        order["upc_message_id"] = msg.message_id
+        order["upc_assignment_message_id"] = msg.message_id  # Backwards compat
 
         # Track assignment message
         if "assignment_messages" not in order:

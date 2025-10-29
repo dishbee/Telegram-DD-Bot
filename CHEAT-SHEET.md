@@ -1,24 +1,37 @@
-# ⚡ CHEAT SHEET
+# ⚡ TELEGRAM BOT CHEAT SHEET
+
+> **Purpose**: Quick reference for prompting AI agents with shortcuts, message formats, button actions, and workflows.
+
+---
+
+## 🎯 QUICK NAVIGATION
+
+| Section | Description |
+|---------|-------------|
+| [📡 **CHANNELS**](#-channels) | MDG, RG, UPC communication surfaces |
+| [💬 **MESSAGES**](#-messages) | All message formats (MDG-ORD, RG-SUM, UPC-ASSIGN, etc.) |
+| [🔘 **BUTTONS**](#-buttons) | All interactive buttons and actions |
+| [⏱️ **STATUS**](#️-status-system) | Status lines and auto-updates |
+| [🔗 **CALLBACKS**](#-callbacks) | Callback data formats |
+| [💾 **STATE**](#-state) | Order state structure |
+| [⚙️ **FUNCTIONS**](#️-functions) | Key functions reference |
+| [🚀 **WORKFLOWS**](#-workflows) | Complete order flows (Shopify + Smoothr) |
+| [🏪 **RESTAURANTS**](#-restaurants) | Restaurant shortcuts (JS, LR, DD...) |
+| [🚴 **COURIERS**](#-couriers) | Courier shortcuts (B1, B2, B3...) |
 
 ---
 
 ## 📡 CHANNELS
 
-```
-MDG  = Main Dispatch Group (all coordinators + couriers)
-RG   = Restaurant Groups (vendor-specific chats)
-UPC  = User Private Chat (individual couriers)
-```
+Three communication surfaces handle the complete order lifecycle:
 
----
+| Shortcut | Full Name | Purpose | Who Sees It |
+|----------|-----------|---------|-------------|
+| **MDG** | Main Dispatch Group | Order arrival, time coordination, assignment | Coordinators + Couriers |
+| **RG** | Restaurant Groups | Vendor-specific details, time responses | Specific vendor only |
+| **UPC** | User Private Chat | Courier assignment, delivery actions | Assigned courier only |
 
-## 🔖 ORDER REFERENCE
-
-```
-order_id  = Shopify ID (e.g., 7404590039306)
-#{num}    = Display number (last 2 digits, e.g., #62)
-🔖 #{num} = Order reference with bookmark emoji
-```
+**Flow**: Shopify/Smoothr → **MDG + RG** → Time negotiation → Assignment → **UPC** → Delivery
 
 ---
 

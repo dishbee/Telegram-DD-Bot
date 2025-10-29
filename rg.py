@@ -51,13 +51,14 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
             order_number = order['name'][-2:]  # Last 2 digits
 
         # Build message with order number
-        lines = [f"🔖 Order #{order_number}", ""]
+        lines = [f"🔖 #{order_number}", ""]
 
         # Get vendor items - ONLY show products if they exist
         vendor_items = order.get("vendor_items", {}).get(vendor, [])
         if vendor_items:
             for item in vendor_items:
-                lines.append(f"{item}")
+                clean_item = item.lstrip('- ').strip()
+                lines.append(clean_item)
             lines.append("")  # Empty line after products
 
         # Add customer note if exists
@@ -148,21 +149,23 @@ def restaurant_response_keyboard(request_type: str, order_id: str, vendor: str) 
     """Build restaurant response buttons for time requests."""
     try:
         rows = []
-
+        
         if request_type == "ASAP":
             rows.append([
-                InlineKeyboardButton("⌚️ Yes at:", callback_data=f"prepare|{order_id}|{vendor}")
+                InlineKeyboardButton("⏰ Yes at:", callback_data=f"prepare|{order_id}|{vendor}")
             ])
         else:
             rows.append([
-                InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}"),
-                InlineKeyboardButton("⌚️ Later at", callback_data=f"later|{order_id}|{vendor}")
+                InlineKeyboardButton("Works 👍", callback_data=f"works|{order_id}|{vendor}")
             ])
-
+            rows.append([
+                InlineKeyboardButton("⏰ Later at", callback_data=f"later|{order_id}|{vendor}")
+            ])
+        
         rows.append([
             InlineKeyboardButton("🚩 Problem", callback_data=f"wrong|{order_id}|{vendor}")
         ])
-
+        
         return InlineKeyboardMarkup(rows)
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building restaurant response keyboard: %s", exc)
