@@ -1473,7 +1473,7 @@ def telegram_webhook():
                             vendor_group_id,
                             rg_msg_id,
                             build_vendor_summary_text(order, vendor),
-                            None  # No keyboard change
+                            vendor_keyboard(order_id, vendor, False)  # Preserve Details button
                         )
                     
                     # Clean up additional MDG messages
@@ -1714,7 +1714,7 @@ def telegram_webhook():
                                 vendor_group_id,
                                 rg_msg_id,
                                 build_vendor_summary_text(order, vendor),
-                                None  # No keyboard change
+                                vendor_keyboard(order_id, vendor, False)  # Preserve Details button
                             )
                     
                     # Clean up additional MDG messages
@@ -2063,7 +2063,7 @@ def telegram_webhook():
                                 vendor_group_id,
                                 rg_msg_id,
                                 build_vendor_summary_text(order, vendor),
-                                None  # No keyboard change
+                                vendor_keyboard(order_id, vendor, False)  # Preserve Details button
                             )
                     
                     # Clean up additional MDG messages
