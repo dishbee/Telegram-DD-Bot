@@ -390,11 +390,26 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                         items_text_parts.append(clean_item)
                 items_text = "\n".join(items_text_parts)
             else:
-                # Single vendor product display
-                items_text = order.get("items_text", "")
-                lines = items_text.split('\n')
-                clean_lines = [line.lstrip('- ').strip() for line in lines if line.strip()]
-                items_text = '\n'.join(clean_lines)
+                # Single vendor product display (works for both Shopify and Smoothr)
+                vendor_items = order.get("vendor_items", {})
+                items_text_parts: List[str] = []
+                
+                # Get products from vendor_items (populated for both order types)
+                if vendor_items and vendors:
+                    vendor = vendors[0]  # Single vendor
+                    vendor_products = vendor_items.get(vendor, [])
+                    for item in vendor_products:
+                        clean_item = item.lstrip('- ').strip()
+                        items_text_parts.append(clean_item)
+                
+                # Fallback to items_text if vendor_items not available
+                if not items_text_parts:
+                    items_text = order.get("items_text", "")
+                    lines = items_text.split('\n')
+                    clean_lines = [line.lstrip('- ').strip() for line in lines if line.strip()]
+                    items_text = '\n'.join(clean_lines)
+                else:
+                    items_text = '\n'.join(items_text_parts)
 
             total = order.get("total", "0.00€")
             if order_type == "shopify":
@@ -408,6 +423,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             email = order['customer'].get('email')
             if email:
                 text += f"\n✉️ {email}\n"
+        else:
+            # Collapsed view - no products shown
+            pass
 
         # Prepend status lines at the top
         return status_text + text

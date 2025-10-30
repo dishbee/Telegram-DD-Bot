@@ -1135,6 +1135,7 @@ def smoothr_webhook():
         logger.info("=== SMOOTHR HTTP WEBHOOK RECEIVED ===")
         logger.info(f"Order text length: {len(order_text)} characters")
         logger.info(f"Order text preview:\n{order_text[:200]}...")
+        logger.info(f"FULL SMOOTHR PAYLOAD:\n{order_text}")
         
         # Import parsing functions
         from utils import is_smoothr_order, parse_smoothr_order
@@ -1149,6 +1150,7 @@ def smoothr_webhook():
         order_id = smoothr_data["order_id"]
         
         logger.info(f"✅ Parsed Smoothr order: {order_id} ({smoothr_data['order_type']})")
+        logger.info(f"PARSED SMOOTHR DATA: {json.dumps(smoothr_data, indent=2, ensure_ascii=False)}")
         
         # Process order asynchronously (same as Telegram channel_post flow)
         run_async(process_smoothr_order(smoothr_data))
