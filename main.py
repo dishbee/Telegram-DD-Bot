@@ -479,6 +479,8 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     logger.info(f"   Code: {order_code}")
     logger.info(f"   Customer: {customer_name}")
     logger.info(f"   {asap_status}")
+    logger.info(f"   Tip: {tip_amount if tip_amount else '0.00'} EUR")
+    logger.info(f"   Note: {customer_note if customer_note else 'None'}")
     
     # Parse the test message and process directly (bot messages don't trigger webhooks)
     from utils import parse_smoothr_order
@@ -899,6 +901,9 @@ async def process_smoothr_order(smoothr_data: dict):
         logger.info(f"Processing Smoothr order {order_id} ({order_type})")
         logger.info(f"  Order num: {order_num}")
         logger.info(f"  Customer: {smoothr_data['customer']['name']}")
+        logger.info(f"  DEBUG - Parsed tip: {smoothr_data.get('tip')}")
+        logger.info(f"  DEBUG - Parsed note: {smoothr_data.get('note')}")
+        logger.info(f"  DEBUG - Products count: {len(smoothr_data.get('products', []))}")
     
         # Vendor is always "dean & david" for Smoothr orders
         vendor = "dean & david"
@@ -959,9 +964,24 @@ async def process_smoothr_order(smoothr_data: dict):
         if not smoothr_data["is_asap"] and smoothr_data.get("requested_delivery_time"):
             mdg_text += f"⏰ {smoothr_data['requested_delivery_time']}\n"
         
-        mdg_text += f"👩‍🍳 {vendor_shortcut}\n"  # Just vendor, no product count (no products yet)
+        # Calculate product count for vendor line
+        product_count = sum(
+            int(item.split(' x ')[0]) for item in smoothr_data.get("products", []) if ' x ' in item
+        )
+        
+        mdg_text += f"👩‍🍳 {vendor_shortcut} 🍕 {product_count}\n"
         mdg_text += f"👤 {customer_name}\n"
         mdg_text += f"🗺️ [{address} ({zip_code})]({f'https://www.google.com/maps?q={original_address}'})\n\n"
+        
+        # Add note if present
+        note = smoothr_data.get("note")
+        if note:
+            mdg_text += f"❕ Note: {note}\n"
+        
+        # Add tip if present and > 0
+        tip = smoothr_data.get("tip")
+        if tip and float(tip) > 0:
+            mdg_text += f"❕ Tip: {float(tip):.2f}€\n"
         
         # Add email (expanded view only - will be handled when Details clicked)
         # For now, just store it in STATE
