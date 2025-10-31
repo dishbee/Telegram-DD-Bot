@@ -822,6 +822,11 @@ async def process_shopify_webhook(payload: dict):
                 if rg_msg:
                     STATE[order_id]["rg_message_ids"][vendor] = rg_msg.message_id
                     logger.info(f"Sent RG-SUM to {vendor} for order {order_id}")
+                else:
+                    logger.error(f"❌ CRITICAL: safe_send_message returned None/False for {vendor}, order {order_id}")
+                    logger.error(f"   RG message_id NOT stored - Details button will fail!")
+            else:
+                logger.warning(f"No vendor_chat_id found for {vendor}, order {order_id}")
         
         logger.info(f"✅ Shopify order {order_id} processed successfully")
         
@@ -943,6 +948,11 @@ async def process_smoothr_order(smoothr_data: dict):
             if rg_msg:
                 STATE[order_id]["rg_message_ids"][vendor] = rg_msg.message_id
                 logger.info(f"Sent RG-SUM for Smoothr order {order_id} to {vendor}, message_id={rg_msg.message_id}")
+            else:
+                logger.error(f"❌ CRITICAL: safe_send_message returned None/False for {vendor}, Smoothr order {order_id}")
+                logger.error(f"   RG message_id NOT stored - Details button will fail!")
+        else:
+            logger.warning(f"No vendor_chat_id found for {vendor}, Smoothr order {order_id}")
         
         logger.info(f"✅ Smoothr order {order_id} processed successfully")
     
