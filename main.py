@@ -2174,9 +2174,9 @@ def telegram_webhook():
                 
                 elif action == "req_exact":
                     order_id = data[1]
-                    # data[2] is timestamp, NOT vendor - vendor only passed for multi-vendor workflows
-                    vendor = None
-                    logger.info(f"Processing REQUEST EXACT TIME for order {order_id}")
+                    # Extract vendor if present (multi-vendor workflow)
+                    vendor = data[2] if len(data) > 2 and data[2] in VENDOR_GROUP_MAP else None
+                    logger.info(f"Processing REQUEST EXACT TIME for order {order_id}, vendor: {vendor}")
                     
                     # Show hour picker for exact time
                     msg = await safe_send_message(
