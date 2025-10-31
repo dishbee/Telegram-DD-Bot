@@ -936,6 +936,11 @@ def parse_smoothr_order(text: str) -> dict:
     - Address (street + building) and zip
     - ASAP status
     - Requested delivery time (UTC → Local +2h)
+    - Products list (cleaned product names)
+    - Customer note
+    - Tip amount
+    - Payment method
+    - Delivery fee
     
     Args:
         text: Smoothr order message text
@@ -1000,6 +1005,57 @@ def parse_smoothr_order(text: str) -> dict:
             except Exception as e:
                 logger.error(f"Failed to parse order date '{order_date_str}': {e}")
                 order_data["requested_delivery_time"] = None
+        
+        elif line.startswith("- Customer Note:"):
+            note_text = line.split(":", 1)[1].strip()
+            if note_text and note_text.lower() != 'none':
+                order_data["note"] = note_text
+        
+        elif line.startswith("- Payment method:"):
+            payment_text = line.split(":", 1)[1].strip()
+            order_data["payment_method"] = payment_text
+        
+        elif line.startswith("- Tip:"):
+            try:
+                tip_text = line.split(":", 1)[1].strip()
+                # Extract numeric value (e.g., "3.50 EUR" -> "3.50")
+                tip_amount = tip_text.split()[0]
+                order_data["tip"] = tip_amount
+            except Exception as e:
+                logger.error(f"Failed to parse tip '{line}': {e}")
+        
+        elif line.startswith("- Delivery Fee:"):
+            try:
+                fee_text = line.split(":", 1)[1].strip()
+                # Extract numeric value (e.g., "2.00 EUR" -> "2.00")
+                fee_amount = fee_text.split()[0]
+                order_data["delivery_fee"] = fee_amount
+            except Exception as e:
+                logger.error(f"Failed to parse delivery fee '{line}': {e}")
+        
+        elif line.startswith("- Products:"):
+            products_text = line.split(":", 1)[1].strip()
+            # Products format: "1 x Product Name*; 2 x Another*;"
+            # Split by *; to get individual products
+            product_lines = [p.strip() for p in products_text.split('*;') if p.strip()]
+            
+            order_data["products"] = []
+            for product_line in product_lines:
+                # Remove trailing * if present
+                product_line = product_line.rstrip('*').strip()
+                
+                # Parse "qty x product_name" format
+                if ' x ' in product_line:
+                    try:
+                        qty_str, product_name = product_line.split(' x ', 1)
+                        qty = int(qty_str.strip())
+                        # Clean product name using existing function
+                        cleaned_name = clean_product_name(product_name.strip())
+                        order_data["products"].append(f"{qty} x {cleaned_name}")
+                    except Exception as e:
+                        # If parsing fails, add as-is
+                        logger.error(f"Failed to parse product line '{product_line}': {e}")
+                        order_data["products"].append(product_line)
                 
         elif in_address_block and line and not line.startswith("-"):
             # Collect address lines until next field
@@ -1047,6 +1103,11 @@ def parse_smoothr_order(text: str) -> dict:
         },
         "is_asap": order_data["is_asap"],
         "requested_delivery_time": None if order_data["is_asap"] else order_data.get("requested_delivery_time"),
+        "products": order_data.get("products", []),
+        "note": order_data.get("note"),
+        "tip": order_data.get("tip"),
+        "payment_method": order_data.get("payment_method"),
+        "delivery_fee": order_data.get("delivery_fee"),
         "smoothr_raw": text  # Keep original for debugging
     }
     

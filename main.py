@@ -419,6 +419,45 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     # Format as ISO string (Smoothr format)
     order_date_iso = order_time_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
     
+    # Random products (2-4 items)
+    products_list = [
+        "Caesar Salad",
+        "Green Smoothie",
+        "Berry Blast Bowl",
+        "Chicken Wrap",
+        "Quinoa Bowl",
+        "Protein Shake",
+        "Veggie Burger",
+        "Sweet Potato Fries"
+    ]
+    num_products = random.randint(2, 4)
+    selected_products = random.sample(products_list, num_products)
+    products_str = ""
+    for product in selected_products:
+        qty = random.randint(1, 2)
+        products_str += f"{qty} x {product}*; "
+    
+    # Random tip (2-5 EUR or none)
+    tip_amount = random.choice([None, "2.00", "2.50", "3.00", "3.50", "4.00", "4.50", "5.00"])
+    tip_line = f"- Tip: {tip_amount} EUR\n" if tip_amount else "- Tip: 0.00 EUR\n"
+    
+    # Random customer note (50% chance)
+    notes = [
+        "Please ring the doorbell twice",
+        "Leave at the door",
+        "Call when you arrive",
+        "Contactless delivery please",
+        None
+    ]
+    customer_note = random.choice(notes)
+    note_line = f"- Customer Note: {customer_note if customer_note else 'None'}\n"
+    
+    # Payment method (always Paid for Smoothr)
+    payment_line = "- Payment method: Paid\n"
+    
+    # Delivery fee (fixed)
+    delivery_fee_line = "- Delivery Fee: 2.00 EUR\n"
+    
     # Build Smoothr message
     smoothr_message = f"""- Order: {order_code}
 - Type: delivery
@@ -430,7 +469,8 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
 - Phone: {phone}
 - Email: {email}
 - ASAP: {"Yes" if is_asap else "No"}
-- Order Date: {order_date_iso}"""
+- Order Date: {order_date_iso}
+{note_line}{payment_line}{tip_line}{delivery_fee_line}- Products: {products_str}"""
     
     # Log test order info
     source_name = "Lieferando" if is_lieferando else "D&D App"
@@ -864,6 +904,11 @@ async def process_smoothr_order(smoothr_data: dict):
         # Vendor is always "dean & david" for Smoothr orders
         vendor = "dean & david"
         vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
+        
+        # Build vendor_items dict from parsed products
+        vendor_items = {}
+        if smoothr_data.get("products"):
+            vendor_items[vendor] = smoothr_data["products"]
     
         # Create STATE entry
         STATE[order_id] = {
@@ -871,12 +916,12 @@ async def process_smoothr_order(smoothr_data: dict):
             "name": order_num,  # Just the display number (e.g., "500" or "TD")
             "order_type": order_type,  # "smoothr_dnd" or "smoothr_lieferando"
             "vendors": [vendor],
-            "vendor_items": {},  # No products yet
+            "vendor_items": vendor_items,
             "customer": smoothr_data["customer"],
             "total": None,  # Not available
-            "tips": None,  # Not available
-            "note": None,  # Not available
-            "payment_method": None,  # Not available
+            "tips": smoothr_data.get("tip"),
+            "note": smoothr_data.get("note"),
+            "payment_method": smoothr_data.get("payment_method"),
             "requested_time": smoothr_data.get("requested_delivery_time"),
             "confirmed_time": None,
             "confirmed_times": {},

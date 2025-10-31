@@ -60,6 +60,101 @@ Historical issues that have caused failures:
 
 **Mindset**: Respect working code - don't "improve" what isn't broken. Quality over speed. When in doubt, ask for clarification rather than assume.
 
+## 🔖 MANDATORY PRE-IMPLEMENTATION CHECKLIST
+
+**Before writing ANY code, you MUST complete this checklist and show it to the user:**
+
+### 1️⃣ TRACE THE ACTUAL CODE FLOW
+
+**Show the EXACT execution path through ALL files:**
+
+```
+Action: [user clicks button/webhook arrives]
+  ↓ [describe what happens]
+File: [filename.py] Line: [###]
+  ↓ [what this line does]
+File: [filename.py] Line: [###]
+  ↓ [what this line does]
+[continue until completion]
+```
+
+**Must include:**
+- Every file involved
+- Every line number that executes
+- Every function call
+- Every STATE access
+- Every import statement
+
+**If you skip this, response will be rejected.**
+
+### 2️⃣ WHAT EXACTLY ARE YOU CHANGING?
+
+**List ONLY the changes needed:**
+
+```
+File: [filename.py]
+Lines: [###-###]
+Current behavior: [what it does now]
+New behavior: [what it will do]
+Why needed: [one sentence]
+```
+
+**Red flags to check:**
+- ❌ Changing MORE than requested?
+- ❌ "Improving" working code?
+- ❌ Touching multiple files when one would work?
+- ❌ Adding unrequested features?
+
+### 3️⃣ WHAT COULD THIS BREAK?
+
+**List 3 things this change could break:**
+
+1. [specific feature/flow that might break]
+2. [specific feature/flow that might break]
+3. [specific feature/flow that might break]
+
+**Verification checklist:**
+- ✅ STATE imports (any `from main import STATE` inside functions?)
+- ✅ Circular dependencies (file A imports B, B imports A?)
+- ✅ Callback data format (will old buttons still work?)
+- ✅ Multi-vendor vs single-vendor paths
+- ✅ Existing working buttons/keyboards
+
+### 4️⃣ SHOW DIFF ONLY - NO EXPLANATIONS
+
+**Use this exact format:**
+
+```diff
+--- a/filename.py
++++ b/filename.py
+@@ -line,count +line,count @@
+-old code
++new code
+ unchanged context
+```
+
+**Rules:**
+- Show ONLY actual code changes
+- Include 3 lines of context before/after
+- NO prose explanations
+- NO "this will fix..." comments
+- Just the diff
+
+### 5️⃣ FINAL CONFIRMATION
+
+**Answer these YES/NO questions:**
+
+- [ ] Did I trace the FULL code path through all files?
+- [ ] Am I changing ONLY what was requested?
+- [ ] Did I check for circular imports and STATE corruption?
+- [ ] Did I list 3 specific things this could break?
+- [ ] Is my diff clean with NO extra changes?
+- [ ] Did I verify callback data formats won't break old buttons?
+
+**If ANY answer is NO, STOP and redo the checklist.**
+
+---
+
 ## Architecture Overview
 
 Flask webhook service orchestrating multi-channel Telegram order dispatch for food delivery. Three communication surfaces handle the full order lifecycle:

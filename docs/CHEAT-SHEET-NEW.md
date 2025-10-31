@@ -57,15 +57,19 @@
 
 #### **MDG-CONF** - All Vendors Confirmed
 ```
-📍 Confirmed 👍 {time} by {chef} {Shortcut}
-
-🔖 #{num} - {source} 🍕 {count}
+ #{num} - dishbee 🍕 {count}+{count} (multi)
+� #{num} - dishbee 🍕 {count} (single)
 
 {chef} {Shortcut}: {time}
 {chef} {Shortcut}: {time} (multi-vendor)
 
 [👈 Assign to myself] [👉 Assign to...]
 ```
+
+**Product Count Logic:**
+- Parses `vendor_items` to sum quantities per vendor
+- Multi-vendor: Shows `+` separated counts (e.g., `2+3+1`)
+- Single-vendor: Shows single count
 
 ---
 
@@ -198,9 +202,16 @@ BTN-MINUTE     00, 03, 06... 57 (3-min intervals)
 ```
 BTN-ASSIGN-ME  👈 Assign to myself
 BTN-ASSIGN-TO  👉 Assign to...
-BTN-COURIER    Individual courier buttons
+BTN-COURIER    Individual courier buttons (from live MDG admins)
+BTN-COMBINE    📌 Assigned orders (shows combine menu)
 BTN-BACK       ← Back
 ```
+
+**Combine Orders:**
+- Shows all assigned (not delivered) orders
+- Button format: `{num} - {Shortcut} - {time} - {addr} (🐝{courier})`
+- Example: `"02 - LR - 20:46 - Ledererga. 15 (🐝B1)"`
+- Clicking order combines current order with selected order
 
 ---
 
@@ -240,14 +251,25 @@ BTN-V-MINUTE   Minute selection
 
 ### 💼 UPC Buttons
 
+**Before Delivery:**
 ```
 BTN-NAVIGATE   🧭 Navigate
 BTN-DELAY      ⏳ Delay
 BTN-UNASSIGN   🚫 Unassign
 BTN-CALL       {chef} Call {Shortcut}
 BTN-DELIVERED  ✅ Delivered
-BTN-UNDELIVER  ❌ Undeliver (shown after delivery)
 ```
+
+**After Delivery:**
+```
+BTN-UNDELIVER  ❌ Undeliver (reverts to assigned status)
+```
+
+**Undeliver Behavior:**
+- Removes `delivered_at` and `delivered_by` from STATE
+- Reverts status from "delivered" → "assigned"
+- Restores full UPC keyboard (Navigate, Delay, Call, Delivered)
+- Updates MDG and UPC messages
 
 ---
 
@@ -341,13 +363,23 @@ vendor_exact_selected  Vendor final time
 ```
 navigate               Open Maps
 delay_order            Show delay picker
+delay_vendor_selected  Select vendor for delay (multi-vendor)
 delay_selected         Select delay time
 unassign_order         Unassign courier
 call_vendor            Call vendor
-call_vendor_menu       Show call menu
+call_vendor_menu       Show call menu (multi-vendor)
+select_restaurant      Alias for call_vendor_menu
 confirm_delivered      Mark delivered
 undeliver_order        Revert from delivered to assigned
+show_assigned          Show combine orders menu
+combine_with           Combine with selected order (Phase 3)
 ```
+
+**Delay Flow (Multi-Vendor):**
+1. Click `[⏳ Delay]` → Shows vendor selection
+2. Select vendor → Shows time picker (+5/+10/+15/+20)
+3. Select time → Sends delay request to vendor
+4. ST-UPC-DELAY sent to MDG
 
 ---
 
@@ -436,17 +468,21 @@ Core fields in `STATE[order_id]`:
 
 ```python
 # Message Building
-build_mdg_order_message()          # MDG-ORD text
+build_mdg_dispatch_text()          # MDG-ORD text
 build_vendor_summary_text()        # RG-SUM collapsed
 build_vendor_details_text()        # RG-DET expanded
 build_assignment_message()         # UPC-ASSIGN
+build_assignment_confirmation_message()  # MDG-CONF with counts
 
 # Keyboards
-build_mdg_order_keyboard()         # MDG buttons
+mdg_initial_keyboard()             # MDG buttons (initial)
+mdg_time_request_keyboard()        # MDG buttons (after time sent)
 build_vendor_response_keyboard()   # RG buttons
 build_assignment_keyboard()        # UPC buttons
-build_scheduled_orders_keyboard()  # Scheduled list
+mdg_time_submenu_keyboard()        # Scheduled orders list
 build_time_offset_keyboard()       # +/- buttons
+courier_selection_keyboard()       # Live courier menu
+build_combine_keyboard()           # Assigned orders menu
 
 # Status System
 build_status_lines()               # Generate status from history
@@ -455,6 +491,7 @@ send_status_message()              # Send temp (auto-delete 20s)
 # Time Logic
 get_recent_orders_for_same_time()  # Last 10 orders (5h max)
 abbreviate_street()                # Shorten street names
+build_smart_time_suggestions()     # +N minute buttons
 
 # Product Handling
 clean_product_name()               # Simplify names (17 rules)
@@ -462,23 +499,41 @@ clean_product_name()               # Simplify names (17 rules)
 # Courier Management
 get_couriers_from_mdg()            # Live from MDG admins
 get_couriers_from_map()            # Fallback to COURIER_MAP
+update_mdg_with_assignment()       # Update after assignment
+send_assignment_to_private_chat()  # Send UPC-ASSIGN
 
 # State Management
 check_all_vendors_confirmed()      # All vendors ready?
 cleanup_mdg_messages()             # Delete temp messages
+handle_delivery_completion()       # Mark as delivered
+handle_undelivery()                # Revert to assigned
+
+# Delay Management
+show_delay_options()               # Vendor selection (multi)
+show_delay_time_picker()           # Time picker (+5/+10/+15/+20)
+
+# Restaurant Communication
+show_restaurant_selection()        # Call vendor menu
+forward_restaurant_message_to_mdg()  # RG → MDG forwarding
+forward_mdg_reply_to_restaurant()    # MDG → RG forwarding
 
 # Smoothr Integration
 parse_smoothr_order()              # Parse text format
 process_smoothr_order()            # Process order
 is_smoothr_order()                 # Detect format
 
+# Test Commands
+handle_test_smoothr_command()      # /test_smoothr simulation
+handle_test_shopify_command()      # /test_shopify simulation
+
 # District Detection
 get_district_from_address()        # Google Maps API
 
-# Group Orders
+# Group Orders (Phase 3)
 generate_group_id()                # New group ID
 get_next_group_color()             # Assign color
 get_group_orders()                 # Orders in group
+get_assigned_orders()              # All assigned orders
 show_combine_orders_menu()         # Combine UI
 ```
 
@@ -685,7 +740,17 @@ GOOGLE_MAPS_API_KEY=your_key  # District detection
 7. **Street "Unkn"** - Fixed abbreviation (62b7785)
 8. **Smoothr Detection** - Added channel_post support (pending)
 
+## 🆕 NEW FEATURES (Oct 31, 2025)
+
+1. **Undeliver Functionality** - Revert delivered orders back to assigned
+2. **Combine Orders UI** - Show assigned orders menu (Phase 2 complete)
+3. **Multi-Vendor Delay** - Select specific vendor for delay requests
+4. **Assignment Confirmation Format** - New format with vendor shortcuts + product counts
+5. **Test Commands** - `/test_smoothr` and `/test_shopify` for order simulation
+6. **Enhanced UPC Delay** - Separate delay flow for single vs multi-vendor
+7. **Live Courier Detection** - Queries MDG admins API (fallback to COURIER_MAP)
+
 ---
 
-**Last Updated**: October 28, 2025 • **Version**: 3.0 (Smoothr integrated)  
+**Last Updated**: October 31, 2025 • **Version**: 3.1 (Undeliver + Combine Orders Phase 2)  
 **See also**: AI-INSTRUCTIONS.md, SYSTEM-REFERENCE.md
