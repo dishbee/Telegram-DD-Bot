@@ -70,7 +70,6 @@ from rg import (
 )
 import upc
 from upc import check_all_vendors_confirmed, mdg_assignment_keyboard, courier_selection_keyboard
-import uc  # noqa: F401  # UC placeholder for future assignment logic
 from utils import clean_product_name
 
 # Configure logging
