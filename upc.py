@@ -422,10 +422,10 @@ def build_assignment_message(order: dict) -> str:
             group_total = len(group_orders)
             group_header = f"{group_color} Group: {group_position}/{group_total}\n\n"
         
-        # Header: 👉 #34 - dishbee
+        # Header: 🔖 #34
         if order_type == "shopify":
             order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-            header = f"👉 #{order_num} - dishbee\n"
+            header = f"🔖 #{order_num}\n"
         else:
             header = f"👉 {order.get('name', 'Order')}\n"
         
@@ -472,7 +472,11 @@ def build_assignment_message(order: dict) -> str:
             formatted_address = address.strip()
         
         customer_section = f"\n👤 {customer_name}\n"
-        customer_section += f"🧭 {formatted_address}\n"
+        
+        # Build clickable map link (same format as MDG-ORD)
+        original_address = order['customer'].get('original_address', address)
+        maps_link = f"https://www.google.com/maps?q={original_address.replace(' ', '+')}"
+        customer_section += f"🗺️ [{formatted_address}]({maps_link})\n"
         
         # Optional info (note, tips, cash on delivery)
         optional_section = ""

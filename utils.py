@@ -290,16 +290,18 @@ def clean_product_name(name: str) -> str:
     Handles compound products (e.g., "Burger - Pommes") by splitting on " - "
     and cleaning each part separately. Removes duplicates (e.g., "Prosciutto - Prosciutto Funghi" → "Prosciutto Funghi").
     
-    Rules implemented (25+ total):
+    Rules implemented (27+ total):
+    - Remove dietary labels in parentheses: (vegan), (vegetarisch), (veggie)
     - Extract burger names from quotes, remove "Bio-Burger" prefix
     - Simplify fries/pommes variations (Bio-Pommes → Pommes, Süßkartoffel-Pommes → Süßkartoffel)
     - Remove pizza prefixes (Sauerteig-Pizza → keep only name)
     - Simplify Spätzle dishes (remove "& Spätzle" and "- Standard" suffixes)
     - Remove pasta prefixes (Selbstgemachte → keep only type)
-    - Simplify rolls (remove ALL roll type prefixes: Special, Cinnamon, etc.)
+    - Simplify rolls (remove ALL roll type prefixes except "Cinnamon roll - Classic")
     - Remove prices in brackets: (+2.6€), (1.9€), (13,50€) - handles both . and , decimals
-    - Remove "/ Standard", "/ Classic", "/ Glutenfrei" patterns
-    - Remove Bio- prefixes from salads
+    - Remove "/ Standard", "/ Classic" suffixes
+    - Handle "/ Classic / Glutenfrei" → "/ Glutenfrei"
+    - Remove Bio- prefix from products (but NOT B- prefix like B-umpkin)
     - Special handling for "Gemüse Curry & Spätzle" → "Curry"
     - Duplicate word removal: "Prosciutto - Prosciutto Funghi" → "Prosciutto Funghi"
     - "Halb Pommes / Halb Salat" → "Halb P. / Halb S."
@@ -317,8 +319,16 @@ def clean_product_name(name: str) -> str:
         'BBQ Oyster - Pommes'
         >>> clean_product_name('Special roll - Salted Caramel Apfel')
         'Salted Caramel Apfel'
+        >>> clean_product_name('Cinnamon roll - Classic')
+        'Cinnamon roll - Classic'
         >>> clean_product_name('Spaghetti - Cacio e Pepe (13,50€)')
         'Spaghetti - Cacio e Pepe'
+        >>> clean_product_name('Grillkäse - (vegetarisch) - Halb P. / Halb S.')
+        'Grillkäse - Halb P. / Halb S.'
+        >>> clean_product_name('Bergkäse - Classic / Glutenfrei')
+        'Bergkäse - Glutenfrei'
+        >>> clean_product_name('B-umpkin - Süßkartoffel-Pommes')
+        'B-umpkin - Süßkartoffel'
         >>> clean_product_name('Prosciutto - Prosciutto Funghi')
         'Prosciutto Funghi'
     """
@@ -345,6 +355,13 @@ def clean_product_name(name: str) -> str:
     if 'Halb Pommes' in name and 'Halb Salat' in name and 'Burger' not in name:
         return 'Halb P. / Halb S.'
     
+    # Rule 0d: Remove dietary labels in parentheses BEFORE compound splitting
+    # Handles: (vegan), (vegetarisch), (veggie) with or without spaces
+    name = re.sub(r'\s*-\s*\((vegan|vegetarisch|veggie)\)\s*-?\s*', ' - ', name, flags=re.IGNORECASE)
+    # Clean up any double spaces or double hyphens created
+    name = re.sub(r'\s+-\s+-\s+', ' - ', name)
+    name = re.sub(r'\s{2,}', ' ', name).strip()
+    
     # Rule 1: Remove " - Classic" suffix FIRST (before compound splitting)
     if ' - Classic' in name:
         name = re.sub(r'\s*-\s*Classic$', '', name)
@@ -353,8 +370,10 @@ def clean_product_name(name: str) -> str:
     if ' / Classic' in name:
         name = re.sub(r'\s*/\s*Classic$', '', name)
     
-    # Rule 1c: Remove " / Glutenfrei" suffix but keep " - Glutenfrei"
-    name = re.sub(r'\s*-\s*Classic\s*/\s*Glutenfrei$', ' - Glutenfrei', name)
+    # Rule 1c: Handle "/ Classic / Glutenfrei" pattern → keep only "/ Glutenfrei"
+    # Also handle "- Classic / Glutenfrei" → "- Glutenfrei"
+    name = re.sub(r'\s*-\s*Classic\s*/\s*Glutenfrei', ' - Glutenfrei', name)
+    name = re.sub(r'\s*/\s*Classic\s*/\s*Glutenfrei', ' / Glutenfrei', name)
     
     # Handle compound products: "Burger - Side" - split and clean each part
     if ' - ' in name:
@@ -459,9 +478,14 @@ def clean_product_name(name: str) -> str:
                 return burger_name
     
     # Rule 4: Remove ANY roll type prefix BEFORE other processing
-    # Matches: "Special roll - X", "Cinnamon roll - X", "Lotus roll X", etc.
+    # Matches: "Special roll - X", "Lotus roll X", etc.
     # Handles both "roll - Product" and "roll Product" formats
     # Also handles standalone "Special roll" case (return empty to filter out)
+    # EXCEPTION: "Cinnamon roll - Classic" returns as-is
+    
+    if name == "Cinnamon roll - Classic":
+        return name
+    
     roll_pattern = r'^([A-Za-zäöüÄÖÜß]+\s+roll)[\s\-]+(.+)$'
     roll_match = re.match(roll_pattern, name, re.IGNORECASE)
     if roll_match:
@@ -477,9 +501,9 @@ def clean_product_name(name: str) -> str:
     if name.startswith('Bio-'):
         name = name.replace('Bio-', '', 1)
     
-    # Rule 6: Remove "B-" prefix (e.g., "B-umpkin")
-    if name.startswith('B-'):
-        name = name.replace('B-', '', 1)
+    # Rule 6: Remove "B-" prefix - DISABLED (keep B-umpkin as-is)
+    # if name.startswith('B-'):
+    #     name = name.replace('B-', '', 1)
     
     # Rule 7: Chili-Cheese-Fries -> Fries: Chili-Cheese-Style
     if 'Chili-Cheese-Fries' in name:

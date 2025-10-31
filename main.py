@@ -983,6 +983,10 @@ async def process_smoothr_order(smoothr_data: dict):
         if tip and float(tip) > 0:
             mdg_text += f"❕ Tip: {float(tip):.2f}€\n"
         
+        # Add blank line before phone if note or tip present
+        if note or (tip and float(tip) > 0):
+            mdg_text += "\n"
+        
         # Add email (expanded view only - will be handled when Details clicked)
         # For now, just store it in STATE
         

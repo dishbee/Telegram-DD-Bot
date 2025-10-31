@@ -1,4 +1,4 @@
-# ⚡ TELEGRAM BOT CHEAT SHEET
+commi# ⚡ TELEGRAM BOT CHEAT SHEET
 
 > **Purpose**: Quick reference for AI prompting - shortcuts, formats, and workflows
 

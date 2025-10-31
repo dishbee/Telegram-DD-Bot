@@ -350,6 +350,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         text += note_line
         text += tips_line
         text += payment_line
+        # Add blank line before phone if any optional fields present
+        if note_line or tips_line or payment_line:
+            text += "\n"
         text += phone_line
 
         # Add product details if requested
