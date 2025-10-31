@@ -683,32 +683,24 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
             # Show only LATEST asap_sent status (replace, don't accumulate)
             vendor = latest.get("vendor", "")
             chef_emoji = get_chef_emoji(vendor)
-            shortcut = get_vendor_shortcut(vendor)
+            shortcut = f"**{get_vendor_shortcut(vendor)}**"
             return f"📍 Sent ⚡ Asap to {chef_emoji} {shortcut}\n\n"
         
         elif status_type == "time_sent":
-            # Multi-vendor: separate line per vendor with their requested time
-            lines = []
-            for entry in reversed(status_history):
-                if entry.get("type") == "time_sent":
-                    vendor = entry.get("vendor", "")
-                    time = entry.get("time", "")
-                    chef_emoji = get_chef_emoji(vendor)
-                    shortcut = get_vendor_shortcut(vendor)
-                    lines.append(f"📍 Sent 🕒 {time} to {chef_emoji} {shortcut}")
-            return "\n".join(reversed(lines)) + "\n\n"
+            # Show only LATEST time_sent status (replace, don't accumulate)
+            vendor = latest.get("vendor", "")
+            time = latest.get("time", "")
+            chef_emoji = get_chef_emoji(vendor)
+            shortcut = f"**{get_vendor_shortcut(vendor)}**"
+            return f"📍 Sent 🕒 {time} to {chef_emoji} {shortcut}\n\n"
         
         elif status_type == "confirmed":
-            # Multi-vendor: separate line per vendor with their confirmed time
-            lines = []
-            for entry in reversed(status_history):
-                if entry.get("type") == "confirmed":
-                    vendor = entry.get("vendor", "")
-                    time = entry.get("time", "")
-                    chef_emoji = get_chef_emoji(vendor)
-                    shortcut = get_vendor_shortcut(vendor)
-                    lines.append(f"📍 Confirmed 👍 {time} by {chef_emoji} {shortcut}")
-            return "\n".join(reversed(lines)) + "\n\n"
+            # Show only LATEST confirmed status (replace, don't accumulate)
+            vendor = latest.get("vendor", "")
+            time = latest.get("time", "")
+            chef_emoji = get_chef_emoji(vendor)
+            shortcut = f"**{get_vendor_shortcut(vendor)}**"
+            return f"📍 Confirmed 👍 {time} by {chef_emoji} {shortcut}\n\n"
         
         elif status_type == "assigned":
             courier = latest.get("courier", "Unknown")
@@ -735,7 +727,7 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
         
         elif status_type == "confirmed":
             time = latest.get("time", "")
-            return f"📍 Prepare this order at {time} 🫕\n\n"
+            return f"📍 Prepare 🫕 at {time}\n\n"
         
         elif status_type == "delivered":
             return "📍 Delivered ✅\n\n"
@@ -743,11 +735,11 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
     # === UPC STATUS LINES ===
     elif message_type == "upc":
         if status_type == "assigned":
-            return "🚨 Order assigned 👉 to you (dishbee)\n\n"
+            return "� Assigned order (dishbee)\n\n"
         
         elif status_type == "delay_sent":
             vendors = latest.get("vendors", [])
-            shortcuts = "+".join([get_vendor_shortcut(v) for v in vendors])
+            shortcuts = "+".join([f"**{get_vendor_shortcut(v)}**" for v in vendors])
             return f"📍 Delay ⏰ sent to {shortcuts}\n\n"
         
         elif status_type == "delivered":

@@ -102,10 +102,10 @@ def get_vendor_shortcuts_string(vendors: List[str]) -> str:
     shortcuts = []
     for vendor in vendors:
         shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-        shortcuts.append(shortcut)
+        shortcuts.append(f"**{shortcut}**")
     
     # Return first shortcut only for display in combine menu
-    return shortcuts[0] if shortcuts else "??"
+    return shortcuts[0] if shortcuts else "**??**"
 
 
 def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str] = None) -> List[Dict[str, str]]:
@@ -264,7 +264,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             
             for vendor in vendors:
                 shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-                shortcuts.append(shortcut)
+                shortcuts.append(f"**{shortcut}**")
                 
                 # Count TOTAL QUANTITY for this vendor (not just line items)
                 items = vendor_items.get(vendor, [])
@@ -386,7 +386,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 for vendor in vendors:
                     # Use shortcut instead of full vendor name
                     shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-                    items_text_parts.append(f"\n{shortcut}: ")
+                    items_text_parts.append(f"\n**{shortcut}**: ")
                     vendor_products = vendor_items.get(vendor, [])
                     for item in vendor_products:
                         clean_item = item.lstrip('- ').strip()
@@ -478,7 +478,7 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
                 shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
                 chef_emoji = CHEF_EMOJIS[vendors.index(vendor) % len(CHEF_EMOJIS)]
                 buttons.append([InlineKeyboardButton(
-                    f"Ask {chef_emoji} {shortcut}",
+                    f"Ask {chef_emoji} **{shortcut}**",
                     callback_data=f"req_vendor|{order_id}|{vendor}|{int(now().timestamp())}"
                 )])
         else:
@@ -529,7 +529,7 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
                 chef_emoji = CHEF_EMOJIS[vendors.index(vendor) % len(CHEF_EMOJIS)]
                 logger.info("Adding button for vendor: %s (shortcut: %s)", vendor, shortcut)
                 buttons.append([InlineKeyboardButton(
-                    f"Ask {chef_emoji} {shortcut}",
+                    f"Ask {chef_emoji} **{shortcut}**",
                     callback_data=f"req_vendor|{order_id}|{vendor}|{int(now().timestamp())}"
                 )])
             logger.info("Sending restaurant selection with %s buttons", len(buttons))

@@ -326,7 +326,7 @@ def build_assignment_confirmation_message(order: dict) -> str:
         chef_emoji = chef_emojis[idx % len(chef_emojis)]
         # Use vendor shortcut instead of full name
         vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-        message += f"{chef_emoji} {vendor_shortcut}: {pickup_time}\n"
+        message += f"{chef_emoji} **{vendor_shortcut}**: {pickup_time}\n"
     
     return message
 
@@ -673,7 +673,7 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
     }
     
     # Log test order info
-    vendor_str = " + ".join([RESTAURANT_SHORTCUTS.get(v, v) for v in selected_vendors])
+    vendor_str = " + ".join([f"**{RESTAURANT_SHORTCUTS.get(v, v)}**" for v in selected_vendors])
     extras_str = ""
     if include_all:
         extras_str = f" | Tip: {tip}€ | Note: Yes | COD: Yes"
@@ -969,7 +969,7 @@ async def process_smoothr_order(smoothr_data: dict):
             int(item.split(' x ')[0]) for item in smoothr_data.get("products", []) if ' x ' in item
         )
         
-        mdg_text += f"👩‍🍳 {vendor_shortcut} 🍕 {product_count}\n"
+        mdg_text += f"👩‍🍳 **{vendor_shortcut}** 🍕 {product_count}\n"
         mdg_text += f"👤 {customer_name}\n"
         mdg_text += f"🗺️ [{address} ({zip_code})]({f'https://www.google.com/maps?q={original_address}'})\n\n"
         
@@ -1534,7 +1534,7 @@ def telegram_webhook():
                     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"⚡ Asap request for 🔖 #{order_num} sent to {vendor_shortcut}",
+                        f"⚡ Asap request for 🔖 #{order_num} sent to **{vendor_shortcut}**",
                         auto_delete_after=20
                     )
                     
@@ -1683,7 +1683,7 @@ def telegram_webhook():
                     vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper()) if vendor != 'all' else 'vendors'
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"� Time request ({selected_time}) for 🔖 #{order_num} sent to {vendor_shortcut}",
+                        f"🕒 Time request ({selected_time}) for 🔖 #{order_num} sent to **{vendor_shortcut}**",
                         auto_delete_after=20
                     )
                     
@@ -1747,7 +1747,7 @@ def telegram_webhook():
                     
                     # Send status message to MDG (auto-delete after 20s)
                     vendors = order.get("vendors", [])
-                    vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors])
+                    vendor_shortcuts = "+".join([f"**{RESTAURANT_SHORTCUTS.get(v, v[:2].upper())}**" for v in vendors])
                     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
@@ -2064,10 +2064,10 @@ def telegram_webhook():
                     
                     # Send confirmation to MDG
                     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-                    vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
+                    vendor_shortcuts = "+".join([f"**{RESTAURANT_SHORTCUTS.get(v, v[:2].upper())}**" for v in vendors_to_notify])
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"� Time request ({ref_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
+                        f"🕒 Time request ({ref_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
                         auto_delete_after=20
                     )
                 
@@ -2265,16 +2265,14 @@ def telegram_webhook():
                 
                 elif action == "exact_selected":
                     order_id, selected_time = data[1], data[2]
-                    # data[3] might be vendor OR timestamp - check if it's a valid vendor name
-                    vendor = None
-                    if len(data) > 3 and data[3] in VENDOR_GROUP_MAP:
-                        vendor = data[3]
+                    # Extract vendor from callback data (4th part if present)
+                    vendor = data[3] if len(data) > 3 else None
                     order = STATE.get(order_id)
                     if not order:
                         return
                     
                     # Determine which vendors to send to
-                    if vendor:
+                    if vendor and vendor in VENDOR_GROUP_MAP:
                         # Single vendor specified - send only to that vendor
                         target_vendors = [vendor]
                         logger.info(f"Sending time request to single vendor: {vendor}")
