@@ -546,7 +546,7 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
             vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
             chef_emoji = chef_emojis[idx % len(chef_emojis)]
             call_btn = InlineKeyboardButton(
-                f"{chef_emoji} Call **{vendor_shortcut}**",
+                f"{chef_emoji} Call {vendor_shortcut}",
                 callback_data=f"call_vendor|{order_id}|{vendor}"
             )
             buttons.append([call_btn])
@@ -838,7 +838,7 @@ async def show_delay_options(order_id: str, user_id: int):
             for vendor in vendors:
                 vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
                 buttons.append([InlineKeyboardButton(
-                    f"Request **{vendor_shortcut}**",
+                    f"Request {vendor_shortcut}",
                     callback_data=f"delay_vendor_selected|{order_id}|{vendor}"
                 )])
             
