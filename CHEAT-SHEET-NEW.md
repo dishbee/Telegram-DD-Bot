@@ -173,7 +173,7 @@ ST-UPC-DELAY   🕒 DELAY request ({time}) for 🔖 #{num} sent to {Shortcut}
 
 **Initial Actions**
 ```
-BTN-ASAP       ⚡ Asap
+BTN-ASAP        Asap
 BTN-TIME       🕒 Time picker
 BTN-SCHEDULED  🗂 Scheduled orders (conditional)
 BTN-VENDOR     Ask {chef} {Shortcut} (multi-vendor)

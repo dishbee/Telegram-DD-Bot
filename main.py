@@ -2313,6 +2313,19 @@ def telegram_webhook():
                         logger.warning(f"Order {order_id} not found in state")
                         return
                     
+                    # DEBUG: Log message IDs to diagnose "Message to edit not found" error
+                    rg_message_ids = order.get("rg_message_ids", {})
+                    vendor_messages = order.get("vendor_messages", {})
+                    message_id = rg_message_ids.get(vendor) or vendor_messages.get(vendor)
+                    logger.info(f"DEBUG toggle - order_id: {order_id}, vendor: {vendor}")
+                    logger.info(f"DEBUG toggle - rg_message_ids: {rg_message_ids}")
+                    logger.info(f"DEBUG toggle - vendor_messages: {vendor_messages}")
+                    logger.info(f"DEBUG toggle - final message_id: {message_id}")
+                    
+                    if not message_id:
+                        logger.error(f"No message_id found for vendor {vendor} in order {order_id}")
+                        return
+                    
                     expanded = not order["vendor_expanded"].get(vendor, False)
                     order["vendor_expanded"][vendor] = expanded
                     logger.info(f"Toggling vendor message for {vendor}, expanded: {expanded}")
@@ -2325,7 +2338,7 @@ def telegram_webhook():
                     
                     await safe_edit_message(
                         VENDOR_GROUP_MAP[vendor],
-                        order.get("rg_message_ids", {}).get(vendor),
+                        message_id,
                         text,
                         vendor_keyboard(order_id, vendor, expanded)
                     )
