@@ -1654,8 +1654,8 @@ def telegram_webhook():
                                 if order["order_type"] == "shopify":
                                     msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {selected_time}?"
                                 else:
-                                    addr = order['customer']['address'].split(',')[0]
-                                    msg = f"*{addr}* at {selected_time}?"
+                                    order_num = order.get("name", "Unknown")
+                                    msg = f"Can you prepare 🔖 #{order_num} at {selected_time}?"
                                 
                                 await safe_send_message(
                                     vc,
@@ -1668,8 +1668,8 @@ def telegram_webhook():
                             if order["order_type"] == "shopify":
                                 msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {selected_time}?"
                             else:
-                                addr = order['customer']['address'].split(',')[0]
-                                msg = f"*{addr}* at {selected_time}?"
+                                order_num = order.get("name", "Unknown")
+                                msg = f"Can you prepare 🔖 #{order_num} at {selected_time}?"
                             
                             await safe_send_message(
                                 vendor_chat,
@@ -1902,8 +1902,8 @@ def telegram_webhook():
                             if order["order_type"] == "shopify":
                                 msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {requested_time}?"
                             else:
-                                addr = order['customer']['address'].split(',')[0]
-                                msg = f"*{addr}* at {requested_time}?"
+                                order_num = order.get("name", "Unknown")
+                                msg = f"Can you prepare 🔖 #{order_num} at {requested_time}?"
                             
                             await safe_send_message(
                                 vendor_chat,
@@ -1918,8 +1918,8 @@ def telegram_webhook():
                                 if order["order_type"] == "shopify":
                                     msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {requested_time}?"
                                 else:
-                                    addr = order['customer']['address'].split(',')[0]
-                                    msg = f"*{addr}* at {requested_time}?"
+                                    order_num = order.get("name", "Unknown")
+                                    msg = f"Can you prepare 🔖 #{order_num} at {requested_time}?"
                                 
                                 await safe_send_message(
                                     vendor_chat,
@@ -2221,8 +2221,8 @@ def telegram_webhook():
                                 if order["order_type"] == "shopify":
                                     msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {reference_time}?"
                                 else:
-                                    addr = order['customer']['address'].split(',')[0]
-                                    msg = f"*{addr}* at {reference_time}?"
+                                    order_num = order.get("name", "Unknown")
+                                    msg = f"Can you prepare 🔖 #{order_num} at {reference_time}?"
                             
                             await safe_send_message(
                                 vendor_chat,
@@ -2288,8 +2288,8 @@ def telegram_webhook():
                             if order["order_type"] == "shopify":
                                 msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {selected_time}?"
                             else:
-                                addr = order['customer']['address'].split(',')[0]
-                                msg = f"*{addr}* at {selected_time}?"
+                                order_num = order.get("name", "Unknown")
+                                msg = f"Can you prepare 🔖 #{order_num} at {selected_time}?"
                             
                             await safe_send_message(
                                 vendor_chat,

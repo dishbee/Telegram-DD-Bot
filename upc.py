@@ -288,9 +288,26 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int):
         order["assigned_at"] = now()
         order["status"] = "assigned"
         
-        # Append status to history BEFORE building message
-        courier_info = COURIER_MAP.get(str(user_id), {})
-        courier_name = courier_info.get("username", f"User{user_id}")
+        # Get courier name - try Telegram API first, then DRIVERS reverse lookup
+        courier_name = None
+        try:
+            if bot:
+                user = await bot.get_chat(user_id)
+                courier_name = user.first_name or user.username or f"User{user_id}"
+        except Exception as e:
+            logger.warning(f"Could not get user info from Telegram API: {e}")
+        
+        # Fallback: reverse lookup in DRIVERS ({"Bee 1": 383910036, ...})
+        if not courier_name:
+            from utils import DRIVERS
+            for name, uid in DRIVERS.items():
+                if uid == user_id:
+                    courier_name = name
+                    break
+        
+        # Final fallback
+        if not courier_name:
+            courier_name = f"User{user_id}"
         
         order["status_history"].append({
             "type": "assigned",

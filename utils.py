@@ -1051,9 +1051,9 @@ def parse_smoothr_order(text: str) -> dict:
         
         elif line.startswith("- Products:"):
             products_text = line.split(":", 1)[1].strip()
-            # Products format: "1 x Product Name*; 2 x Another*;"
-            # Split by *; to get individual products
-            product_lines = [p.strip() for p in products_text.split('*;') if p.strip()]
+            # Products format: "Product Name x1, Another x2, ..."
+            # Split by comma to get individual products
+            product_lines = [p.strip() for p in products_text.split(',') if p.strip()]
             
             order_data["products"] = []
             for product_line in product_lines:
