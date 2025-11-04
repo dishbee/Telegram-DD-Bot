@@ -442,9 +442,10 @@ def build_assignment_message(order: dict) -> str:
         # Header: 🔖 #34
         if order_type == "shopify":
             order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-            header = f"🔖 #{order_num}\n"
         else:
-            header = f"👉 {order.get('name', 'Order')}\n"
+            order_num = order.get('name', 'Order')
+        
+        header = f"� #{order_num}\n"
         
         # Restaurant info with confirmed times and product quantities
         vendors = order.get("vendors", [])
@@ -463,9 +464,12 @@ def build_assignment_message(order: dict) -> str:
             items = vendor_items.get(vendor, [])
             product_count = 0
             for item_line in items:
-                # Extract quantity from format "- 2 x Product Name"
-                if ' x ' in item_line:
-                    qty_part = item_line.split(' x ')[0].strip().lstrip('-').strip()
+                # Extract quantity from format "2 x Product Name" or "- 2 x Product Name"
+                # Smoothr format: "2 x Product" (no dash)
+                # Shopify format: "- 2 x Product" (with dash)
+                item_clean = item_line.lstrip('- ').strip()
+                if ' x ' in item_clean:
+                    qty_part = item_clean.split(' x ')[0].strip()
                     try:
                         product_count += int(qty_part)
                     except ValueError:
@@ -473,7 +477,7 @@ def build_assignment_message(order: dict) -> str:
                 else:
                     product_count += 1
             
-            restaurant_section += f"{chef_emoji} **{vendor_shortcut}**: {pickup_time} 🍕 {product_count}\n"
+            restaurant_section += f"{chef_emoji} {vendor_shortcut}: {pickup_time} 🍕 {product_count}\n"
         
         # Customer info
         customer_name = order['customer']['name']

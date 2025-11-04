@@ -270,11 +270,16 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 items = vendor_items.get(vendor, [])
                 total_qty = 0
                 for item_line in items:
-                    # Extract quantity from formatted string like "- 2 x Product Name"
-                    # Pattern: "- {qty} x {name}" or just "- {name}" (qty=1)
-                    match = re.match(r'^-\s*(\d+)\s*x\s+', item_line)
-                    if match:
-                        total_qty += int(match.group(1))
+                    # Extract quantity from formatted string
+                    # Smoothr format: "2 x Product Name" (no dash)
+                    # Shopify format: "- 2 x Product Name" (with dash)
+                    item_clean = item_line.lstrip('- ').strip()
+                    if ' x ' in item_clean:
+                        qty_part = item_clean.split(' x ')[0].strip()
+                        try:
+                            total_qty += int(qty_part)
+                        except ValueError:
+                            total_qty += 1
                     else:
                         # No quantity prefix, assume 1
                         total_qty += 1
