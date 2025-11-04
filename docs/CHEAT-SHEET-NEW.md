@@ -284,7 +284,7 @@ Status lines **prepended** to messages showing current state.
 2. 📍 Sent ⚡ Asap to {chef} {Shortcut}
 3. 📍 Sent 🕒 {time} to {chef} {Shortcut}
 4. 📍 Confirmed 👍 {time} by {chef} {Shortcut}
-5. 🚚 Assigned 👉 to 🐝 {courier}
+5. 📍 Assigned 👉 to 🐝 {courier}
 6. 📍 Delivered ✅ at {HH:MM} by 🐝 {courier}
 ```
 
@@ -729,7 +729,7 @@ GOOGLE_MAPS_API_KEY=your_key  # District detection
 
 ---
 
-## 🐛 RECENT FIXES (Oct 2025)
+## 🐛 RECENT FIXES (Oct-Nov 2025)
 
 1. **CHEF_EMOJIS Import** - Added to main.py imports (03d6a20)
 2. **Missing Vendor Param** - Added to get_recent_orders (5e379ed)
@@ -738,9 +738,15 @@ GOOGLE_MAPS_API_KEY=your_key  # District detection
 5. **Multi-Vendor Time** - Use confirmed_times dict (pending)
 6. **ASAP Status Missing** ⚠️ - Re-added send_status_message (62b7785)
 7. **Street "Unkn"** - Fixed abbreviation (62b7785)
-8. **Smoothr Detection** - Added channel_post support (pending)
+8. **Smoothr Detection** - Added channel_post support (182d574)
+9. **Multi-Vendor Time Picker** - Fixed vendor extraction from req_exact callback (f94b0d9)
+10. **Status Line Duplication** - Fixed multi-vendor time routing (57455a2)
+11. **UPC Button Formatting** - Removed ** stars (Telegram doesn't support Markdown) (128acea)
+12. **Smoothr Products Parsing** - Fixed regex and RG-TIME-REQ format (f262912)
+13. **Smoothr MDG-ORD Display** - Added note, tip, product count (8fbf060)
+14. **Message Formatting** - Blank line before phone, clickable map, UPC emoji (e45537d)
 
-## 🆕 NEW FEATURES (Oct 31, 2025)
+## 🆕 NEW FEATURES (Oct-Nov 2025)
 
 1. **Undeliver Functionality** - Revert delivered orders back to assigned
 2. **Combine Orders UI** - Show assigned orders menu (Phase 2 complete)
@@ -749,8 +755,9 @@ GOOGLE_MAPS_API_KEY=your_key  # District detection
 5. **Test Commands** - `/test_smoothr` and `/test_shopify` for order simulation
 6. **Enhanced UPC Delay** - Separate delay flow for single vs multi-vendor
 7. **Live Courier Detection** - Queries MDG admins API (fallback to COURIER_MAP)
+8. **Smoothr Parsing Enhancement** - Products, Tip, Note, Payment, Delivery Fee extraction (workflow equality with Shopify) (182d574, b2ddb0a, 8fbf060)
 
 ---
 
-**Last Updated**: October 31, 2025 • **Version**: 3.1 (Undeliver + Combine Orders Phase 2)  
+**Last Updated**: November 4, 2025 • **Version**: 3.2 (Smoothr Parsing + Bug Fixes)  
 **See also**: AI-INSTRUCTIONS.md, SYSTEM-REFERENCE.md
