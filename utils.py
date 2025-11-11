@@ -1051,22 +1051,30 @@ def parse_smoothr_order(text: str) -> dict:
         
         elif line.startswith("- Products:"):
             products_text = line.split(":", 1)[1].strip()
-            # Products format: "Product Name x1, Another x2, ..."
+            # Products format: "Product Name x1 - Total: X €, Another x2 - Total: Y €"
             # Split by comma to get individual products
             product_lines = [p.strip() for p in products_text.split(',') if p.strip()]
             
             order_data["products"] = []
             for product_line in product_lines:
-                # Remove trailing * if present
+                # Remove trailing * if present and strip
                 product_line = product_line.rstrip('*').strip()
                 
-                # Parse "qty x product_name" format
-                if ' x ' in product_line:
+                # Parse "Product Name xQty - Total: X €" format
+                if ' x' in product_line:
                     try:
-                        qty_str, product_name = product_line.split(' x ', 1)
-                        qty = int(qty_str.strip())
+                        # Split on ' x' to get product name and rest
+                        product_name, rest = product_line.split(' x', 1)
+                        product_name = product_name.strip()
+                        
+                        # Extract quantity (first chars before space or dash)
+                        qty_part = rest.strip().split()[0] if rest.strip() else "1"
+                        # Remove any non-digit suffix
+                        qty_str = ''.join(c for c in qty_part if c.isdigit())
+                        qty = int(qty_str) if qty_str else 1
+                        
                         # Clean product name using existing function
-                        cleaned_name = clean_product_name(product_name.strip())
+                        cleaned_name = clean_product_name(product_name)
                         order_data["products"].append(f"{qty} x {cleaned_name}")
                     except Exception as e:
                         # If parsing fails, add as-is

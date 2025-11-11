@@ -418,58 +418,68 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     # Format as ISO string (Smoothr format)
     order_date_iso = order_time_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
     
-    # Random products (2-4 items)
+    # Random products (2-4 items) - Match real Smoothr format: "Product xQty - Total: X €"
     products_list = [
-        "Caesar Salad",
-        "Green Smoothie",
-        "Berry Blast Bowl",
-        "Chicken Wrap",
-        "Quinoa Bowl",
-        "Protein Shake",
-        "Veggie Burger",
-        "Sweet Potato Fries"
+        ("Caesar Salad", 8.90),
+        ("Green Smoothie", 5.50),
+        ("Berry Blast Bowl", 9.90),
+        ("Chicken Wrap", 7.50),
+        ("Quinoa Bowl", 10.90),
+        ("Protein Shake", 4.90),
+        ("Veggie Burger", 8.50),
+        ("Sweet Potato Fries", 3.90)
     ]
     num_products = random.randint(2, 4)
     selected_products = random.sample(products_list, num_products)
-    products_str = ""
+    products_parts = []
     for product in selected_products:
-        qty = random.randint(1, 2)
-        products_str += f"{qty} x {product}*; "
+        product_name, base_price = product
+        qty = random.randint(1, 3)
+        total_price = base_price * qty
+        products_parts.append(f"{product_name} x{qty} - Total: {total_price:.2f} €")
+    products_str = ", ".join(products_parts)
     
-    # Random tip (2-5 EUR or none)
-    tip_amount = random.choice([None, "2.00", "2.50", "3.00", "3.50", "4.00", "4.50", "5.00"])
-    tip_line = f"- Tip: {tip_amount} EUR\n" if tip_amount else "- Tip: 0.00 EUR\n"
+    # Random tip (0-5 EUR)
+    tip_amount = random.choice(["0", "2.00", "2.50", "3.00", "3.50", "4.00", "4.50", "5.00"])
     
-    # Random customer note (50% chance)
+    # Random customer note (always include)
     notes = [
         "Please ring the doorbell twice",
         "Leave at the door",
         "Call when you arrive",
         "Contactless delivery please",
-        None
+        "None"
     ]
     customer_note = random.choice(notes)
-    note_line = f"- Customer Note: {customer_note if customer_note else 'None'}\n"
     
-    # Payment method (always Paid for Smoothr)
-    payment_line = "- Payment method: Paid\n"
+    # Random payment method
+    payment_method = random.choice(["credit_card", "paypal", "cash"])
     
-    # Delivery fee (fixed)
-    delivery_fee_line = "- Delivery Fee: 2.00 EUR\n"
+    # Parse street into street name + building number
+    street_parts = street.split()
+    if len(street_parts) >= 2 and street_parts[-1].replace('-', '').isdigit():
+        street_name = " ".join(street_parts[:-1])
+        building_number = street_parts[-1]
+    else:
+        street_name = street
+        building_number = str(random.randint(1, 99))
     
-    # Build Smoothr message
+    # Build Smoothr message - format that parser expects
     smoothr_message = f"""- Order: {order_code}
 - Type: delivery
 - Customer: {customer_name}
-- Address:
-{street}
-{zip_code} {city}
-{country}
+- Address: 
+    {street_name} {building_number}
+    {zip_code} {city}
 - Phone: {phone}
 - Email: {email}
 - ASAP: {"Yes" if is_asap else "No"}
 - Order Date: {order_date_iso}
-{note_line}{payment_line}{tip_line}{delivery_fee_line}- Products: {products_str}"""
+- Customer Note: {customer_note}
+- Payment method: {payment_method}
+- Tip: {tip_amount} €
+- Delivery Fee: 2.00 €
+- Products: {products_str}"""
     
     # Log test order info
     source_name = "Lieferando" if is_lieferando else "D&D App"
