@@ -39,7 +39,7 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         from utils import build_status_lines
         
         # Build status lines (prepend to message)
-        status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS)
+        status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS, vendor=vendor)
         
         # Get order number display
         # For Smoothr D&D App orders (3 digits): show all 3 digits

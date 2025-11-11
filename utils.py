@@ -617,7 +617,7 @@ async def safe_delete_message(chat_id: int, message_id: int):
     except Exception as e:
         logger.error(f"Error deleting message {message_id}: {e}")
 
-def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dict = None, COURIER_SHORTCUTS: dict = None) -> str:
+def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dict = None, COURIER_SHORTCUTS: dict = None, vendor: str = None) -> str:
     """
     Build status lines from status_history to prepend to messages.
     
@@ -628,6 +628,7 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
         message_type: "mdg", "rg", or "upc"
         RESTAURANT_SHORTCUTS: Dict mapping vendor names to shortcuts (e.g., {"Leckerolls": "LR"})
         COURIER_SHORTCUTS: Dict mapping courier names to shortcuts (e.g., {"Bee 1": "B1"})
+        vendor: Optional vendor name for RG messages to filter vendor-specific statuses
         
     Returns:
         Formatted status line(s) with trailing newlines, or empty string if no history
@@ -715,6 +716,19 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
     
     # === RG STATUS LINES ===
     elif message_type == "rg":
+        # For RG messages with vendor parameter, filter status_history to vendor-specific statuses
+        if vendor:
+            # Find latest status matching this vendor (for asap_sent, time_sent, confirmed)
+            # Include non-vendor statuses (new, delivered) which apply to all vendors
+            vendor_statuses = [s for s in status_history if s.get("vendor") == vendor or s.get("type") in ["new", "delivered"]]
+            if not vendor_statuses:
+                # No vendor-specific status yet, fall back to "new" if it exists
+                if status_type == "new":
+                    return "🚨 New order\n\n"
+                return ""
+            latest = vendor_statuses[-1]
+            status_type = latest.get("type")
+        
         if status_type == "new":
             return "🚨 New order\n\n"
         
