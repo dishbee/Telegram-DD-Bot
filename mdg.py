@@ -254,52 +254,46 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         # Build title line (NO "dishbee" in order number line)
         title = f"🔖 #{order_num}"
 
-        # Build vendor line with product counts
-        if order_type == "shopify":
-            vendor_items = order.get("vendor_items", {})
-            vendor_counts = []
-            shortcuts = []
+        # Build vendor line with product counts (works for both Shopify and Smoothr)
+        vendor_items = order.get("vendor_items", {})
+        vendor_counts = []
+        shortcuts = []
+        
+        logger.info(f"DEBUG Product Count - vendor_items structure: {vendor_items}")
+        
+        for vendor in vendors:
+            shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+            shortcuts.append(f"**{shortcut}**")
             
-            logger.info(f"DEBUG Product Count - vendor_items structure: {vendor_items}")
-            
-            for vendor in vendors:
-                shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-                shortcuts.append(f"**{shortcut}**")
-                
-                # Count TOTAL QUANTITY for this vendor (not just line items)
-                items = vendor_items.get(vendor, [])
-                total_qty = 0
-                for item_line in items:
-                    # Extract quantity from formatted string
-                    # Smoothr format: "2 x Product Name" (no dash)
-                    # Shopify format: "- 2 x Product Name" (with dash)
-                    item_clean = item_line.lstrip('- ').strip()
-                    if ' x ' in item_clean:
-                        qty_part = item_clean.split(' x ')[0].strip()
-                        try:
-                            total_qty += int(qty_part)
-                        except ValueError:
-                            total_qty += 1
-                    else:
-                        # No quantity prefix, assume 1
+            # Count TOTAL QUANTITY for this vendor (not just line items)
+            items = vendor_items.get(vendor, [])
+            total_qty = 0
+            for item_line in items:
+                # Extract quantity from formatted string
+                # Smoothr format: "2 x Product Name" (no dash)
+                # Shopify format: "- 2 x Product Name" (with dash)
+                item_clean = item_line.lstrip('- ').strip()
+                if ' x ' in item_clean:
+                    qty_part = item_clean.split(' x ')[0].strip()
+                    try:
+                        total_qty += int(qty_part)
+                    except ValueError:
                         total_qty += 1
-                
-                logger.info(f"DEBUG Product Count - {vendor}: items={items}, total_qty={total_qty}")
-                vendor_counts.append(str(total_qty))
+                else:
+                    # No quantity prefix, assume 1
+                    total_qty += 1
             
-            # Use rotating chef emojis for vendors
-            chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
-            chef_emoji = chef_emojis[0]  # Use first chef emoji for vendor line
-            
-            if len(vendors) > 1:
-                vendor_line = f"{chef_emoji} {'+'.join(shortcuts)} 🍕 {'+'.join(vendor_counts)}"
-            else:
-                vendor_line = f"{chef_emoji} {shortcuts[0]} 🍕 {vendor_counts[0]}"
+            logger.info(f"DEBUG Product Count - {vendor}: items={items}, total_qty={total_qty}")
+            vendor_counts.append(str(total_qty))
+        
+        # Use rotating chef emojis for vendors
+        chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
+        chef_emoji = chef_emojis[0]  # Use first chef emoji for vendor line
+        
+        if len(vendors) > 1:
+            vendor_line = f"{chef_emoji} {'+'.join(shortcuts)} 🍕 {'+'.join(vendor_counts)}"
         else:
-            # Fallback for non-Shopify orders
-            chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
-            chef_emoji = chef_emojis[0]
-            vendor_line = f"{chef_emoji} {vendors[0] if vendors else 'Unknown'}"
+            vendor_line = f"{chef_emoji} {shortcuts[0]} 🍕 {vendor_counts[0]}"
 
         customer_line = f"👤 {order['customer']['name']}"
 
@@ -383,8 +377,8 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             else:
                 logger.info(f"No district found for address: {original_address}")
             
-            # Build product list
-            if order_type == "shopify" and len(vendors) > 1:
+            # Build product list (works for both Shopify and Smoothr)
+            if len(vendors) > 1:
                 # Multi-vendor product display
                 vendor_items = order.get("vendor_items", {})
                 items_text_parts: List[str] = []
