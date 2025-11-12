@@ -1063,6 +1063,15 @@ def parse_smoothr_order(text: str) -> dict:
             except Exception as e:
                 logger.error(f"Failed to parse delivery fee '{line}': {e}")
         
+        elif line.startswith("- Total Payment:"):
+            try:
+                total_text = line.split(":", 1)[1].strip()
+                # Extract numeric value (e.g., "5.00 €" -> "5.00")
+                total_amount = total_text.split()[0]
+                order_data["total"] = f"{total_amount}€"
+            except Exception as e:
+                logger.error(f"Failed to parse total payment '{line}': {e}")
+        
         elif line.startswith("- Products:"):
             products_text = line.split(":", 1)[1].strip()
             # Products format: "Product Name x1 - Total: X €, Another x2 - Total: Y €"

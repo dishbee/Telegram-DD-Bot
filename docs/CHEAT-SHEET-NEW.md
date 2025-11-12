@@ -40,7 +40,9 @@ commi# ⚡ TELEGRAM BOT CHEAT SHEET
 - Single vendor: `[⚡ Asap]` `[🕒 Time picker]` `[🗂 Scheduled]*`
 - Multi-vendor: `[Ask {chef} {Shortcut}]` per vendor
 
-**Expanded View** (after Details ▸):
+---
+
+#### **MDG-ORD-EXP** - Initial Order (Expanded)
 ```
 🏙️ {District} ({zip})
 
@@ -57,19 +59,79 @@ commi# ⚡ TELEGRAM BOT CHEAT SHEET
 
 #### **MDG-CONF** - All Vendors Confirmed
 ```
- #{num} - dishbee 🍕 {count}+{count} (multi)
-� #{num} - dishbee 🍕 {count} (single)
+🔖#{num} ({source})
 
-{chef} {Shortcut}: {time}
-{chef} {Shortcut}: {time} (multi-vendor)
+👍 Confirmed time
+
+{chef} {Shortcut}: {time} 🍕 {count}
+{chef} {Shortcut}: {time} 🍕 {count} (multi-vendor)
 
 [👈 Assign to myself] [👉 Assign to...]
 ```
 
-**Product Count Logic:**
-- Parses `vendor_items` to sum quantities per vendor
-- Multi-vendor: Shows `+` separated counts (e.g., `2+3+1`)
-- Single-vendor: Shows single count
+---
+
+#### **MDG-CONF-ASSIGNED** - After Assignment
+```
+🔖#{num} ({source})
+
+👍 Confirmed time
+
+{chef} {Shortcut}: {time} 🍕 {count}
+
+[🚫 Unassign]
+```
+
+---
+
+#### **MDG-COURIER-MENU** - Courier Selection (Temporary)
+```
+Select courier:
+
+[Bee 1] [Bee 2] [Bee 3]...
+```
+*Auto-deleted after selection*
+
+---
+
+#### **MDG-SCHED-MENU** - Scheduled Orders (Temporary)
+```
+Select scheduled order:
+
+[{num} - {short} - {time} - {addr}]
+[{num} - {short} - {time} - {addr}]
+...
+[EXACT TIME ⏰]
+```
+*Auto-deleted after selection*
+
+---
+
+#### **MDG-TIME-OFFSET** - Time Offset Menu (Temporary)
+```
+[🔁 Same time] (if vendor match)
+[-5m] [-3m] [+3m] [+5m] [+10m] [+15m] [+20m] [+25m]
+[EXACT TIME ⏰]
+```
+*Auto-deleted after selection*
+
+---
+
+#### **MDG-TIME-HOUR** - Hour Picker (Temporary)
+```
+🕒 Select hour:
+
+[12:XX] [13:XX] ... [23:XX]
+```
+*Auto-deleted after selection*
+
+---
+
+#### **MDG-TIME-MIN** - Minute Picker (Temporary)
+```
+[00] [03] [06] ... [57]
+```
+*Auto-deleted after selection*
 
 ---
 
@@ -88,6 +150,8 @@ commi# ⚡ TELEGRAM BOT CHEAT SHEET
 
 [Details ▸]
 ```
+
+---
 
 #### **RG-DET** - Order Details (Expanded)
 ```
@@ -108,7 +172,9 @@ commi# ⚡ TELEGRAM BOT CHEAT SHEET
 [◂ Hide]
 ```
 
-#### **RG-TIME-REQ** - Time Request
+---
+
+#### **RG-TIME-REQ** - Time Request (Temporary)
 ```
 "Can you prepare 🔖 #{num} at {time}?"
 "Can you prepare 🔖 #{num} ⚡ Asap?"
@@ -119,10 +185,47 @@ commi# ⚡ TELEGRAM BOT CHEAT SHEET
 [🚩 Problem]
 ```
 
-#### **RG-CONF** - Vendor Confirmation
+---
+
+#### **RG-CONF** - Vendor Confirmation (Temporary)
 ```
 "Confirmation was sent to dishbee. 
 Please prepare 🔖 #{num} at {time} for courier."
+```
+
+---
+
+#### **RG-PROB-MENU** - Problem Menu (Temporary)
+```
+[🍕 Product(s) N/A]
+[⏳ We have a delay]
+[❌ Order is canceled]
+[💬 Something else]
+[← Back]
+```
+
+---
+
+#### **RG-TIME-PICKER** - Vendor Time Picker (Temporary)
+```
+[+5] [+10] [+15] [+20]
+[EXACT TIME ⏰]
+```
+
+---
+
+#### **RG-TIME-HOUR** - Vendor Hour Picker (Temporary)
+```
+🕒 Select hour:
+
+[12:XX] [13:XX] ... [23:XX]
+```
+
+---
+
+#### **RG-TIME-MIN** - Vendor Minute Picker (Temporary)
+```
+[00] [03] [06] ... [57]
 ```
 
 ---
@@ -149,7 +252,50 @@ Please prepare 🔖 #{num} at {time} for courier."
 [✅ Delivered]
 ```
 
-**Group Orders**: Shows `{color} Group {pos}/{total}` after status
+---
+
+#### **UPC-DELIVERED** - After Delivery
+```
+📍 Delivered ✅ at {HH:MM}
+
+👉 #{num} - {source}
+{chef} {Shortcut}: {time} 🍕 {count}
+👤 {Customer}
+🧭 {Address} ({zip})
+☎️ {phone}
+
+[❌ Undeliver]
+```
+
+---
+
+#### **UPC-DELAY-VENDOR** - Vendor Selection (Temporary)
+```
+Select vendor:
+
+[{chef} {Shortcut}]
+[{chef} {Shortcut}]
+...
+```
+*Multi-vendor only*
+
+---
+
+#### **UPC-DELAY-TIME** - Delay Time Picker (Temporary)
+```
+[+5] [+10] [+15] [+20]
+[EXACT TIME ⏰]
+```
+
+---
+
+#### **UPC-CALL-MENU** - Call Vendor Menu (Temporary)
+```
+[{chef} Call {Shortcut}]
+[{chef} Call {Shortcut}]
+...
+```
+*Multi-vendor only*
 
 ---
 
@@ -158,15 +304,18 @@ Please prepare 🔖 #{num} at {time} for courier."
 Separate messages sent to MDG:
 
 ```
-ST-WORKS       {chef} {Vendor} replied: {time} for 🔖 #{num} works 👍
-ST-PREP        {chef} {Vendor} replied: Will prepare 🔖 #{num} at {time} 👍
-ST-LATER       {chef} {Vendor} replied: Will prepare 🔖 #{num} later at {time} 👍
-ST-DELAY       {chef} {Vendor}: We have a delay for 🔖 #{num} - new time {time}
-ST-CANCEL      {chef} {Vendor}: Order 🔖 #{num} is canceled
-ST-WRITE       {chef} {Vendor}: Issue with 🔖 #{num}: "{message}"
-ST-ASAP-SENT   ⚡ Asap request for 🔖 #{num} sent to {Shortcut}
-ST-TIME-SENT   🕒 Time request ({time}) for 🔖 #{num} sent to {Shortcut}
-ST-UPC-DELAY   🕒 DELAY request ({time}) for 🔖 #{num} sent to {Shortcut}
+ST-WORKS        {chef} {Vendor} replied: {time} for 🔖 #{num} works 👍
+ST-PREP         {chef} {Vendor} replied: Will prepare 🔖 #{num} at {time} 👍
+ST-LATER        {chef} {Vendor} replied: Will prepare 🔖 #{num} later at {time} 👍
+ST-DELAY        {chef} {Vendor}: We have a delay for 🔖 #{num} - new time {time}
+ST-CANCEL       {chef} {Vendor}: Order 🔖 #{num} is canceled
+ST-WRITE        {chef} {Vendor}: Issue with 🔖 #{num}: "{message}"
+ST-ASAP-SENT    ⚡ Asap request for 🔖 #{num} sent to {Shortcut}
+ST-TIME-SENT    🕒 Time request ({time}) for 🔖 #{num} sent to {Shortcut}
+ST-UPC-DELAY    🕒 DELAY request ({time}) for 🔖 #{num} sent to {Shortcut}
+ST-ASSIGN       Order 🔖 #{num} assigned to 🐝 {courier}
+ST-UNASSIGN     🔖 #{num} was unassigned by {courier}
+ST-DELIVER      🔖 #{num} delivered by {courier}
 ```
 
 ---
@@ -177,41 +326,41 @@ ST-UPC-DELAY   🕒 DELAY request ({time}) for 🔖 #{num} sent to {Shortcut}
 
 **Initial Actions**
 ```
-BTN-ASAP        Asap
-BTN-TIME       🕒 Time picker
-BTN-SCHEDULED  🗂 Scheduled orders (conditional)
-BTN-VENDOR     Ask {chef} {Shortcut} (multi-vendor)
-BTN-DETAILS    Details ▸ / ◂ Hide
+BTN-ASAP        ⚡ Asap
+BTN-TIME        🕒 Time picker
+BTN-SCHEDULED   🗂 Scheduled orders (conditional)
+BTN-VENDOR      Ask {chef} {Shortcut} (multi-vendor)
+BTN-DETAILS     Details ▸ / ◂ Hide
 ```
 
-**Scheduled Orders**
+**Assignment Actions**
 ```
-BTN-ORD-REF    {num} - {short} - {time} - {addr}
-               Example: "02 - LR - 20:46 - Ledererga. 15"
+BTN-ASSIGN-ME   👈 Assign to myself
+BTN-ASSIGN-TO   👉 Assign to...
+BTN-COURIER     {Courier name} (in courier menu)
+BTN-UNASSIGN    🚫 Unassign
+BTN-COMBINE     📌 Assigned orders
 ```
 
 **Time Selection**
 ```
-BTN-SAME       🔁 Same time (if vendors match)
-BTN-OFFSET     -5m / -3m / +3m / +5m / +10m / +15m / +20m / +25m
-BTN-HOUR       12:XX, 13:XX... 23:XX
-BTN-MINUTE     00, 03, 06... 57 (3-min intervals)
+BTN-SAME        🔁 Same time (if vendors match)
+BTN-OFFSET      -5m / -3m / +3m / +5m / +10m / +15m / +20m / +25m
+BTN-EXACT       EXACT TIME ⏰
+BTN-HOUR        12:XX, 13:XX... 23:XX
+BTN-MINUTE      00, 03, 06... 57 (3-min intervals)
 ```
 
-**Assignment**
+**Scheduled Orders**
 ```
-BTN-ASSIGN-ME  👈 Assign to myself
-BTN-ASSIGN-TO  👉 Assign to...
-BTN-COURIER    Individual courier buttons (from live MDG admins)
-BTN-COMBINE    📌 Assigned orders (shows combine menu)
-BTN-BACK       ← Back
+BTN-ORD-REF     {num} - {short} - {time} - {addr}
+                Example: "02 - LR - 20:46 - Ledererga. 15"
 ```
 
-**Combine Orders:**
-- Shows all assigned (not delivered) orders
-- Button format: `{num} - {Shortcut} - {time} - {addr} (🐝{courier})`
-- Example: `"02 - LR - 20:46 - Ledererga. 15 (🐝B1)"`
-- Clicking order combines current order with selected order
+**Navigation**
+```
+BTN-BACK        ← Back
+```
 
 ---
 
@@ -219,57 +368,92 @@ BTN-BACK       ← Back
 
 **View Toggle**
 ```
-BTN-TOGGLE     Details ▸ / ◂ Hide
+BTN-TOGGLE      Details ▸ / ◂ Hide
 ```
 
 **Time Response**
 ```
-BTN-WORKS      Works 👍
-BTN-LATER      ⏰ Later at
-BTN-PREP       Will prepare at...
-BTN-WRONG      🚩 Problem
+BTN-WORKS       Works 👍
+BTN-LATER       ⏰ Later at
+BTN-PREP        (shown after selection)
+BTN-WRONG       🚩 Problem
 ```
 
 **Issue Submenu**
 ```
-BTN-UNAVAIL    🍕 Product(s) N/A
-BTN-DELAY      ⏳ We have a delay
-BTN-CANCEL     ❌ Order is canceled
-BTN-OTHER      💬 Something else
-BTN-BACK       ← Back
+BTN-UNAVAIL     🍕 Product(s) N/A
+BTN-DELAY       ⏳ We have a delay
+BTN-CANCEL      ❌ Order is canceled
+BTN-OTHER       💬 Something else
+BTN-BACK        ← Back
 ```
 
 **Time Picker**
 ```
-BTN-TIME-OPTS  +5 / +10 / +15 / +20
-BTN-EXACT      EXACT TIME ⏰
-BTN-V-HOUR     Hour selection
-BTN-V-MINUTE   Minute selection
+BTN-TIME-OPTS   +5 / +10 / +15 / +20
+BTN-EXACT       EXACT TIME ⏰
+BTN-V-HOUR      Hour selection
+BTN-V-MINUTE    Minute selection
 ```
 
 ---
 
 ### 💼 UPC Buttons
 
-**Before Delivery:**
+**Before Delivery**
 ```
-BTN-NAVIGATE   🧭 Navigate
-BTN-DELAY      ⏳ Delay
-BTN-UNASSIGN   🚫 Unassign
-BTN-CALL       {chef} Call {Shortcut}
-BTN-DELIVERED  ✅ Delivered
-```
-
-**After Delivery:**
-```
-BTN-UNDELIVER  ❌ Undeliver (reverts to assigned status)
+BTN-NAVIGATE    🧭 Navigate
+BTN-DELAY       ⏳ Delay
+BTN-UNASSIGN    🚫 Unassign
+BTN-CALL        {chef} Call {Shortcut}
+BTN-DELIVERED   ✅ Delivered
 ```
 
-**Undeliver Behavior:**
-- Removes `delivered_at` and `delivered_by` from STATE
-- Reverts status from "delivered" → "assigned"
-- Restores full UPC keyboard (Navigate, Delay, Call, Delivered)
-- Updates MDG and UPC messages
+**After Delivery**
+```
+BTN-UNDELIVER   ❌ Undeliver
+```
+
+---
+
+## 📝 MESSAGE STATE SHORTCUTS
+
+Use these shortcuts when prompting:
+
+```
+MDG-ORD         Initial order (collapsed)
+MDG-ORD-EXP     Initial order (expanded)
+MDG-CONF        All vendors confirmed
+MDG-CONF-ASG    After courier assigned
+MDG-COURIER     Courier selection menu
+MDG-SCHED       Scheduled orders menu
+MDG-TIME-OFF    Time offset menu
+MDG-TIME-HR     Hour picker
+MDG-TIME-MIN    Minute picker
+
+RG-SUM          Order summary (collapsed)
+RG-DET          Order details (expanded)
+RG-TIME-REQ     Time request message
+RG-CONF         Vendor confirmation
+RG-PROB         Problem menu
+RG-TIME         Time picker menu
+RG-TIME-HR      Hour picker
+RG-TIME-MIN     Minute picker
+
+UPC-ASSIGN      Courier assignment
+UPC-DELIVERED   After delivery
+UPC-DELAY-V     Delay vendor selection
+UPC-DELAY-T     Delay time picker
+UPC-CALL        Call vendor menu
+
+ST-*            Temporary status (see list above)
+```
+
+**Example prompts:**
+- "Add tip line to UPC-ASSIGN"
+- "Change MDG-CONF format to show times first"
+- "Remove note from RG-SUM"
+- "Add district to MDG-ORD-EXP header"
 
 ---
 
@@ -745,6 +929,9 @@ GOOGLE_MAPS_API_KEY=your_key  # District detection
 12. **Smoothr Products Parsing** - Fixed regex and RG-TIME-REQ format (f262912)
 13. **Smoothr MDG-ORD Display** - Added note, tip, product count (8fbf060)
 14. **Message Formatting** - Blank line before phone, clickable map, UPC emoji (e45537d)
+15. **Smoothr Product Count** - Removed order_type checks in mdg.py to enable product counts for all order types (315214c)
+16. **Smoothr Parser Format** - Fixed parse_smoothr_order() to handle "Product xQty - Total: X €" format from real webhooks (3a32623)
+17. **RG-SUM Status Display** - Added vendor parameter to build_status_lines() for vendor-specific status filtering in multi-vendor orders (a3101d8)
 
 ## 🆕 NEW FEATURES (Oct-Nov 2025)
 
@@ -759,5 +946,5 @@ GOOGLE_MAPS_API_KEY=your_key  # District detection
 
 ---
 
-**Last Updated**: November 4, 2025 • **Version**: 3.2 (Smoothr Parsing + Bug Fixes)  
+**Last Updated**: November 12, 2025 • **Version**: 3.3 (RG-SUM Status Fix + Smoothr Parser)  
 **See also**: AI-INSTRUCTIONS.md, SYSTEM-REFERENCE.md

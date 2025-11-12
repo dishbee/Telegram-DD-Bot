@@ -288,12 +288,21 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         
         # Use rotating chef emojis for vendors
         chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
-        chef_emoji = chef_emojis[0]  # Use first chef emoji for vendor line
         
+        # Build vendor line with counts in parentheses
         if len(vendors) > 1:
-            vendor_line = f"{chef_emoji} {'+'.join(shortcuts)} 🍕 {'+'.join(vendor_counts)}"
+            # Multi-vendor: each vendor gets its own chef emoji
+            vendor_parts = []
+            for idx, vendor in enumerate(vendors):
+                chef_emoji = chef_emojis[idx % len(chef_emojis)]
+                shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+                count = vendor_counts[idx]
+                vendor_parts.append(f"{chef_emoji} **{shortcut}** ({count})")
+            vendor_line = " + ".join(vendor_parts)
         else:
-            vendor_line = f"{chef_emoji} {shortcuts[0]} 🍕 {vendor_counts[0]}"
+            # Single vendor
+            chef_emoji = chef_emojis[0]
+            vendor_line = f"{chef_emoji} **{shortcuts[0]}** ({vendor_counts[0]})"
 
         customer_line = f"👤 {order['customer']['name']}"
 
@@ -315,7 +324,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 display_address = full_address.strip()
 
         maps_link = f"https://www.google.com/maps?q={original_address.replace(' ', '+')}"
-        address_line = f"🗺️ [{display_address}]({maps_link})\n\n"
+        address_line = f"🗺️ [{display_address}]({maps_link})"
 
         note_line = ""
         note = order.get("note", "")
@@ -339,20 +348,21 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         if phone and phone != "N/A":
             # Remove spaces from tel: URI for clickability (display keeps spaces)
             phone_uri = phone.replace(" ", "")
-            phone_line = f"[{phone}](tel:{phone_uri})\n"
+            phone_line = f"[📞 {phone}](tel:{phone_uri})"
 
         # Build base text (always shown)
         text = f"{title}\n"
-        text += f"{vendor_line}\n"
-        text += f"{customer_line}\n"
-        text += address_line  # Ends with \n\n (blank line after address)
-        text += note_line
-        text += tips_line
-        text += payment_line
-        # Add blank line before phone if any optional fields present
+        text += f"{address_line}\n"  # Address first
+        text += f"{vendor_line}\n"  # Vendor second
+        text += "\n"  # Blank line after vendor
+        # Add notes/tips/cash if present
         if note_line or tips_line or payment_line:
-            text += "\n"
-        text += phone_line
+            text += note_line
+            text += tips_line
+            text += payment_line
+            text += "\n"  # Blank line after notes section
+        text += f"{customer_line}\n"  # Customer after notes
+        text += phone_line  # Phone last
 
         # Add product details if requested
         if show_details:
@@ -368,10 +378,8 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             logger.info(f"District detection: address='{original_address}', district='{district}'")
             
             if district:
-                # Extract zip code from address_parts (already parsed above)
-                zip_code = ""
-                if len(address_parts) >= 2:
-                    zip_code = address_parts[-1].strip().strip('()')
+                # Get zip code directly from STATE (works for both Shopify and Smoothr)
+                zip_code = order['customer'].get('zip', '')
                 text += f"🏙️ {district} ({zip_code})\n"
                 logger.info(f"Added district line: 🏙️ {district} ({zip_code})")
             else:
@@ -417,7 +425,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             if order_type == "shopify":
                 payment = order.get("payment_method", "Paid")
                 if payment.lower() != "cash on delivery":
-                    items_text += f"\n{total}"
+                    items_text += f"\nTotal: {total}"
 
             text += f"{items_text}\n"
             
