@@ -362,15 +362,20 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             text += payment_line
             text += "\n"  # Blank line after notes section
         text += f"{customer_line}\n"  # Customer after notes
-        text += phone_line  # Phone last
+        text += f"{phone_line}\n"  # Phone last with newline
 
         # Add product details if requested
         if show_details:
             logger.info(f"DISTRICT DEBUG - Entering show_details block for order {order.get('name', 'Unknown')}")
             logger.info(f"DISTRICT DEBUG - original_address value: '{original_address}'")
             
-            # Add blank line before district
+            # Blank line after phone before expanded details
             text += "\n"
+            
+            # Add email if available (expanded view only, before district)
+            email = order['customer'].get('email')
+            if email:
+                text += f"✉️ {email}\n"
             
             # Add district line at the beginning of details section
             district = get_district_from_address(original_address)
@@ -384,6 +389,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 logger.info(f"Added district line: 🏙️ {district} ({zip_code})")
             else:
                 logger.info(f"No district found for address: {original_address}")
+            
+            # Blank line after district/email before products
+            text += "\n"
             
             # Build product list (works for both Shopify and Smoothr)
             if len(vendors) > 1:
@@ -425,14 +433,10 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             if order_type == "shopify":
                 payment = order.get("payment_method", "Paid")
                 if payment.lower() != "cash on delivery":
-                    items_text += f"\nTotal: {total}"
+                    items_text += f"\n\nTotal: {total}"
 
-            text += f"{items_text}\n"
+            text += f"{items_text}"
             
-            # Add email if available (expanded view only)
-            email = order['customer'].get('email')
-            if email:
-                text += f"\n✉️ {email}\n"
         else:
             # Collapsed view - no products shown
             pass
