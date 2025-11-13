@@ -357,6 +357,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
 
         # Build base text (always shown)
         text = f"{title}\n"
+        text += "\n"  # Blank line after order number
         text += f"{address_line}\n"  # Address first
         text += f"{vendor_line}\n"  # Vendor second
         text += "\n"  # Blank line after vendor
@@ -445,8 +446,8 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             # Collapsed view - no products shown
             pass
 
-        # Prepend status lines at the top
-        return status_text + text
+        # Prepend status lines at the top (remove one trailing newline)
+        return status_text.rstrip('\n') + '\n' + text
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building MDG text: %s", exc)
         return f"Error formatting order {order.get('name', 'Unknown')}"
