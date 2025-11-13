@@ -499,6 +499,7 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     logger.info(f"   {asap_status}")
     logger.info(f"   Tip: {tip_amount if tip_amount else '0.00'} EUR")
     logger.info(f"   Note: {customer_note if customer_note else 'None'}")
+    logger.info(f"DEBUG - Generated message:\n{smoothr_message}")
     
     # Parse the test message and process directly (bot messages don't trigger webhooks)
     from utils import parse_smoothr_order
