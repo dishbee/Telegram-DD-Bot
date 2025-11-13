@@ -505,6 +505,7 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     smoothr_data = parse_smoothr_order(smoothr_message)
     
     logger.info(f"✅ Test Smoothr order parsed: {smoothr_data['order_id']} ({smoothr_data['order_type']})")
+    logger.info(f"DEBUG - smoothr_data['total'] = {smoothr_data.get('total')}")
     
     # Process the Smoothr order (sends MDG-ORD + RG-SUM)
     await process_smoothr_order(smoothr_data)
