@@ -2191,8 +2191,8 @@ def telegram_webhook():
                             if vendor in reference_order.get("vendors", []):
                                 # Same restaurant - special message
                                 if order["order_type"] == "shopify":
-                                    current_display = f"#{order['name'][-2:]}"
-                                    ref_display = f"#{reference_order['name'][-2:]}"
+                                    current_display = f"{order['name'][-2:]}"
+                                    ref_display = f"{reference_order['name'][-2:]}"
                                     msg = f"Can you prepare {current_display} together with {ref_display} at the same time {reference_time}?"
                                 else:
                                     current_addr = order['customer']['address'].split(',')[0]

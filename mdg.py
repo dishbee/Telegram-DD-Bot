@@ -143,7 +143,7 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
         
         if created_dt > five_hours_ago:
             if order_data.get("order_type") == "shopify":
-                display_name = f"#{order_data['name'][-2:]}"
+                display_name = f"{order_data['name'][-2:]}"
             else:
                 address_parts = order_data['customer']['address'].split(',')
                 street_info = address_parts[0] if address_parts else "Unknown"
@@ -210,7 +210,7 @@ def build_smart_time_suggestions(order_id: str, vendor: Optional[str] = None) ->
         buttons: List[List[InlineKeyboardButton]] = []
         for i, minutes_to_add in enumerate([5, 10, 15, 20]):
             suggested_time = base_time + timedelta(minutes=minutes_to_add)
-            button_text = f"#{last_order_num} {last_time_str} + {minutes_to_add}min"
+            button_text = f"{last_order_num} {last_time_str} + {minutes_to_add}min"
             callback_data = f"smart_time|{order_id}|{vendor or 'all'}|{suggested_time.strftime('%H:%M')}"
 
             if i % 2 == 0:
@@ -258,7 +258,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
 
         # Build title line (NO "dishbee" in order number line)
-        title = f"🔖 #{order_num}"
+        title = f"🔖 {order_num}"
 
         # Build vendor line with product counts (works for both Shopify and Smoothr)
         vendor_items = order.get("vendor_items", {})
@@ -1009,10 +1009,7 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
         
         # Extract last 2 digits from order number
         full_name = order_data.get("name", "??")
-        if '#' in full_name:
-            order_num = full_name.split('#')[-1].strip()[:2]
-        else:
-            order_num = full_name[-2:] if len(full_name) >= 2 else full_name
+        order_num = full_name[-2:] if len(full_name) >= 2 else full_name
         
         vendors = order_data.get("vendors", [])
         
