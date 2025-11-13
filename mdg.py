@@ -436,10 +436,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                     items_text = '\n'.join(items_text_parts)
 
             total = order.get("total", "0.00€")
-            if order_type == "shopify":
-                payment = order.get("payment_method", "Paid")
-                if payment.lower() != "cash on delivery":
-                    items_text += f"\n\nTotal: {total}"
+            payment = order.get("payment_method", "Paid")
+            if not (order_type == "shopify" and payment.lower() == "cash on delivery"):
+                items_text += f"\n\nTotal: {total}"
 
             text += f"{items_text}"
             

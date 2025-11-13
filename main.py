@@ -432,15 +432,22 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     num_products = random.randint(2, 4)
     selected_products = random.sample(products_list, num_products)
     products_parts = []
+    products_total = 0.0
     for product in selected_products:
         product_name, base_price = product
         qty = random.randint(1, 3)
         total_price = base_price * qty
+        products_total += total_price
         products_parts.append(f"{product_name} x{qty} - Total: {total_price:.2f} €")
     products_str = ", ".join(products_parts)
     
     # Random tip (0-5 EUR)
-    tip_amount = random.choice(["0", "2.00", "2.50", "3.00", "3.50", "4.00", "4.50", "5.00"])
+    tip_amount = random.choice(["0.00", "2.00", "2.50", "3.00", "3.50", "4.00", "4.50", "5.00"])
+    
+    # Calculate total payment
+    delivery_fee = 2.00
+    tip_float = float(tip_amount)
+    total_payment = products_total + delivery_fee + tip_float
     
     # Random customer note (always include)
     notes = [
@@ -479,6 +486,7 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
 - Payment method: {payment_method}
 - Tip: {tip_amount} €
 - Delivery Fee: 2.00 €
+- Total Payment: {total_payment:.2f} €
 - Products: {products_str}"""
     
     # Log test order info
@@ -568,6 +576,10 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
     
     # Random phone (German mobile format)
     phone = f"+49 {random.randint(150, 179)} {random.randint(1000000, 9999999)}"
+    
+    # Random email
+    email_domains = ["gmail.com", "web.de", "gmx.de", "outlook.com", "yahoo.de"]
+    email = f"{customer_name.split()[0].lower()}.{customer_name.split()[1].lower()}@{random.choice(email_domains)}"
     
     # Product templates per vendor
     products_by_vendor = {
@@ -660,7 +672,8 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
         "customer": {
             "first_name": customer_name.split()[0],
             "last_name": customer_name.split()[1],
-            "phone": phone
+            "phone": phone,
+            "email": email
         },
         "shipping_address": {
             "address1": address["street"],
@@ -932,7 +945,7 @@ async def process_smoothr_order(smoothr_data: dict):
             "vendors": [vendor],
             "vendor_items": vendor_items,
             "customer": smoothr_data["customer"],
-            "total": None,  # Not available
+            "total": smoothr_data.get("total"),
             "tips": smoothr_data.get("tip"),
             "note": smoothr_data.get("note"),
             "payment_method": smoothr_data.get("payment_method"),
@@ -958,52 +971,9 @@ async def process_smoothr_order(smoothr_data: dict):
         source_name = "D&D App" if order_type == "smoothr_dnd" else "Lieferando"
         status_text = build_status_lines(STATE[order_id], "mdg")
         
-        # Build MDG message text
-        customer_name = smoothr_data["customer"]["name"]
-        phone = smoothr_data["customer"]["phone"]
-        address = smoothr_data["customer"]["address"]
-        zip_code = smoothr_data["customer"]["zip"]
-        original_address = smoothr_data["customer"]["original_address"]
-        email = smoothr_data["customer"].get("email")
-        
-        # Format: 🔖 #{num} (no "dishbee" in order number line)
-        mdg_text = status_text  # status_text already has trailing \n\n
-        mdg_text += f"🔖 #{order_num}\n"
-        
-        # Add delivery time on line 3 (before vendor) if not ASAP
-        if not smoothr_data["is_asap"] and smoothr_data.get("requested_delivery_time"):
-            mdg_text += f"⏰ {smoothr_data['requested_delivery_time']}\n"
-        
-        # Calculate product count for vendor line
-        product_count = sum(
-            int(item.split(' x ')[0]) for item in smoothr_data.get("products", []) if ' x ' in item
-        )
-        
-        mdg_text += f"👩‍🍳 **{vendor_shortcut}** 🍕 {product_count}\n"
-        mdg_text += f"👤 {customer_name}\n"
-        mdg_text += f"🗺️ [{address} ({zip_code})]({f'https://www.google.com/maps?q={original_address}'})\n\n"
-        
-        # Add note if present
-        note = smoothr_data.get("note")
-        if note:
-            mdg_text += f"❕ Note: {note}\n"
-        
-        # Add tip if present and > 0
-        tip = smoothr_data.get("tip")
-        if tip and float(tip) > 0:
-            mdg_text += f"❕ Tip: {float(tip):.2f}€\n"
-        
-        # Add blank line before phone if note or tip present
-        if note or (tip and float(tip) > 0):
-            mdg_text += "\n"
-        
-        # Add email (expanded view only - will be handled when Details clicked)
-        # For now, just store it in STATE
-        
-        if phone:
-            # Remove spaces from tel: URI for clickability (display keeps spaces)
-            phone_uri = phone.replace(" ", "")
-            mdg_text += f"[{phone}](tel:{phone_uri})"
+        # Use standard builder for consistency
+        from mdg import build_mdg_dispatch_text
+        mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
         
         # Send MDG-ORD with initial keyboard
         keyboard = mdg_initial_keyboard(order_id)
