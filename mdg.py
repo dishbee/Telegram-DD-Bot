@@ -357,7 +357,6 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
 
         # Build base text (always shown)
         text = f"{title}\n"
-        text += "\n"  # Blank line after order number
         text += f"{address_line}\n"  # Address first
         text += f"{vendor_line}\n"  # Vendor second
         text += "\n"  # Blank line after vendor
