@@ -51,7 +51,7 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
             order_number = order['name'][-2:]  # Last 2 digits
 
         # Build message with order number
-        lines = [f"🔖 #{order_number}", ""]
+        lines = [f"🔖 {order_number}", ""]
 
         # Get vendor items - ONLY show products if they exist
         vendor_items = order.get("vendor_items", {}).get(vendor, [])
