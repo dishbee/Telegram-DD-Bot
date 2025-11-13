@@ -1259,7 +1259,7 @@ async def show_combine_orders_menu(state_dict, order_id: str, chat_id: int, mess
     keyboard = build_combine_keyboard(order_id, assigned_orders)
     
     # Edit message with combine menu
-    text = f"📌 Combine 🔖 #{order_num} with:"
+    text = f"📌 Combine 🔖 {order_num} with:"
     
     logger.info(f"Showing {len(assigned_orders)} assigned orders for combining")
     

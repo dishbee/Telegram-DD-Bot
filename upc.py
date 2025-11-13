@@ -445,7 +445,7 @@ def build_assignment_message(order: dict) -> str:
         else:
             order_num = order.get('name', 'Order')
         
-        header = f"� #{order_num}\n"
+        header = f"� {order_num}\n"
         
         # Restaurant info with confirmed times and product quantities
         vendors = order.get("vendors", [])
@@ -612,7 +612,7 @@ async def handle_delivery_completion(order_id: str, user_id: int):
         
         # Send confirmation to MDG with courier name and delivery time
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        delivered_msg = f"🔖 #{order_num} was delivered by {assignee_name} at {delivery_time}"
+        delivered_msg = f"🔖 {order_num} was delivered by {assignee_name} at {delivery_time}"
         await safe_send_message(DISPATCH_MAIN_CHAT_ID, delivered_msg)
         
         # Delete MDG-CONF and other temporary messages
@@ -717,7 +717,7 @@ async def handle_undelivery(order_id: str, user_id: int):
         
         # Send notification to MDG
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        undeliver_msg = f"🔖 #{order_num} was undelivered by {courier_name} at {now().strftime('%H:%M')}"
+        undeliver_msg = f"🔖 {order_num} was undelivered by {courier_name} at {now().strftime('%H:%M')}"
         await safe_send_message(DISPATCH_MAIN_CHAT_ID, undeliver_msg)
         
         # Update MDG original order message to remove delivered status
@@ -931,7 +931,7 @@ async def show_delay_time_picker(order_id: str, user_id: int, vendor: str = None
             
             await safe_send_message(
                 user_id,
-                f"⏳ Request new ({latest_time_str}) for 🔖 #{order_num} from {vendor_shortcut}",
+                f"⏳ Request new ({latest_time_str}) for 🔖 {order_num} from {vendor_shortcut}",
                 InlineKeyboardMarkup(delay_buttons)
             )
             
@@ -1031,7 +1031,7 @@ async def handle_unassign_order(order_id: str, user_id: int):
         
         # Send notification to MDG (same style as delivery notification)
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        unassign_msg = f"🔖 #{order_num} was unassigned by {courier_name}."
+        unassign_msg = f"🔖 {order_num} was unassigned by {courier_name}."
         await safe_send_message(DISPATCH_MAIN_CHAT_ID, unassign_msg)
         
         # Re-show assignment buttons in MDG
@@ -1090,7 +1090,7 @@ async def send_delay_request_to_restaurants(order_id: str, new_time: str, user_i
         for v in vendors_to_notify:
             vendor_chat = VENDOR_GROUP_MAP.get(v)
             if vendor_chat:
-                delay_msg = f"We have a delay, if possible prepare #{order_num} at {new_time}. If not, please keep it warm."
+                delay_msg = f"We have a delay, if possible prepare {order_num} at {new_time}. If not, please keep it warm."
                 
                 # Import restaurant_response_keyboard from rg module
                 from rg import restaurant_response_keyboard
@@ -1119,7 +1119,7 @@ async def send_delay_request_to_restaurants(order_id: str, new_time: str, user_i
         vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
         confirm_msg = await safe_send_message(
             user_id,
-            f"✅ Delay request for 🔖 #{order_num} sent to {vendor_shortcuts}"
+            f"✅ Delay request for 🔖 {order_num} sent to {vendor_shortcuts}"
         )
         
         # Auto-delete after 20 seconds

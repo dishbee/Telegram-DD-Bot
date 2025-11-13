@@ -318,7 +318,7 @@ def build_assignment_confirmation_message(order: dict) -> str:
     
     # Build header with product counts
     counts_display = "+".join(vendor_counts)
-    message = f"👍 #{order_num} - dishbee 🍕 {counts_display}\n\n"
+    message = f"👍 {order_num} - dishbee 🍕 {counts_display}\n\n"
     
     # Vendor details with rotating chef emojis
     for idx, vendor in enumerate(vendors):
@@ -554,7 +554,7 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
         _test_shopify_counter = 7404590039300
     _test_shopify_counter += 1
     order_id = str(_test_shopify_counter)
-    order_number = f"dishbee #{order_id[-2:]}"
+    order_number = f"dishbee {order_id[-2:]}"
     
     # Random customer data
     first_names = ["Max", "Anna", "Thomas", "Julia", "Michael", "Sarah", "Peter", "Lisa", "David", "Maria"]
@@ -1393,7 +1393,7 @@ def telegram_webhook():
                             order_num = order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
                             
                             # ST-WRITE format from CHEAT-SHEET
-                            issue_msg = f"{vendor_name}: Issue with 🔖 #{order_num}: \"{text}\""
+                            issue_msg = f"{vendor_name}: Issue with 🔖 {order_num}: \"{text}\""
                             run_async(safe_send_message(DISPATCH_MAIN_CHAT_ID, issue_msg))
                             
                             # Clear the waiting flag
@@ -1488,7 +1488,7 @@ def telegram_webhook():
                             order_num = order['name']  # Smoothr: use full order number (TD, 500, etc.)
                         
                         if order_num:
-                            msg = f"Can you prepare 🔖 #{order_num} ⚡ Asap?"
+                            msg = f"Can you prepare 🔖 {order_num} ⚡ Asap?"
                         else:
                             addr = order['customer']['address'].split(',')[0]
                             msg = f"Can you prepare *{addr}* ⚡ Asap?"
@@ -1516,7 +1516,7 @@ def telegram_webhook():
                     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"⚡ Asap request for 🔖 #{order_num} sent to **{vendor_shortcut}**",
+                        f"⚡ Asap request for 🔖 {order_num} sent to **{vendor_shortcut}**",
                         auto_delete_after=20
                     )
                     
@@ -1634,10 +1634,10 @@ def telegram_webhook():
                             vc = VENDOR_GROUP_MAP.get(v)
                             if vc:
                                 if order["order_type"] == "shopify":
-                                    msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {selected_time}?"
+                                    msg = f"Can you prepare 🔖 {order['name'][-2:]} at {selected_time}?"
                                 else:
                                     order_num = order.get("name", "Unknown")
-                                    msg = f"Can you prepare 🔖 #{order_num} at {selected_time}?"
+                                    msg = f"Can you prepare 🔖 {order_num} at {selected_time}?"
                                 
                                 await safe_send_message(
                                     vc,
@@ -1648,10 +1648,10 @@ def telegram_webhook():
                         # Multi-vendor - send to specific vendor
                         if vendor_chat:
                             if order["order_type"] == "shopify":
-                                msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {selected_time}?"
+                                msg = f"Can you prepare 🔖 {order['name'][-2:]} at {selected_time}?"
                             else:
                                 order_num = order.get("name", "Unknown")
-                                msg = f"Can you prepare 🔖 #{order_num} at {selected_time}?"
+                                msg = f"Can you prepare 🔖 {order_num} at {selected_time}?"
                             
                             await safe_send_message(
                                 vendor_chat,
@@ -1665,7 +1665,7 @@ def telegram_webhook():
                     vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper()) if vendor != 'all' else 'vendors'
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"🕒 Time request ({selected_time}) for 🔖 #{order_num} sent to **{vendor_shortcut}**",
+                        f"🕒 Time request ({selected_time}) for 🔖 {order_num} sent to **{vendor_shortcut}**",
                         auto_delete_after=20
                     )
                     
@@ -1715,7 +1715,7 @@ def telegram_webhook():
                                 order_num = order['name']  # Smoothr: use full order number (TD, 500, etc.)
                             
                             if order_num:
-                                msg = f"Can you prepare 🔖 #{order_num} ⚡ Asap?"
+                                msg = f"Can you prepare 🔖 {order_num} ⚡ Asap?"
                             else:
                                 addr = order['customer']['address'].split(',')[0]
                                 msg = f"Can you prepare *{addr}* ⚡ Asap?"
@@ -1733,7 +1733,7 @@ def telegram_webhook():
                     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"⚡ Asap request for 🔖 #{order_num} sent to {vendor_shortcuts}",
+                        f"⚡ Asap request for 🔖 {order_num} sent to {vendor_shortcuts}",
                         auto_delete_after=20
                     )
                     
@@ -1882,10 +1882,10 @@ def telegram_webhook():
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
                             if order["order_type"] == "shopify":
-                                msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {requested_time}?"
+                                msg = f"Can you prepare 🔖 {order['name'][-2:]} at {requested_time}?"
                             else:
                                 order_num = order.get("name", "Unknown")
-                                msg = f"Can you prepare 🔖 #{order_num} at {requested_time}?"
+                                msg = f"Can you prepare 🔖 {order_num} at {requested_time}?"
                             
                             await safe_send_message(
                                 vendor_chat,
@@ -1898,10 +1898,10 @@ def telegram_webhook():
                             vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                             if vendor_chat:
                                 if order["order_type"] == "shopify":
-                                    msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {requested_time}?"
+                                    msg = f"Can you prepare 🔖 {order['name'][-2:]} at {requested_time}?"
                                 else:
                                     order_num = order.get("name", "Unknown")
-                                    msg = f"Can you prepare 🔖 #{order_num} at {requested_time}?"
+                                    msg = f"Can you prepare 🔖 {order_num} at {requested_time}?"
                                 
                                 await safe_send_message(
                                     vendor_chat,
@@ -2019,7 +2019,7 @@ def telegram_webhook():
                     for vendor in vendors_to_notify:
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
-                            msg = f"Can you also prepare 🔖 #{order_num} at {ref_time} together with 🔖 #{ref_num}?"
+                            msg = f"Can you also prepare 🔖 {order_num} at {ref_time} together with 🔖 {ref_num}?"
                             
                             await safe_send_message(
                                 vendor_chat,
@@ -2049,7 +2049,7 @@ def telegram_webhook():
                     vendor_shortcuts = "+".join([f"**{RESTAURANT_SHORTCUTS.get(v, v[:2].upper())}**" for v in vendors_to_notify])
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"🕒 Time request ({ref_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
+                        f"🕒 Time request ({ref_time}) for 🔖 {order_num} sent to {vendor_shortcuts}",
                         auto_delete_after=20
                     )
                 
@@ -2085,7 +2085,7 @@ def telegram_webhook():
                     for vendor in vendors_to_notify:
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
-                            msg = f"Can you prepare 🔖 #{order_num} at {requested_time}?"
+                            msg = f"Can you prepare 🔖 {order_num} at {requested_time}?"
                             
                             await safe_send_message(
                                 vendor_chat,
@@ -2136,7 +2136,7 @@ def telegram_webhook():
                     vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"� Time request ({requested_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
+                        f"� Time request ({requested_time}) for 🔖 {order_num} sent to {vendor_shortcuts}",
                         auto_delete_after=20
                     )
                 
@@ -2201,10 +2201,10 @@ def telegram_webhook():
                             else:
                                 # Different restaurant - standard message
                                 if order["order_type"] == "shopify":
-                                    msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {reference_time}?"
+                                    msg = f"Can you prepare 🔖 {order['name'][-2:]} at {reference_time}?"
                                 else:
                                     order_num = order.get("name", "Unknown")
-                                    msg = f"Can you prepare 🔖 #{order_num} at {reference_time}?"
+                                    msg = f"Can you prepare 🔖 {order_num} at {reference_time}?"
                             
                             await safe_send_message(
                                 vendor_chat,
@@ -2268,10 +2268,10 @@ def telegram_webhook():
                         vendor_chat = VENDOR_GROUP_MAP.get(v)
                         if vendor_chat:
                             if order["order_type"] == "shopify":
-                                msg = f"Can you prepare 🔖 #{order['name'][-2:]} at {selected_time}?"
+                                msg = f"Can you prepare 🔖 {order['name'][-2:]} at {selected_time}?"
                             else:
                                 order_num = order.get("name", "Unknown")
-                                msg = f"Can you prepare 🔖 #{order_num} at {selected_time}?"
+                                msg = f"Can you prepare 🔖 {order_num} at {selected_time}?"
                             
                             await safe_send_message(
                                 vendor_chat,
@@ -2293,7 +2293,7 @@ def telegram_webhook():
                     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"🕒 Time request ({selected_time}) for 🔖 #{order_num} sent to {vendor_shortcuts}",
+                        f"🕒 Time request ({selected_time}) for 🔖 {order_num} sent to {vendor_shortcuts}",
                         auto_delete_after=20
                     )
                     
@@ -2429,7 +2429,7 @@ def telegram_webhook():
                     # Post status to MDG
                     chef_emoji = CHEF_EMOJIS[hash(vendor) % len(CHEF_EMOJIS)]
                     vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
-                    status_msg = f"{chef_emoji} {vendor_shortcut} replied: {confirmed_time} for 🔖 #{order_num} works 👍"
+                    status_msg = f"{chef_emoji} {vendor_shortcut} replied: {confirmed_time} for 🔖 {order_num} works 👍"
                     await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
                     
                     # Send confirmation to RG
@@ -2437,7 +2437,7 @@ def telegram_webhook():
                     if vendor_group_id:
                         rg_conf_msg = await safe_send_message(
                             vendor_group_id,
-                            f"Confirmation was sent to dishbee. Please prepare 🔖 #{order_num} at {confirmed_time} for courier."
+                            f"Confirmation was sent to dishbee. Please prepare 🔖 {order_num} at {confirmed_time} for courier."
                         )
                         if rg_conf_msg:
                             asyncio.create_task(_delete_after_delay(vendor_group_id, rg_conf_msg.message_id, 20))
@@ -2531,7 +2531,7 @@ def telegram_webhook():
                         
                         chef_emoji = CHEF_EMOJIS[hash(vendor) % len(CHEF_EMOJIS)]
                         vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
-                        status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 #{order_num} later at {selected_time} 👍"
+                        status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 {order_num} later at {selected_time} 👍"
                         await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
                         
                         # Send confirmation to RG
@@ -2539,7 +2539,7 @@ def telegram_webhook():
                         if vendor_group_id:
                             rg_conf_msg = await safe_send_message(
                                 vendor_group_id,
-                                f"Confirmation was sent to dishbee. Please prepare 🔖 #{order_num} at {selected_time} for courier."
+                                f"Confirmation was sent to dishbee. Please prepare 🔖 {order_num} at {selected_time} for courier."
                             )
                             if rg_conf_msg:
                                 asyncio.create_task(_delete_after_delay(vendor_group_id, rg_conf_msg.message_id, 20))
@@ -2630,7 +2630,7 @@ def telegram_webhook():
                         
                         chef_emoji = CHEF_EMOJIS[hash(vendor) % len(CHEF_EMOJIS)]
                         vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
-                        status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 #{order_num} at {selected_time} 👍"
+                        status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 {order_num} at {selected_time} 👍"
                         await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
                         
                         # Send confirmation to RG
@@ -2638,7 +2638,7 @@ def telegram_webhook():
                         if vendor_group_id:
                             rg_conf_msg = await safe_send_message(
                                 vendor_group_id,
-                                f"Confirmation was sent to dishbee. Please prepare 🔖 #{order_num} at {selected_time} for courier."
+                                f"Confirmation was sent to dishbee. Please prepare 🔖 {order_num} at {selected_time} for courier."
                             )
                             if rg_conf_msg:
                                 asyncio.create_task(_delete_after_delay(vendor_group_id, rg_conf_msg.message_id, 20))
@@ -2719,7 +2719,7 @@ def telegram_webhook():
                     vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor)
                     
                     # ST-CANCEL format from CHEAT-SHEET (auto-delete after 20s)
-                    msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"⚠️ {vendor_shortcut}: Order 🔖 #{order_num} is canceled ❌")
+                    msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"⚠️ {vendor_shortcut}: Order 🔖 {order_num} is canceled ❌")
                     asyncio.create_task(_delete_after_delay(DISPATCH_MAIN_CHAT_ID, msg.message_id, 20))
                 
                 elif action in ["wrong_technical", "wrong_other"]:
@@ -2775,7 +2775,7 @@ def telegram_webhook():
                     chef_emoji = CHEF_EMOJIS[hash(vendor) % len(CHEF_EMOJIS)]
                     
                     # ST-DELAY format from CHEAT-SHEET
-                    await send_status_message(DISPATCH_MAIN_CHAT_ID, f"{chef_emoji} {vendor_shortcut}: We have a delay for 🔖 #{order_num} - new time {delay_time}", auto_delete_after=20)
+                    await send_status_message(DISPATCH_MAIN_CHAT_ID, f"{chef_emoji} {vendor_shortcut}: We have a delay for 🔖 {order_num} - new time {delay_time}", auto_delete_after=20)
                     
                     # Delete the delay time picker message (cleanup)
                     chat_id = cq["message"]["chat"]["id"]
@@ -2856,13 +2856,13 @@ def telegram_webhook():
                         
                         # Send appropriate status message to MDG based on original action
                         if original_action == "later_time":
-                            status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 #{order_num} later at {selected_time} 👍"
+                            status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 {order_num} later at {selected_time} 👍"
                         elif original_action == "prepare_time":
-                            status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 #{order_num} at {selected_time} 👍"
+                            status_msg = f"{chef_emoji} {vendor_shortcut} replied: Will prepare 🔖 {order_num} at {selected_time} 👍"
                         elif original_action == "delay_time":
-                            status_msg = f"{chef_emoji} {vendor_shortcut}: We have a delay for 🔖 #{order_num} - new time {selected_time}"
+                            status_msg = f"{chef_emoji} {vendor_shortcut}: We have a delay for 🔖 {order_num} - new time {selected_time}"
                         else:
-                            status_msg = f"{chef_emoji} {vendor_shortcut} confirmed: {selected_time} for 🔖 #{order_num}"
+                            status_msg = f"{chef_emoji} {vendor_shortcut} confirmed: {selected_time} for 🔖 {order_num}"
                         
                         await send_status_message(DISPATCH_MAIN_CHAT_ID, status_msg, auto_delete_after=20)
                         
@@ -2872,7 +2872,7 @@ def telegram_webhook():
                             if vendor_group_id:
                                 rg_conf_msg = await safe_send_message(
                                     vendor_group_id,
-                                    f"Confirmation was sent to dishbee. Please prepare 🔖 #{order_num} at {selected_time} for courier."
+                                    f"Confirmation was sent to dishbee. Please prepare 🔖 {order_num} at {selected_time} for courier."
                                 )
                                 if rg_conf_msg:
                                     asyncio.create_task(_delete_after_delay(vendor_group_id, rg_conf_msg.message_id, 20))
@@ -3008,7 +3008,7 @@ def telegram_webhook():
                     1. User clicks "📌 Assigned orders" in MDG
                     2. Get all assigned (not delivered) orders
                     3. Build inline keyboard with order buttons
-                    4. Show "📌 Combine 🔖 #{num} with:" message
+                    4. Show "📌 Combine 🔖 {num} with:" message
                     5. User clicks order to combine with
                     
                     Orders shown are sorted by courier and include:
