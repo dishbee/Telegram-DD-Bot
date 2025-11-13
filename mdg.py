@@ -356,9 +356,11 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             phone_line = f"[📞 {phone}](tel:{phone_uri})"
 
         # Build base text (always shown)
-        text = f"{title}\n\n"
+        text = f"{title}\n"
+        text += "\n"  # Blank line after order number
         text += f"{address_line}\n"  # Address first
         text += f"{vendor_line}\n"  # Vendor second
+        text += "\n"  # Blank line after vendor
         # Add notes/tips/cash if present
         if note_line or tips_line or payment_line:
             text += note_line
@@ -366,7 +368,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             text += payment_line
             text += "\n"  # Blank line after notes section
         text += f"{customer_line}\n"  # Customer after notes
-        text += f"{phone_line}\n"  # Phone last with newline
+        text += f"{phone_line}"  # Phone last, no newline
 
         # Add product details if requested
         if show_details:
