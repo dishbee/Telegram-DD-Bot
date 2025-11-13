@@ -986,6 +986,10 @@ def parse_smoothr_order(text: str) -> dict:
     lines = text.strip().split('\n')
     order_data = {}
     
+    # DEBUG: Log all parsed lines
+    logger.info(f"DEBUG PARSER - Total lines found: {len(lines)}")
+    for i, line in enumerate(lines):
+        logger.info(f"  Line {i}: '{line}'")
     # Parse line by line
     address_lines = []
     in_address_block = False
@@ -1064,11 +1068,13 @@ def parse_smoothr_order(text: str) -> dict:
                 logger.error(f"Failed to parse delivery fee '{line}': {e}")
         
         elif line.startswith("- Total Payment:"):
+            logger.info(f"DEBUG PARSER - Found Total Payment line: '{line}'")
             try:
                 total_text = line.split(":", 1)[1].strip()
                 # Extract numeric value (e.g., "5.00 €" -> "5.00")
                 total_amount = total_text.split()[0]
                 order_data["total"] = f"{total_amount}€"
+                logger.info(f"DEBUG PARSER - Extracted total: {order_data['total']}")
             except Exception as e:
                 logger.error(f"Failed to parse total payment '{line}': {e}")
         
