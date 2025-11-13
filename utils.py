@@ -1161,6 +1161,7 @@ def parse_smoothr_order(text: str) -> dict:
         "tip": order_data.get("tip"),
         "payment_method": order_data.get("payment_method"),
         "delivery_fee": order_data.get("delivery_fee"),
+        "total": order_data.get("total"),
         "smoothr_raw": text  # Keep original for debugging
     }
     
