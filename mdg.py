@@ -297,14 +297,13 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         
         # Build vendor line with counts in parentheses
         if len(vendors) > 1:
-            # Multi-vendor: each vendor gets its own chef emoji
+            # Multi-vendor: ONE chef emoji for all vendors
             vendor_parts = []
             for idx, vendor in enumerate(vendors):
-                chef_emoji = chef_emojis[idx % len(chef_emojis)]
                 shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
                 count = vendor_counts[idx]
-                vendor_parts.append(f"{chef_emoji} **{shortcut}** ({count})")
-            vendor_line = " + ".join(vendor_parts)
+                vendor_parts.append(f"**{shortcut}** ({count})")
+            vendor_line = f"{chef_emojis[0]} " + " + ".join(vendor_parts)
         else:
             # Single vendor
             chef_emoji = chef_emojis[0]
@@ -357,10 +356,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             phone_line = f"[📞 {phone}](tel:{phone_uri})"
 
         # Build base text (always shown)
-        text = f"{title}\n"
+        text = f"{title}\n\n"
         text += f"{address_line}\n"  # Address first
         text += f"{vendor_line}\n"  # Vendor second
-        text += "\n"  # Blank line after vendor
         # Add notes/tips/cash if present
         if note_line or tips_line or payment_line:
             text += note_line
