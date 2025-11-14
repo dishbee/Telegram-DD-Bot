@@ -1054,15 +1054,6 @@ async def handle_unassign_order(order_id: str, user_id: int):
             f"Order 🔖 {order_num} was unassigned from 🐝 {courier_name}",
             auto_delete_after=20
         )
-            DISPATCH_MAIN_CHAT_ID,
-            build_assignment_confirmation_message(order),
-            mdg_assignment_keyboard(order_id)
-        )
-        
-        # Track assignment message for cleanup
-        if "mdg_additional_messages" not in order:
-            order["mdg_additional_messages"] = []
-        order["mdg_additional_messages"].append(assignment_msg.message_id)
         
         logger.info(f"Order {order_id} unassigned by user {user_id} ({courier_name})")
 
