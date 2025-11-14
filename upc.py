@@ -288,6 +288,10 @@ async def update_group_upc_messages(group_id: str):
 async def send_assignment_to_private_chat(order_id: str, user_id: int):
     """Send order assignment details to user's private chat"""
     try:
+        # DEBUG: Check STATE reference
+        logger.info(f"DEBUG ASSIGNMENT - STATE object id: {id(STATE)}")
+        logger.info(f"DEBUG ASSIGNMENT - STATE keys: {list(STATE.keys())}")
+        
         order = STATE.get(order_id)
         if not order:
             logger.error(f"Order {order_id} not found for assignment")
@@ -1011,9 +1015,15 @@ async def handle_unassign_order(order_id: str, user_id: int):
         user_id: Courier's Telegram user_id who is unassigning
     """
     try:
+        # DEBUG: Check STATE reference
+        logger.info(f"DEBUG UNASSIGN - STATE object id: {id(STATE)}")
+        logger.info(f"DEBUG UNASSIGN - STATE keys: {list(STATE.keys())}")
+        logger.info(f"DEBUG UNASSIGN - Looking for order_id: {order_id} (type: {type(order_id)})")
+        
         order = STATE.get(order_id)
         if not order:
             logger.error(f"Order {order_id} not found for unassignment")
+            logger.error(f"Available orders in STATE: {list(STATE.keys())}")
             return
 
         # Get courier name for notification
