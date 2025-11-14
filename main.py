@@ -295,12 +295,21 @@ def build_assignment_confirmation_message(order: dict) -> str:
     vendors = order.get("vendors", [])
     confirmed_times = order.get("confirmed_times", {})
     vendor_items = order.get("vendor_items", {})
-    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+    order_num = order.get("name", "Unknown")
+    
+    # Extract source from order name (e.g., "31-dishbee" -> "dishbee") or use order_type
+    source = "shopify"
+    if "-" in str(order_num):
+        parts = str(order_num).split("-", 1)
+        if len(parts) > 1:
+            source = parts[1]
+    elif order.get("order_type") == "smoothr":
+        source = "smoothr"
     
     # Chef emojis for variety
     chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
     
-    # Count products per vendor and build counts string
+    # Count products per vendor
     vendor_counts = []
     for vendor in vendors:
         items = vendor_items.get(vendor, [])
@@ -314,33 +323,18 @@ def build_assignment_confirmation_message(order: dict) -> str:
                     product_count += 1
             else:
                 product_count += 1
-        vendor_counts.append(str(product_count))
+        vendor_counts.append(product_count)
     
-    # Determine order source
-    order_type = order.get("order_type", "shopify")
-    if order_type == "shopify":
-        source = "dishbee"
-    elif order_type == "smoothr_dnd":
-        source = "D&D App"
-    elif order_type == "smoothr_lieferando":
-        source = "Lieferando"
-    else:
-        source = "dishbee"
-    
-    # Build header
-    message = f"🔖{order_num} ({source})\n\n"
-    message += "👍 Confirmed time\n\n"
+    # Build header with new format
+    message = f"🔖#{order_num} ({source})\n\n👍 Confirmed time\n\n"
     
     # Vendor details with rotating chef emojis and product counts
     for idx, vendor in enumerate(vendors):
         pickup_time = confirmed_times.get(vendor, "ASAP")
         chef_emoji = chef_emojis[idx % len(chef_emojis)]
         vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-        
-        # Get product count for this vendor
-        product_count = int(vendor_counts[idx]) if idx < len(vendor_counts) else 0
-        
-        message += f"{chef_emoji} **{vendor_shortcut}**: {pickup_time} ({product_count})\n"
+        count = vendor_counts[idx]
+        message += f"{chef_emoji} **{vendor_shortcut}**: {pickup_time} ({count})\n"
     
     return message
 
@@ -2962,18 +2956,12 @@ def telegram_webhook():
                     # Update MDG with assignment info
                     await upc.update_mdg_with_assignment(order_id, user_id)
                     
-                    # Send temporary status message
+                    # Send temporary status notification
                     order = STATE.get(order_id)
                     if order:
                         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-                        from utils import COURIER_MAP
-                        courier_info = COURIER_MAP.get(str(user_id), {})
-                        courier_name = courier_info.get("username", f"User{user_id}")
-                        await send_status_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            f"Order 🔖 {order_num} assigned to 🐝 {courier_name}",
-                            auto_delete_after=20
-                        )
+                        courier_name = cq["from"].get("first_name", "Unknown")
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"Order 🔖 {order_num} assigned to 🐝 {courier_name}")
                 
                 elif action == "assign_to_menu":
                     """
@@ -3027,21 +3015,21 @@ def telegram_webhook():
                     # Update MDG with assignment info
                     await upc.update_mdg_with_assignment(order_id, target_user_id)
                     
-                    # Clean up "Select courier:" message
-                    await cleanup_mdg_messages(order_id)
-                    
-                    # Send temporary status message
+                    # Get courier name for notification
                     order = STATE.get(order_id)
                     if order:
                         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-                        from utils import COURIER_MAP
-                        courier_info = COURIER_MAP.get(str(target_user_id), {})
-                        courier_name = courier_info.get("username", f"User{target_user_id}")
-                        await send_status_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            f"Order 🔖 {order_num} assigned to 🐝 {courier_name}",
-                            auto_delete_after=20
-                        )
+                        try:
+                            target_chat = await bot.get_chat(target_user_id)
+                            courier_name = target_chat.first_name or "Unknown"
+                        except:
+                            courier_name = "Unknown"
+                        # Send temporary status notification
+                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"Order 🔖 {order_num} assigned to 🐝 {courier_name}")
+                    
+                    # Delete courier selection menu
+                    menu_message_id = cq["message"]["message_id"]
+                    await safe_delete_message(DISPATCH_MAIN_CHAT_ID, menu_message_id)
                 
                 elif action == "show_assigned":
                     """

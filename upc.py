@@ -35,8 +35,6 @@ def configure(state_ref, bot_ref=None):
 
 def check_all_vendors_confirmed(order_id: str) -> bool:
     """Check if ALL vendors have confirmed their times for an order"""
-    from main import STATE
-    
     order = STATE.get(order_id)
     if not order:
         logger.warning(f"DEBUG: Order {order_id} not found in STATE")
@@ -87,15 +85,19 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
         logger.error(f"Error building MDG assignment keyboard: {e}")
         return None
 
-def mdg_unassign_keyboard(order_id: str) -> InlineKeyboardMarkup:
-    """Build unassign button for MDG after assignment"""
-    try:
-        return InlineKeyboardMarkup([[
-            InlineKeyboardButton("🚫 Unassign", callback_data=f"unassign_order|{order_id}")
-        ]])
-    except Exception as e:
-        logger.error(f"Error building MDG unassign keyboard: {e}")
-        return None
+def mdg_unassign_keyboard(order_id):
+    """
+    Build keyboard with single Unassign button for MDG-CONF after assignment.
+    
+    Replaces assignment buttons after courier is assigned.
+    
+    Returns:
+        InlineKeyboardMarkup with [🚫 Unassign] button
+    """
+    keyboard = [
+        [InlineKeyboardButton("🚫 Unassign", callback_data=f"unassign_order|{order_id}")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 async def get_mdg_couriers(bot):
     """
@@ -290,12 +292,6 @@ async def update_group_upc_messages(group_id: str):
 async def send_assignment_to_private_chat(order_id: str, user_id: int):
     """Send order assignment details to user's private chat"""
     try:
-        from main import STATE, bot
-        
-        # DEBUG: Check STATE reference
-        logger.info(f"DEBUG ASSIGNMENT - STATE object id: {id(STATE)}")
-        logger.info(f"DEBUG ASSIGNMENT - STATE keys: {list(STATE.keys())}")
-        
         order = STATE.get(order_id)
         if not order:
             logger.error(f"Order {order_id} not found for assignment")
@@ -361,8 +357,6 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int):
 async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
     """Update MDG message to show assignment status"""
     try:
-        from main import STATE
-        
         order = STATE.get(order_id)
         if not order or "mdg_message_id" not in order:
             return
@@ -378,17 +372,6 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
             updated_text,
             mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
         )
-        
-        # Edit MDG confirmation message to show unassign button
-        from main import build_assignment_confirmation_message
-        confirmation_msg_id = order.get("mdg_additional_messages", [])[-1] if order.get("mdg_additional_messages") else None
-        if confirmation_msg_id:
-            await safe_edit_message(
-                DISPATCH_MAIN_CHAT_ID,
-                confirmation_msg_id,
-                build_assignment_confirmation_message(order),
-                mdg_unassign_keyboard(order_id)
-            )
 
         # Update all RG messages with new status
         for vendor in order.get("vendors", []):
@@ -1021,17 +1004,9 @@ async def handle_unassign_order(order_id: str, user_id: int):
         user_id: Courier's Telegram user_id who is unassigning
     """
     try:
-        from main import STATE
-        
-        # DEBUG: Check STATE reference
-        logger.info(f"DEBUG UNASSIGN - STATE object id: {id(STATE)}")
-        logger.info(f"DEBUG UNASSIGN - STATE keys: {list(STATE.keys())}")
-        logger.info(f"DEBUG UNASSIGN - Looking for order_id: {order_id} (type: {type(order_id)})")
-        
         order = STATE.get(order_id)
         if not order:
             logger.error(f"Order {order_id} not found for unassignment")
-            logger.error(f"Available orders in STATE: {list(STATE.keys())}")
             return
 
         # Get courier name for notification
@@ -1053,25 +1028,39 @@ async def handle_unassign_order(order_id: str, user_id: int):
         if "assigned_by" in order:
             del order["assigned_by"]
         
-        # Edit MDG confirmation message to restore assignment buttons
-        from main import build_assignment_confirmation_message
-        confirmation_msg_id = order.get("mdg_additional_messages", [])[-1] if order.get("mdg_additional_messages") else None
-        if confirmation_msg_id:
+        # Restore MDG message to show confirmation text (assignment buttons come next)
+        if "mdg_message_id" in order:
+            import mdg
+            
+            # Show confirmation message with vendor times
             confirmation_text = build_assignment_confirmation_message(order)
+            
+            # Update MDG - remove any existing buttons temporarily
             await safe_edit_message(
                 DISPATCH_MAIN_CHAT_ID,
-                confirmation_msg_id,
+                order["mdg_message_id"],
                 confirmation_text,
-                mdg_assignment_keyboard(order_id)  # Restore assignment buttons
+                None  # No buttons on main message
             )
         
-        # Send notification
+        # Send notification to MDG (same style as delivery notification)
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        await send_status_message(
+        unassign_msg = f"Order🔖 {order_num} was unassigned from 🐝 {courier_name}"
+        await safe_send_message(DISPATCH_MAIN_CHAT_ID, unassign_msg)
+        
+        # Re-show assignment buttons in MDG
+        # Import here to avoid circular dependency
+        from main import build_assignment_confirmation_message
+        assignment_msg = await safe_send_message(
             DISPATCH_MAIN_CHAT_ID,
-            f"Order 🔖 {order_num} was unassigned from 🐝 {courier_name}",
-            auto_delete_after=20
+            build_assignment_confirmation_message(order),
+            mdg_assignment_keyboard(order_id)
         )
+        
+        # Track assignment message for cleanup
+        if "mdg_additional_messages" not in order:
+            order["mdg_additional_messages"] = []
+        order["mdg_additional_messages"].append(assignment_msg.message_id)
         
         logger.info(f"Order {order_id} unassigned by user {user_id} ({courier_name})")
 
