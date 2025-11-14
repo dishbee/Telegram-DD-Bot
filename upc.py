@@ -7,14 +7,6 @@ from zoneinfo import ZoneInfo
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from utils import logger, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, RESTAURANT_SHORTCUTS, safe_send_message, safe_edit_message, safe_delete_message, get_error_description
 
-# Import send_status_message from main (will be available after main imports upc)
-send_status_message = None
-
-def configure_send_status_message(func):
-    """Configure send_status_message reference from main.py"""
-    global send_status_message
-    send_status_message = func
-
 # Timezone configuration for Passau, Germany (Europe/Berlin)
 TIMEZONE = ZoneInfo("Europe/Berlin")
 
@@ -374,8 +366,19 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
             DISPATCH_MAIN_CHAT_ID,
             order["mdg_message_id"],
             updated_text,
-            mdg_unassign_keyboard(order_id)  # Show unassign button
+            mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
         )
+        
+        # Edit MDG confirmation message to show unassign button
+        from main import build_assignment_confirmation_message
+        confirmation_msg_id = order.get("mdg_additional_messages", [])[-1] if order.get("mdg_additional_messages") else None
+        if confirmation_msg_id:
+            await safe_edit_message(
+                DISPATCH_MAIN_CHAT_ID,
+                confirmation_msg_id,
+                build_assignment_confirmation_message(order),
+                mdg_unassign_keyboard(order_id)
+            )
 
         # Update all RG messages with new status
         for vendor in order.get("vendors", []):
@@ -1032,30 +1035,34 @@ async def handle_unassign_order(order_id: str, user_id: int):
         if "assigned_by" in order:
             del order["assigned_by"]
         
-        # Get the existing MDG confirmation message ID
-        # Look in mdg_additional_messages for the confirmation message
-        mdg_conf_id = None
-        if "mdg_additional_messages" in order and len(order["mdg_additional_messages"]) > 0:
-            # The last message in mdg_additional_messages should be the confirmation message
-            mdg_conf_id = order["mdg_additional_messages"][-1]
-        
-        if mdg_conf_id:
-            # Edit MDG confirmation message to restore assignment buttons
+        # Edit MDG confirmation message to restore assignment buttons
+        from main import build_assignment_confirmation_message
+        confirmation_msg_id = order.get("mdg_additional_messages", [])[-1] if order.get("mdg_additional_messages") else None
+        if confirmation_msg_id:
             confirmation_text = build_assignment_confirmation_message(order)
             await safe_edit_message(
                 DISPATCH_MAIN_CHAT_ID,
-                mdg_conf_id,
+                confirmation_msg_id,
                 confirmation_text,
                 mdg_assignment_keyboard(order_id)  # Restore assignment buttons
             )
         
-        # Send unassignment notification
+        # Send notification
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
         await send_status_message(
             DISPATCH_MAIN_CHAT_ID,
-            f"🔖 {order_num} was unassigned by {courier_name}.",
+            f"Order 🔖 {order_num} was unassigned from 🐝 {courier_name}",
             auto_delete_after=20
         )
+            DISPATCH_MAIN_CHAT_ID,
+            build_assignment_confirmation_message(order),
+            mdg_assignment_keyboard(order_id)
+        )
+        
+        # Track assignment message for cleanup
+        if "mdg_additional_messages" not in order:
+            order["mdg_additional_messages"] = []
+        order["mdg_additional_messages"].append(assignment_msg.message_id)
         
         logger.info(f"Order {order_id} unassigned by user {user_id} ({courier_name})")
 

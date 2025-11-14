@@ -129,7 +129,6 @@ RESTAURANT_FORWARDED_MESSAGES: Dict[int, Dict[str, Any]] = {}
 
 configure_mdg(STATE, RESTAURANT_SHORTCUTS)
 upc.configure(STATE, bot)  # Configure UPC module with STATE and bot reference
-# Configure send_status_message after it's defined (below)
 
 # Create event loop for async operations
 loop = asyncio.new_event_loop()
@@ -253,9 +252,6 @@ async def send_status_message(chat_id: int, text: str, auto_delete_after: int = 
     except Exception as e:
         logger.error(f"Error in send_status_message: {e}")
 
-# Configure send_status_message in upc module
-upc.configure_send_status_message(send_status_message)
-
 async def _delete_after_delay(chat_id: int, message_id: int, delay: int):
     """Helper to delete message after delay"""
     try:
@@ -320,17 +316,31 @@ def build_assignment_confirmation_message(order: dict) -> str:
                 product_count += 1
         vendor_counts.append(str(product_count))
     
-    # Build header with product counts
-    counts_display = "+".join(vendor_counts)
-    message = f"👍 {order_num} - dishbee 🍕 {counts_display}\n\n"
+    # Determine order source
+    order_type = order.get("order_type", "shopify")
+    if order_type == "shopify":
+        source = "dishbee"
+    elif order_type == "smoothr_dnd":
+        source = "D&D App"
+    elif order_type == "smoothr_lieferando":
+        source = "Lieferando"
+    else:
+        source = "dishbee"
     
-    # Vendor details with rotating chef emojis
+    # Build header
+    message = f"🔖{order_num} ({source})\n\n"
+    message += "👍 Confirmed time\n\n"
+    
+    # Vendor details with rotating chef emojis and product counts
     for idx, vendor in enumerate(vendors):
         pickup_time = confirmed_times.get(vendor, "ASAP")
         chef_emoji = chef_emojis[idx % len(chef_emojis)]
-        # Use vendor shortcut instead of full name
         vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-        message += f"{chef_emoji} **{vendor_shortcut}**: {pickup_time}\n"
+        
+        # Get product count for this vendor
+        product_count = int(vendor_counts[idx]) if idx < len(vendor_counts) else 0
+        
+        message += f"{chef_emoji} **{vendor_shortcut}**: {pickup_time} ({product_count})\n"
     
     return message
 
@@ -2951,6 +2961,19 @@ def telegram_webhook():
                     
                     # Update MDG with assignment info
                     await upc.update_mdg_with_assignment(order_id, user_id)
+                    
+                    # Send temporary status message
+                    order = STATE.get(order_id)
+                    if order:
+                        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                        from utils import COURIER_MAP
+                        courier_info = COURIER_MAP.get(str(user_id), {})
+                        courier_name = courier_info.get("username", f"User{user_id}")
+                        await send_status_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            f"Order 🔖 {order_num} assigned to 🐝 {courier_name}",
+                            auto_delete_after=20
+                        )
                 
                 elif action == "assign_to_menu":
                     """
@@ -3009,15 +3032,16 @@ def telegram_webhook():
                     
                     # Send temporary status message
                     order = STATE.get(order_id)
-                    order_num = order.get('name', '')[-2:] if order and len(order.get('name', '')) >= 2 else order.get('name', '') if order else order_id
-                    from utils import COURIER_MAP
-                    courier_info = COURIER_MAP.get(str(target_user_id), {})
-                    courier_name = courier_info.get("username", f"User{target_user_id}")
-                    await send_status_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        f"Order 🔖 {order_num} assigned to 🐝 {courier_name}",
-                        auto_delete_after=20
-                    )
+                    if order:
+                        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                        from utils import COURIER_MAP
+                        courier_info = COURIER_MAP.get(str(target_user_id), {})
+                        courier_name = courier_info.get("username", f"User{target_user_id}")
+                        await send_status_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            f"Order 🔖 {order_num} assigned to 🐝 {courier_name}",
+                            auto_delete_after=20
+                        )
                 
                 elif action == "show_assigned":
                     """
