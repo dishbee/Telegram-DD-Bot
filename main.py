@@ -3242,20 +3242,33 @@ def telegram_webhook():
                     """
                     Courier unassigns themselves from order.
                     
-                    Flow:
-                    1. Courier clicks "Unassign" in their private chat
-                    2. UPC assignment message deleted
-                    3. Order state reverted to ready-for-assignment
-                    4. MDG updated with assignment buttons restored
-                    5. Notification sent to MDG about unassignment
+                    Flow (like "undelivered" - no STATE needed):
+                    1. Courier clicks "Unassign" in MDG-CONF message
+                    2. Edit message to restore assignment keyboard (text unchanged)
+                    3. Send temporary notification to MDG
                     
-                    Only available before delivery is marked.
+                    No STATE lookup needed - edit message directly.
                     """
                     order_id = data[1]
                     user_id = cq["from"]["id"]
-                    logger.info(f"User {user_id} unassigning order {order_id}")
                     
-                    await upc.handle_unassign_order(order_id, user_id)
+                    # Handle like "undelivered" - edit message directly, keep text, restore keyboard
+                    await safe_edit_message(
+                        callback_query.message.chat_id,
+                        callback_query.message.message_id,
+                        callback_query.message.text,  # Keep existing text unchanged
+                        reply_markup=upc.mdg_assignment_keyboard(order_id)
+                    )
+                    
+                    # Send temporary notification
+                    notif = await safe_send_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"Order 🔖 {order_id} was unassigned"
+                    )
+                    if notif:
+                        asyncio.create_task(delayed_delete_message(DISPATCH_MAIN_CHAT_ID, notif.message_id, 3))
+                    
+                    logger.info(f"Order {order_id} unassigned by user {user_id}")
                 
                 elif action == "confirm_delivered":
                     """
