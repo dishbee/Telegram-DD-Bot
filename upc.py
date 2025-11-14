@@ -1039,21 +1039,6 @@ async def handle_unassign_order(order_id: str, user_id: int):
         if "assigned_by" in order:
             del order["assigned_by"]
         
-        # Restore MDG message to show confirmation text (assignment buttons come next)
-        if "mdg_message_id" in order:
-            import mdg
-            
-            # Show confirmation message with vendor times
-            confirmation_text = build_assignment_confirmation_message(order)
-            
-            # Update MDG - remove any existing buttons temporarily
-            await safe_edit_message(
-                DISPATCH_MAIN_CHAT_ID,
-                order["mdg_message_id"],
-                confirmation_text,
-                None  # No buttons on main message
-            )
-        
         # Send notification to MDG (same style as delivery notification)
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
         unassign_msg = f"Order🔖 {order_num} was unassigned from 🐝 {courier_name}"
