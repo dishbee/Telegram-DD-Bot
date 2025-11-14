@@ -2485,7 +2485,9 @@ def telegram_webhook():
                                 build_assignment_confirmation_message(order),
                                 mdg_assignment_keyboard(order_id)
                             )
-                            # Track this message for potential cleanup
+                            # Track MDG-CONF message ID for updating keyboard after assignment
+                            order["mdg_conf_message_id"] = assignment_msg.message_id
+                            # Also track for cleanup
                             if "mdg_additional_messages" not in order:
                                 order["mdg_additional_messages"] = []
                             order["mdg_additional_messages"].append(assignment_msg.message_id)
@@ -2585,7 +2587,9 @@ def telegram_webhook():
                                 build_assignment_confirmation_message(order),
                                 mdg_assignment_keyboard(order_id)
                             )
-                            # Track this message for potential cleanup
+                            # Track MDG-CONF message ID for updating keyboard after assignment
+                            order["mdg_conf_message_id"] = assignment_msg.message_id
+                            # Also track for cleanup
                             if "mdg_additional_messages" not in order:
                                 order["mdg_additional_messages"] = []
                             order["mdg_additional_messages"].append(assignment_msg.message_id)
@@ -2689,7 +2693,9 @@ def telegram_webhook():
                                 build_assignment_confirmation_message(order),
                                 mdg_assignment_keyboard(order_id)
                             )
-                            # Track this message for potential cleanup
+                            # Track MDG-CONF message ID for updating keyboard after assignment
+                            order["mdg_conf_message_id"] = assignment_msg.message_id
+                            # Also track for cleanup
                             if "mdg_additional_messages" not in order:
                                 order["mdg_additional_messages"] = []
                             order["mdg_additional_messages"].append(assignment_msg.message_id)
@@ -2899,7 +2905,9 @@ def telegram_webhook():
                                     build_assignment_confirmation_message(order),
                                     mdg_assignment_keyboard(order_id)
                                 )
-                                # Track this message for potential cleanup
+                                # Track MDG-CONF message ID for updating keyboard after assignment
+                                order["mdg_conf_message_id"] = assignment_msg.message_id
+                                # Also track for cleanup
                                 if "mdg_additional_messages" not in order:
                                     order["mdg_additional_messages"] = []
                                 order["mdg_additional_messages"].append(assignment_msg.message_id)

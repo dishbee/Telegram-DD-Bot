@@ -388,13 +388,12 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
                     rg.vendor_keyboard(order_id, vendor, expanded)
                 )
 
-        # Update MDG-CONF message to replace assignment buttons with unassign button
-        if "mdg_additional_messages" in order and order["mdg_additional_messages"]:
-            mdg_conf_message_id = order["mdg_additional_messages"][-1]
+        # Update MDG-CONF keyboard to show [🚫 Unassign] button
+        if "mdg_conf_message_id" in order:
             from main import build_assignment_confirmation_message
             await safe_edit_message(
                 DISPATCH_MAIN_CHAT_ID,
-                mdg_conf_message_id,
+                order["mdg_conf_message_id"],
                 build_assignment_confirmation_message(order),
                 mdg_unassign_keyboard(order_id)
             )
