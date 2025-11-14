@@ -3262,9 +3262,9 @@ def telegram_webhook():
                     
                     # Handle like "undelivered" - edit message directly, keep text, restore keyboard
                     await safe_edit_message(
-                        callback_query.message.chat_id,
-                        callback_query.message.message_id,
-                        callback_query.message.text,  # Keep existing text unchanged
+                        cq["message"]["chat"]["id"],
+                        cq["message"]["message_id"],
+                        cq["message"]["text"],  # Keep existing text unchanged
                         reply_markup=upc.mdg_assignment_keyboard(order_id)
                     )
                     
