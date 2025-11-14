@@ -1059,19 +1059,16 @@ async def handle_unassign_order(order_id: str, user_id: int):
         unassign_msg = f"Order🔖 {order_num} was unassigned from 🐝 {courier_name}"
         await safe_send_message(DISPATCH_MAIN_CHAT_ID, unassign_msg)
         
-        # Re-show assignment buttons in MDG
+        # Edit MDG-CONF to restore assignment buttons
         # Import here to avoid circular dependency
         from main import build_assignment_confirmation_message
-        assignment_msg = await safe_send_message(
+        mdg_conf_message_id = order["mdg_additional_messages"][-1]
+        await safe_edit_message(
             DISPATCH_MAIN_CHAT_ID,
+            mdg_conf_message_id,
             build_assignment_confirmation_message(order),
-            mdg_assignment_keyboard(order_id)
+            reply_markup=mdg_assignment_keyboard(order_id)
         )
-        
-        # Track assignment message for cleanup
-        if "mdg_additional_messages" not in order:
-            order["mdg_additional_messages"] = []
-        order["mdg_additional_messages"].append(assignment_msg.message_id)
         
         logger.info(f"Order {order_id} unassigned by user {user_id} ({courier_name})")
 
