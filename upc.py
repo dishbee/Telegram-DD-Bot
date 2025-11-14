@@ -7,6 +7,14 @@ from zoneinfo import ZoneInfo
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from utils import logger, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, RESTAURANT_SHORTCUTS, safe_send_message, safe_edit_message, safe_delete_message, get_error_description
 
+# Import send_status_message from main (will be available after main imports upc)
+send_status_message = None
+
+def configure_send_status_message(func):
+    """Configure send_status_message reference from main.py"""
+    global send_status_message
+    send_status_message = func
+
 # Timezone configuration for Passau, Germany (Europe/Berlin)
 TIMEZONE = ZoneInfo("Europe/Berlin")
 
@@ -83,6 +91,16 @@ def mdg_assignment_keyboard(order_id: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(buttons)
     except Exception as e:
         logger.error(f"Error building MDG assignment keyboard: {e}")
+        return None
+
+def mdg_unassign_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build unassign button for MDG after assignment"""
+    try:
+        return InlineKeyboardMarkup([[
+            InlineKeyboardButton("🚫 Unassign", callback_data=f"unassign_order|{order_id}")
+        ]])
+    except Exception as e:
+        logger.error(f"Error building MDG unassign keyboard: {e}")
         return None
 
 async def get_mdg_couriers(bot):
@@ -356,7 +374,7 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
             DISPATCH_MAIN_CHAT_ID,
             order["mdg_message_id"],
             updated_text,
-            mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
+            mdg_unassign_keyboard(order_id)  # Show unassign button
         )
 
         # Update all RG messages with new status
@@ -1014,39 +1032,30 @@ async def handle_unassign_order(order_id: str, user_id: int):
         if "assigned_by" in order:
             del order["assigned_by"]
         
-        # Restore MDG message to show confirmation text (assignment buttons come next)
-        if "mdg_message_id" in order:
-            import mdg
-            
-            # Show confirmation message with vendor times
+        # Get the existing MDG confirmation message ID
+        # Look in mdg_additional_messages for the confirmation message
+        mdg_conf_id = None
+        if "mdg_additional_messages" in order and len(order["mdg_additional_messages"]) > 0:
+            # The last message in mdg_additional_messages should be the confirmation message
+            mdg_conf_id = order["mdg_additional_messages"][-1]
+        
+        if mdg_conf_id:
+            # Edit MDG confirmation message to restore assignment buttons
             confirmation_text = build_assignment_confirmation_message(order)
-            
-            # Update MDG - remove any existing buttons temporarily
             await safe_edit_message(
                 DISPATCH_MAIN_CHAT_ID,
-                order["mdg_message_id"],
+                mdg_conf_id,
                 confirmation_text,
-                None  # No buttons on main message
+                mdg_assignment_keyboard(order_id)  # Restore assignment buttons
             )
         
-        # Send notification to MDG (same style as delivery notification)
+        # Send unassignment notification
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        unassign_msg = f"🔖 {order_num} was unassigned by {courier_name}."
-        await safe_send_message(DISPATCH_MAIN_CHAT_ID, unassign_msg)
-        
-        # Re-show assignment buttons in MDG
-        # Import here to avoid circular dependency
-        from main import build_assignment_confirmation_message
-        assignment_msg = await safe_send_message(
+        await send_status_message(
             DISPATCH_MAIN_CHAT_ID,
-            build_assignment_confirmation_message(order),
-            mdg_assignment_keyboard(order_id)
+            f"🔖 {order_num} was unassigned by {courier_name}.",
+            auto_delete_after=20
         )
-        
-        # Track assignment message for cleanup
-        if "mdg_additional_messages" not in order:
-            order["mdg_additional_messages"] = []
-        order["mdg_additional_messages"].append(assignment_msg.message_id)
         
         logger.info(f"Order {order_id} unassigned by user {user_id} ({courier_name})")
 

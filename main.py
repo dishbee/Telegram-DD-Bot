@@ -129,6 +129,7 @@ RESTAURANT_FORWARDED_MESSAGES: Dict[int, Dict[str, Any]] = {}
 
 configure_mdg(STATE, RESTAURANT_SHORTCUTS)
 upc.configure(STATE, bot)  # Configure UPC module with STATE and bot reference
+# Configure send_status_message after it's defined (below)
 
 # Create event loop for async operations
 loop = asyncio.new_event_loop()
@@ -251,6 +252,9 @@ async def send_status_message(chat_id: int, text: str, auto_delete_after: int = 
         asyncio.create_task(_delete_after_delay(chat_id, msg.message_id, auto_delete_after))
     except Exception as e:
         logger.error(f"Error in send_status_message: {e}")
+
+# Configure send_status_message in upc module
+upc.configure_send_status_message(send_status_message)
 
 async def _delete_after_delay(chat_id: int, message_id: int, delay: int):
     """Helper to delete message after delay"""
@@ -2999,6 +3003,21 @@ def telegram_webhook():
                     
                     # Update MDG with assignment info
                     await upc.update_mdg_with_assignment(order_id, target_user_id)
+                    
+                    # Clean up "Select courier:" message
+                    await cleanup_mdg_messages(order_id)
+                    
+                    # Send temporary status message
+                    order = STATE.get(order_id)
+                    order_num = order.get('name', '')[-2:] if order and len(order.get('name', '')) >= 2 else order.get('name', '') if order else order_id
+                    from utils import COURIER_MAP
+                    courier_info = COURIER_MAP.get(str(target_user_id), {})
+                    courier_name = courier_info.get("username", f"User{target_user_id}")
+                    await send_status_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        f"Order 🔖 {order_num} assigned to 🐝 {courier_name}",
+                        auto_delete_after=20
+                    )
                 
                 elif action == "show_assigned":
                     """
