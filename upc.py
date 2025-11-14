@@ -1015,9 +1015,15 @@ async def handle_unassign_order(order_id: str, user_id: int):
         user_id: Courier's Telegram user_id who is unassigning
     """
     try:
+        # DEBUG: Log STATE keys and order_id
+        logger.info(f"DEBUG UNASSIGN - Looking for order_id: '{order_id}'")
+        logger.info(f"DEBUG UNASSIGN - STATE keys: {list(STATE.keys())}")
+        logger.info(f"DEBUG UNASSIGN - STATE is None: {STATE is None}")
+        
         order = STATE.get(order_id)
         if not order:
             logger.error(f"Order {order_id} not found for unassignment")
+            logger.error(f"DEBUG - Tried to find '{order_id}' but STATE has: {list(STATE.keys())}")
             return
 
         # Get courier name for notification
