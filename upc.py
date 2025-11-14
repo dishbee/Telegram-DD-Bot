@@ -35,6 +35,8 @@ def configure(state_ref, bot_ref=None):
 
 def check_all_vendors_confirmed(order_id: str) -> bool:
     """Check if ALL vendors have confirmed their times for an order"""
+    from main import STATE
+    
     order = STATE.get(order_id)
     if not order:
         logger.warning(f"DEBUG: Order {order_id} not found in STATE")
@@ -288,6 +290,8 @@ async def update_group_upc_messages(group_id: str):
 async def send_assignment_to_private_chat(order_id: str, user_id: int):
     """Send order assignment details to user's private chat"""
     try:
+        from main import STATE, bot
+        
         # DEBUG: Check STATE reference
         logger.info(f"DEBUG ASSIGNMENT - STATE object id: {id(STATE)}")
         logger.info(f"DEBUG ASSIGNMENT - STATE keys: {list(STATE.keys())}")
@@ -357,6 +361,8 @@ async def send_assignment_to_private_chat(order_id: str, user_id: int):
 async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
     """Update MDG message to show assignment status"""
     try:
+        from main import STATE
+        
         order = STATE.get(order_id)
         if not order or "mdg_message_id" not in order:
             return
@@ -1015,6 +1021,8 @@ async def handle_unassign_order(order_id: str, user_id: int):
         user_id: Courier's Telegram user_id who is unassigning
     """
     try:
+        from main import STATE
+        
         # DEBUG: Check STATE reference
         logger.info(f"DEBUG UNASSIGN - STATE object id: {id(STATE)}")
         logger.info(f"DEBUG UNASSIGN - STATE keys: {list(STATE.keys())}")
