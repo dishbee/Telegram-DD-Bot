@@ -295,16 +295,18 @@ def build_assignment_confirmation_message(order: dict) -> str:
     vendors = order.get("vendors", [])
     confirmed_times = order.get("confirmed_times", {})
     vendor_items = order.get("vendor_items", {})
-    order_num = order.get("name", "Unknown")
     
-    # Extract source from order name (e.g., "31-dishbee" -> "dishbee") or use order_type
-    source = "shopify"
-    if "-" in str(order_num):
-        parts = str(order_num).split("-", 1)
-        if len(parts) > 1:
-            source = parts[1]
+    # Extract order number (last 2 digits)
+    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+    
+    # Extract source from order name (e.g., "dishbee 01" -> "dishbee")
+    full_name = str(order.get("name", ""))
+    if " " in full_name:
+        source = full_name.rsplit(" ", 1)[0]  # Split from right, take first part
     elif order.get("order_type") == "smoothr":
         source = "smoothr"
+    else:
+        source = "shopify"
     
     # Chef emojis for variety
     chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
@@ -326,7 +328,7 @@ def build_assignment_confirmation_message(order: dict) -> str:
         vendor_counts.append(product_count)
     
     # Build header with new format
-    message = f"🔖#{order_num} ({source})\n\n👍 Confirmed time\n\n"
+    message = f"🔖 {order_num} ({source})\n\n👍 Confirmed time\n\n"
     
     # Vendor details with rotating chef emojis and product counts
     for idx, vendor in enumerate(vendors):
