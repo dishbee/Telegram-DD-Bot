@@ -209,6 +209,16 @@ async def safe_send_message(chat_id: int, text: str, reply_markup=None, parse_mo
                 logger.error(f"Failed to send message after {max_retries} attempts: {e}")
                 raise
 
+
+async def delete_after_delay(message_id, chat_id, delay_seconds):
+    """Delete a message after specified delay."""
+    await asyncio.sleep(delay_seconds)
+    try:
+        await safe_delete_message(message_id, chat_id)
+        logger.info(f"Auto-deleted message {message_id} after {delay_seconds}s")
+    except Exception as e:
+        logger.warning(f"Failed to auto-delete message {message_id}: {e}")
+
 async def safe_edit_message(chat_id: int, message_id: int, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
     """Edit message with error handling"""
     try:
@@ -2967,12 +2977,14 @@ def telegram_webhook():
                     # Update MDG with assignment info
                     await upc.update_mdg_with_assignment(order_id, user_id)
                     
-                    # Send temporary status notification
+                    # Send temporary status notification with auto-delete
                     order = STATE.get(order_id)
                     if order:
                         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
                         courier_name = cq["from"].get("first_name", "Unknown")
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"Order 🔖 {order_num} assigned to 🐝 {courier_name}")
+                        msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"Order 🔖 {order_num} assigned to 🐝 {courier_name}")
+                        if msg:
+                            asyncio.create_task(delete_after_delay(msg.message_id, DISPATCH_MAIN_CHAT_ID, 20))
                 
                 elif action == "assign_to_menu":
                     """
@@ -3035,8 +3047,10 @@ def telegram_webhook():
                             courier_name = target_chat.first_name or "Unknown"
                         except:
                             courier_name = "Unknown"
-                        # Send temporary status notification
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"Order 🔖 {order_num} assigned to 🐝 {courier_name}")
+                        # Send temporary status notification with auto-delete
+                        msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"Order 🔖 {order_num} assigned to 🐝 {courier_name}")
+                        if msg:
+                            asyncio.create_task(delete_after_delay(msg.message_id, DISPATCH_MAIN_CHAT_ID, 20))
                     
                     # Delete courier selection menu
                     menu_message_id = cq["message"]["message_id"]
@@ -3261,6 +3275,9 @@ def telegram_webhook():
                     order_id = data[1]
                     user_id = cq["from"]["id"]
                     
+                    # Get order from STATE for UPC message deletion
+                    order = STATE.get(order_id)
+                    
                     # Handle like "undelivered" - edit message directly, keep text, restore keyboard
                     await safe_edit_message(
                         cq["message"]["chat"]["id"],
@@ -3269,13 +3286,26 @@ def telegram_webhook():
                         reply_markup=upc.mdg_assignment_keyboard(order_id)
                     )
                     
-                    # Send temporary notification
+                    # Delete UPC-ASSIGN message from courier's private chat
+                    if order and "upc_message_id" in order and "assigned_to" in order:
+                        try:
+                            await safe_delete_message(order["upc_message_id"], order["assigned_to"])
+                            logger.info(f"Deleted UPC-ASSIGN message {order['upc_message_id']} for order {order_id}")
+                        except Exception as e:
+                            logger.warning(f"Failed to delete UPC message: {e}")
+                    
+                    # Clear assignment from STATE
+                    if order:
+                        order["assigned_to"] = None
+                        order["status"] = "new"
+                    
+                    # Send temporary notification with auto-delete
                     notif = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         f"Order 🔖 {order_id} was unassigned"
                     )
                     if notif:
-                        asyncio.create_task(delayed_delete_message(DISPATCH_MAIN_CHAT_ID, notif.message_id, 3))
+                        asyncio.create_task(delete_after_delay(notif.message_id, DISPATCH_MAIN_CHAT_ID, 20))
                     
                     logger.info(f"Order {order_id} unassigned by user {user_id}")
                 
