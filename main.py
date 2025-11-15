@@ -214,7 +214,7 @@ async def delete_after_delay(message_id, chat_id, delay_seconds):
     """Delete a message after specified delay."""
     await asyncio.sleep(delay_seconds)
     try:
-        await safe_delete_message(message_id, chat_id)
+        await safe_delete_message(chat_id, message_id)
         logger.info(f"Auto-deleted message {message_id} after {delay_seconds}s")
     except Exception as e:
         logger.warning(f"Failed to auto-delete message {message_id}: {e}")
@@ -3289,23 +3289,40 @@ def telegram_webhook():
                     # Delete UPC-ASSIGN message from courier's private chat
                     if order and "upc_message_id" in order and "assigned_to" in order:
                         try:
-                            await safe_delete_message(order["upc_message_id"], order["assigned_to"])
+                            await safe_delete_message(order["assigned_to"], order["upc_message_id"])
                             logger.info(f"Deleted UPC-ASSIGN message {order['upc_message_id']} for order {order_id}")
                         except Exception as e:
                             logger.warning(f"Failed to delete UPC message: {e}")
                     
-                    # Clear assignment from STATE
+                    # Get courier name BEFORE clearing assignment
+                    courier_name = "Unknown"
                     if order:
+                        assigned_user_id = order.get("assigned_to")
+                        if assigned_user_id:
+                            try:
+                                user_info = await bot.get_chat(assigned_user_id)
+                                courier_name = user_info.first_name or "Unknown"
+                            except:
+                                # Fallback: try DRIVERS reverse lookup
+                                for name, uid in DRIVERS.items():
+                                    if uid == assigned_user_id:
+                                        courier_name = name
+                                        break
+                        
+                        # Extract order number
+                        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+                        
+                        # Clear assignment from STATE
                         order["assigned_to"] = None
                         order["status"] = "new"
-                    
-                    # Send temporary notification with auto-delete
-                    notif = await safe_send_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        f"Order 🔖 {order_id} was unassigned"
-                    )
-                    if notif:
-                        asyncio.create_task(delete_after_delay(notif.message_id, DISPATCH_MAIN_CHAT_ID, 20))
+                        
+                        # Send temporary notification with auto-delete
+                        notif = await safe_send_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            f"Order 🔖 {order_num} was unassigned from {courier_name}"
+                        )
+                        if notif:
+                            asyncio.create_task(delete_after_delay(notif.message_id, DISPATCH_MAIN_CHAT_ID, 20))
                     
                     logger.info(f"Order {order_id} unassigned by user {user_id}")
                 
