@@ -961,6 +961,7 @@ async def process_smoothr_order(smoothr_data: dict):
             "tips": smoothr_data.get("tip"),
             "note": smoothr_data.get("note"),
             "payment_method": smoothr_data.get("payment_method"),
+            "is_asap": smoothr_data.get("is_asap", True),
             "requested_time": smoothr_data.get("requested_delivery_time"),
             "confirmed_time": None,
             "confirmed_times": {},

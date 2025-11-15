@@ -247,18 +247,18 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         # Build status lines (prepend to message)
         status_text = build_status_lines(order, "mdg", RESTAURANT_SHORTCUTS, COURIER_SHORTCUTS)
         
-        # Add scheduled delivery time for Smoothr orders (if not ASAP)
-        is_asap = order.get("is_asap", True)
-        requested_time = order.get("requested_delivery_time")
-        if not is_asap and requested_time:
-            status_text += f"⏰ {requested_time}\n\n"
-        
         order_type = order.get("order_type", "shopify")
         vendors = order.get("vendors", [])
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
 
         # Build title line (NO "dishbee" in order number line)
         title = f"🔖 {order_num}"
+        
+        # Add scheduled delivery time for Smoothr orders (if not ASAP)
+        is_asap = order.get("is_asap", True)
+        requested_time = order.get("requested_delivery_time")
+        if not is_asap and requested_time:
+            title += f"\n⏰ {requested_time}"
 
         # Build vendor line with product counts (works for both Shopify and Smoothr)
         vendor_items = order.get("vendor_items", {})
