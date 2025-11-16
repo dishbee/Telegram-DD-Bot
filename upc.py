@@ -461,7 +461,7 @@ def build_assignment_message(order: dict) -> str:
         if order.get("group_id"):
             from mdg import get_group_orders
             
-            group_color = order.get("group_color", "�")
+            group_color = order.get("group_color", "🔵")
             group_position = order.get("group_position", 1)
             group_id = order["group_id"]
             
@@ -477,7 +477,7 @@ def build_assignment_message(order: dict) -> str:
         else:
             order_num = order.get('name', 'Order')
         
-        header = f"� {order_num}\n"
+        header = f"🔖 {order_num}\n\n"
         
         # Restaurant info with confirmed times and product quantities
         vendors = order.get("vendors", [])
@@ -509,7 +509,7 @@ def build_assignment_message(order: dict) -> str:
                 else:
                     product_count += 1
             
-            restaurant_section += f"{chef_emoji} {vendor_shortcut}: {pickup_time} 🍕 {product_count}\n"
+            restaurant_section += f"{chef_emoji} {vendor_shortcut}: {pickup_time}  ({product_count})\n"
         
         # Customer info
         customer_name = order['customer']['name']
@@ -524,12 +524,12 @@ def build_assignment_message(order: dict) -> str:
         else:
             formatted_address = address.strip()
         
-        customer_section = f"\n👤 {customer_name}\n"
-        
         # Build clickable map link (same format as MDG-ORD)
         original_address = order['customer'].get('original_address', address)
         maps_link = f"https://www.google.com/maps?q={original_address.replace(' ', '+')}"
-        customer_section += f"🗺️ [{formatted_address}]({maps_link})\n"
+        address_section = f"{restaurant_section}🗺️ [{formatted_address}]({maps_link})\n"
+        
+        customer_section = f"\n👤 {customer_name}\n"
         
         # Optional info (note, tips, cash on delivery)
         optional_section = ""
@@ -549,10 +549,10 @@ def build_assignment_message(order: dict) -> str:
         
         # Phone number section (without "Call customer:" label)
         phone = order['customer']['phone']
-        phone_section = f"\n☎️ {phone}\n"
+        phone_section = f"☎️ {phone}\n"
         
         # Combine all sections (status first, then group_header if present)
-        message = status_text + group_header + header + restaurant_section + customer_section + optional_section + phone_section
+        message = status_text + group_header + header + address_section + customer_section + optional_section + phone_section
         
         return message
 
