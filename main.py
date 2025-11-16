@@ -2960,6 +2960,10 @@ def telegram_webhook():
                     order_id = data[1]
                     user_id = cq["from"]["id"]
                     logger.info(f"User {user_id} assigning order {order_id} to themselves")
+                    logger.info(f"DEBUG ASSIGN_MYSELF: main.STATE keys = {list(STATE.keys())}")
+                    logger.info(f"DEBUG ASSIGN_MYSELF: order {order_id} in main.STATE? {order_id in STATE}")
+                    logger.info(f"DEBUG ASSIGN_MYSELF: main.STATE id = {id(STATE)}")
+                    logger.info(f"DEBUG ASSIGN_MYSELF: upc.STATE id = {id(upc.STATE)}")
                     
                     # Send assignment to user's private chat
                     await upc.send_assignment_to_private_chat(order_id, user_id)
