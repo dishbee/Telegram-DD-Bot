@@ -3286,6 +3286,10 @@ def telegram_webhook():
                         asyncio.create_task(_delete_after_delay(DISPATCH_MAIN_CHAT_ID, notif.message_id, 3))
                     
                     logger.info(f"Order {order_id} unassigned by user {user_id}")
+                    logger.info(f"DEBUG: STATE keys after unassign: {list(STATE.keys())}")
+                    logger.info(f"DEBUG: Order {order_id} still in STATE: {order_id in STATE}")
+                    if order_id in STATE:
+                        logger.info(f"DEBUG: Order STATUS fields: assigned_to={STATE[order_id].get('assigned_to')}, status={STATE[order_id].get('status')}")
                 
                 elif action == "confirm_delivered":
                     """
