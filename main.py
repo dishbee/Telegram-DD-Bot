@@ -2488,10 +2488,6 @@ def telegram_webhook():
                             )
                             # Track MDG-CONF message ID for updating keyboard after assignment
                             order["mdg_conf_message_id"] = assignment_msg.message_id
-                            # Also track for cleanup
-                            if "mdg_additional_messages" not in order:
-                                order["mdg_additional_messages"] = []
-                            order["mdg_additional_messages"].append(assignment_msg.message_id)
                         else:
                             # Order already assigned - skip duplicate buttons
                             # This happens when courier requests delay and vendor confirms new time
@@ -2590,10 +2586,6 @@ def telegram_webhook():
                             )
                             # Track MDG-CONF message ID for updating keyboard after assignment
                             order["mdg_conf_message_id"] = assignment_msg.message_id
-                            # Also track for cleanup
-                            if "mdg_additional_messages" not in order:
-                                order["mdg_additional_messages"] = []
-                            order["mdg_additional_messages"].append(assignment_msg.message_id)
                         else:
                             logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
                     
@@ -2696,10 +2688,6 @@ def telegram_webhook():
                             )
                             # Track MDG-CONF message ID for updating keyboard after assignment
                             order["mdg_conf_message_id"] = assignment_msg.message_id
-                            # Also track for cleanup
-                            if "mdg_additional_messages" not in order:
-                                order["mdg_additional_messages"] = []
-                            order["mdg_additional_messages"].append(assignment_msg.message_id)
                         else:
                             logger.info(f"DEBUG: Not all vendors confirmed yet for order {order_id}")
                 
@@ -2908,10 +2896,6 @@ def telegram_webhook():
                                 )
                                 # Track MDG-CONF message ID for updating keyboard after assignment
                                 order["mdg_conf_message_id"] = assignment_msg.message_id
-                                # Also track for cleanup
-                                if "mdg_additional_messages" not in order:
-                                    order["mdg_additional_messages"] = []
-                                order["mdg_additional_messages"].append(assignment_msg.message_id)
                             else:
                                 logger.info(f"DEBUG: All vendors confirmed but order already assigned - skipping assignment buttons")
                         else:
