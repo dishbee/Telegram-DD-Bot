@@ -3270,6 +3270,14 @@ def telegram_webhook():
                             logger.info(f"Deleted UPC assignment message {upc_message_id} for order {order_id}")
                         else:
                             logger.warning(f"No UPC message ID found for order {order_id}")
+                        
+                        # Reset STATE to default (as if vendor just confirmed)
+                        order["assigned_to"] = None
+                        order["status"] = "new"
+                        order["upc_message_id"] = None
+                        if "upc_assignment_message_id" in order:
+                            order["upc_assignment_message_id"] = None
+                        logger.info(f"Reset order {order_id} to default state")
                     
                     # Handle like "undelivered" - edit message directly, keep text, restore keyboard
                     await safe_edit_message(
@@ -3285,7 +3293,7 @@ def telegram_webhook():
                         f"Order 🔖 {order_id} was unassigned"
                     )
                     if notif:
-                        asyncio.create_task(delayed_delete_message(DISPATCH_MAIN_CHAT_ID, notif.message_id, 3))
+                        asyncio.create_task(_delete_after_delay(DISPATCH_MAIN_CHAT_ID, notif.message_id, 3))
                     
                     logger.info(f"Order {order_id} unassigned by user {user_id}")
                 
