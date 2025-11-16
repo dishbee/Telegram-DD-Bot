@@ -19,7 +19,7 @@ def now() -> datetime:
     """Get current time in Passau timezone (Europe/Berlin)."""
     return datetime.now(TIMEZONE)
 
-STATE: Dict[str, Dict[str, Any]] = {}
+STATE = None  # Configured via configure() from main.py
 RESTAURANT_SHORTCUTS: Dict[str, str] = {}
 
 # Chef emojis for rotating display in multi-vendor buttons
