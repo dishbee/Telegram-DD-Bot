@@ -142,10 +142,6 @@ request_cfg = HTTPXRequest(
 )
 bot = Bot(token=BOT_TOKEN, request=request_cfg)
 
-# --- GLOBAL STATE ---
-STATE: Dict[str, Dict[str, Any]] = {}
-RECENT_ORDERS: List[Dict[str, Any]] = []
-
 # Create event loop for async operations
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
@@ -784,62 +780,6 @@ async def send_status_message(chat_id: int, text: str, auto_delete_after: int = 
         await safe_delete_message(chat_id, msg.message_id)
     except Exception as e:
         logger.error(f"Error in send_status_message: {e}")
-
-async def cleanup_mdg_messages(order_id: str):
-    """
-    Clean up temporary MDG messages to prevent chat clutter.
-    
-    During order workflow, temporary messages are sent to MDG:
-    - Time picker keyboards ("+5 +10 +15 +20" buttons)
-    - "Same time as" order selection menus
-    - Exact time picker (hour/minute selection)
-    - Vendor selection menus (multi-vendor orders)
-    - Courier selection menus ("Assign to..." flow)
-    
-    These messages are tracked in order["mdg_additional_messages"] and
-    deleted when the workflow step completes to keep MDG chat clean.
-    
-    The original order message (order["mdg_message_id"]) is NEVER deleted
-    and remains as permanent record with assignment buttons.
-    
-    Args:
-        order_id: Order to clean up messages for
-        
-    Side effects:
-        - Deletes all messages in order["mdg_additional_messages"]
-        - Clears the mdg_additional_messages list after deletion
-        - Logs each deletion attempt (success or failure)
-    
-    Note: Uses retry logic (3 attempts) for each deletion to handle
-    network issues or rate limits.
-    """
-    order = STATE.get(order_id)
-    if not order:
-        return
-
-    additional_messages = order.get("mdg_additional_messages", [])
-    if not additional_messages:
-        return
-
-    logger.info(f"Cleaning up {len(additional_messages)} additional MDG messages for order {order_id}")
-
-    for message_id in additional_messages:
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                await bot.delete_message(chat_id=DISPATCH_MAIN_CHAT_ID, message_id=message_id)
-                logger.info(f"Successfully deleted MDG message {message_id} for order {order_id}")
-                break
-            except Exception as e:
-                logger.error(f"Attempt {attempt + 1} failed to delete message {message_id}: {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(1)
-                else:
-                    logger.error(f"Failed to delete message {message_id} after {max_retries} attempts")
-
-    # Clear the list after cleanup
-    order["mdg_additional_messages"] = []
-
 
 def get_error_description(error: Exception) -> str:
     """
