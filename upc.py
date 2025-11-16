@@ -29,6 +29,7 @@ bot = None
 def configure(state_ref, bot_ref=None):
     """Configure module-level STATE and bot reference"""
     global STATE, bot
+    logger.info(f"UPC CONFIGURE CALLED: state_ref id = {id(state_ref)}, current STATE id = {id(STATE) if STATE else 'None'}")
     STATE = state_ref
     if bot_ref:
         bot = bot_ref
