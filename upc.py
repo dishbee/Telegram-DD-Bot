@@ -29,6 +29,13 @@ bot = None
 def configure(state_ref, bot_ref=None):
     """Configure module-level STATE and bot reference"""
     global STATE, bot
+    
+    # GUARD: Prevent reconfiguration during circular imports
+    # Only configure once - STATE should never change after initial setup
+    if STATE is not None:
+        logger.warning(f"UPC configure() called but STATE already set (id={id(STATE)}). Ignoring reconfiguration attempt (new id={id(state_ref)})")
+        return
+    
     logger.info(f"UPC CONFIGURE CALLED: state_ref id = {id(state_ref)}, current STATE id = {id(STATE) if STATE else 'None'}")
     STATE = state_ref
     if bot_ref:
