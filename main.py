@@ -1712,8 +1712,8 @@ def telegram_webhook():
                 
                 # ORIGINAL TIME REQUEST ACTIONS (MDG)
                 elif action == "req_asap":
-                    # Import MDG builder function
-                    from mdg import build_mdg_dispatch_text
+                    # Import MDG builder functions
+                    from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard
                     
                     order_id = data[1]
                     order = STATE.get(order_id)
@@ -2072,8 +2072,8 @@ def telegram_webhook():
                 
                 
                 elif action == "time_relative":
-                    # Import MDG builder function
-                    from mdg import build_mdg_dispatch_text
+                    # Import MDG builder functions
+                    from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard
                     
                     # User clicked +5, +10, +15, or +20
                     order_id = data[1]
@@ -2266,6 +2266,9 @@ def telegram_webhook():
                     )
                 
                 elif action == "exact_selected":
+                    # Import MDG builder functions
+                    from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard
+                    
                     order_id, selected_time = data[1], data[2]
                     # Extract vendor from callback data (4th part if present)
                     vendor = data[3] if len(data) > 3 else None
@@ -2422,8 +2425,8 @@ def telegram_webhook():
                     )
                 
                 elif action == "works":
-                    # Import MDG builder function
-                    from mdg import build_mdg_dispatch_text
+                    # Import MDG builder functions
+                    from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard
                     
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
@@ -2617,8 +2620,8 @@ def telegram_webhook():
                     )
                 
                 elif action == "prepare_time":
-                    # Import MDG builder function
-                    from mdg import build_mdg_dispatch_text
+                    # Import MDG builder functions
+                    from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard
                     
                     # Extract vendor SHORTCUT from callback data (format: prepare_time|order_id|time|vendor_shortcut)
                     order_id, selected_time, vendor_shortcut = data[1], data[2], data[3]
