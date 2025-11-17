@@ -249,7 +249,14 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         
         order_type = order.get("order_type", "shopify")
         vendors = order.get("vendors", [])
-        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+        
+        # Extract order number for display
+        if order_type == "shopify":
+            # Shopify: "dishbee #26" -> take last 2 digits
+            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+        else:
+            # Smoothr: use full display number (already formatted by parser)
+            order_num = order.get('name', 'Order')
 
         # Build title line (NO "dishbee" in order number line)
         title = f"🔖 {order_num}"
