@@ -256,7 +256,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         
         # Add scheduled delivery time for Smoothr orders (if not ASAP)
         is_asap = order.get("is_asap", True)
-        requested_time = order.get("requested_delivery_time")
+        requested_time = order.get("requested_time")
         if not is_asap and requested_time:
             title += f"\n⏰ {requested_time}"
 
