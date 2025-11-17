@@ -3249,8 +3249,18 @@ def telegram_webhook():
                     order_id = data[1]
                     user_id = cq["from"]["id"]
                     
-                    # Delete UPC assignment message if it exists
+                    # Remove "assigned" status from history to revert to "confirmed"
                     order = STATE.get(order_id)
+                    if order:
+                        status_history = order.get("status_history", [])
+                        if status_history and status_history[-1].get("type") == "assigned":
+                            status_history.pop()
+                        
+                        # Update STATE fields
+                        order["assigned_to"] = None
+                        order["status"] = "new"
+                    
+                    # Delete UPC assignment message if it exists
                     if order:
                         upc_message_id = order.get("upc_message_id")
                         if upc_message_id:
@@ -3264,6 +3274,17 @@ def telegram_webhook():
                         cq["message"]["text"],  # Keep existing text unchanged
                         reply_markup=upc.mdg_assignment_keyboard(order_id)
                     )
+                    
+                    # Update MDG-ORD to show reverted status
+                    if order and order.get("mdg_message_id"):
+                        from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard
+                        updated_mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_details_expanded", False))
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            updated_mdg_text,
+                            mdg_time_request_keyboard(order_id)
+                        )
                     
                     # Send temporary notification
                     notif = await safe_send_message(
