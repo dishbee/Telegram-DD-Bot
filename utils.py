@@ -669,6 +669,8 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
             order_type = order.get("order_type", "shopify")
             if order_type == "shopify":
                 return "🚨 New order (dishbee)\n\n"
+            elif order_type == "smoothr_dishbee":
+                return "🚨 New order (dishbee)\n\n"
             elif order_type == "smoothr_dnd":
                 return "🚨 New order (D&D App)\n\n"
             elif order_type == "smoothr_lieferando":
@@ -875,24 +877,32 @@ def get_smoothr_order_type(order_code: str) -> tuple[str, str]:
     """
     Determine order type and display number from Smoothr order code.
     
-    D&D App orders: 3-4 digits in range 500-599 (e.g., "500", "515", "599")
-    Lieferando orders: Alphanumeric code (e.g., "3DX8TD")
+    D&D App orders: 3 digits (e.g., "545", "123", "999")
+    dishbee orders: 2 digits (e.g., "45", "01", "99")
+    Lieferando orders: 6-character alphanumeric code (e.g., "JR6ZO9")
     
     Args:
         order_code: The order code from Smoothr
         
     Returns:
         Tuple of (order_type, display_num)
-        - D&D App: ("smoothr_dnd", "500") - full number
-        - Lieferando: ("smoothr_lieferando", "TD") - last 2 chars
+        - D&D App: ("smoothr_dnd", "545") - full 3 digits
+        - dishbee: ("smoothr_dishbee", "45") - full 2 digits
+        - Lieferando: ("smoothr_lieferando", "O9") - last 2 chars
     """
     order_code = order_code.strip()
     
-    # Check if it's a D&D App order (digits in range 500-599)
-    if order_code.isdigit() and 500 <= int(order_code) <= 599:
-        return ("smoothr_dnd", order_code)  # Full 3-4 digits
+    # Check if it's all digits
+    if order_code.isdigit():
+        if len(order_code) == 3:
+            return ("smoothr_dnd", order_code)  # D&D App: 3 digits
+        elif len(order_code) == 2:
+            return ("smoothr_dishbee", order_code)  # dishbee: 2 digits
+        else:
+            # Fallback for other digit patterns (treat as D&D App)
+            return ("smoothr_dnd", order_code)
     else:
-        # Lieferando order - use last 2 characters
+        # Lieferando order - alphanumeric, use last 2 characters
         return ("smoothr_lieferando", order_code[-2:] if len(order_code) >= 2 else order_code)
 
 

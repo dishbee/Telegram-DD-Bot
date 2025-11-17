@@ -349,6 +349,8 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     Handle /test_smoothr command to send simulated Smoothr orders.
     
     Command formats:
+    - /test_smoothr dishbee      → dishbee order (ASAP: No, with time)
+    - /test_smoothr dishbee_asap → dishbee order (ASAP: Yes)
     - /test_smoothr dnd          → D&D App order (ASAP: No, with time)
     - /test_smoothr dnd_asap     → D&D App order (ASAP: Yes)
     - /test_smoothr lieferando   → Lieferando order (ASAP: No, with time)
@@ -367,21 +369,25 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     parts = command.split()
     if len(parts) == 1:
         # Random type
-        order_type = random.choice(["dnd", "dnd_asap", "lieferando", "lieferando_asap"])
+        order_type = random.choice(["dishbee", "dishbee_asap", "dnd", "dnd_asap", "lieferando", "lieferando_asap"])
     else:
         order_type = parts[1].lower()
     
     # Determine ASAP and order source
     is_asap = "asap" in order_type
     is_lieferando = "lieferando" in order_type
+    is_dishbee = "dishbee" in order_type
     
     # Random order code
     if is_lieferando:
-        # Lieferando: alphanumeric (e.g., 3DX8TD, 4AF2BC)
+        # Lieferando: 6-character alphanumeric (e.g., JR6ZO9, 3DX8TD)
         order_code = ''.join(random.choices('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', k=6))
+    elif is_dishbee:
+        # dishbee: 2-digit (e.g., 45, 01, 99)
+        order_code = str(random.randint(10, 99))
     else:
-        # D&D App: 500-series (e.g., 500, 5001, 5042)
-        order_code = str(random.randint(500, 599))
+        # D&D App: 3-digit (e.g., 545, 123, 999)
+        order_code = str(random.randint(100, 999))
     
     # Random customer data
     first_names = ["Max", "Anna", "Thomas", "Julia", "Michael", "Sarah", "Peter", "Lisa", "David", "Maria"]
