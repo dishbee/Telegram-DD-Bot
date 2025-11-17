@@ -22,19 +22,30 @@ commi# ⚡ TELEGRAM BOT CHEAT SHEET
 ```
 🚨 New order
 
-🔖 #{num} - {source}
-{chef} {Shortcuts} 🍕 {count}
-👤 {Customer}
+🔖 {num}
+⏰ {time} (if Smoothr scheduled order)
+
 🗺️ [{Address}]({link})
+{chef} **{Shortcut}** ({count}) (single vendor)
+{chef} **{Shortcut}** ({count}) + **{Shortcut}** ({count}) (multi-vendor)
 
 ❕ Note: {text} (optional)
 ❕ Tip: {amt}€ (optional)
 ❕ Cash: {amt}€ (optional)
 
-[{phone}](tel:{phone})
+👤 {Customer}
+📞 {phone}
 
 [Details ▸] [Action buttons...]
 ```
+
+**Format Changes (Nov 2025):**
+- Order number shows last 2 digits only (no # symbol)
+- Scheduled time shown for Smoothr non-ASAP orders
+- Address moved before vendor line
+- Vendor shortcuts in bold with product counts in parentheses
+- Customer name after notes section
+- Phone with clickable tel: link, using 📞 emoji
 
 **Action Buttons:**
 - Single vendor: `[⚡ Asap]` `[🕒 Time picker]` `[🗂 Scheduled]*`
@@ -44,9 +55,10 @@ commi# ⚡ TELEGRAM BOT CHEAT SHEET
 
 #### **MDG-ORD-EXP** - Initial Order (Expanded)
 ```
+✉️ {email} (optional)
 🏙️ {District} ({zip})
 
-{Vendor}: (if multi-vendor)
+{Vendor}: (if multi-vendor - uses shortcut)
 {qty} x {Product}
 ...
 
@@ -55,32 +67,48 @@ commi# ⚡ TELEGRAM BOT CHEAT SHEET
 [◂ Hide] [Action buttons...]
 ```
 
+**Format Changes (Nov 2025):**
+- Email shown before district (if available)
+- District line shows city district and zip code
+- Multi-vendor uses shortcuts instead of full names
+
 ---
 
 #### **MDG-CONF** - All Vendors Confirmed
 ```
-🔖#{num} ({source})
+🔖 {num} ({source})
 
 👍 Confirmed time
 
-{chef} {Shortcut}: {time} 🍕 {count}
-{chef} {Shortcut}: {time} 🍕 {count} (multi-vendor)
+{chef} **{Shortcut}**: {time} ({count})
+{chef} **{Shortcut}**: {time} ({count}) (multi-vendor)
 
 [👈 Assign to myself] [👉 Assign to...]
 ```
+
+**Format Changes (Nov 2025):**
+- Header shows order number and source (e.g., "58 (dishbee)")
+- Each vendor line shows shortcut in bold, time, and product count in parentheses
+- Vendor shortcuts replace full names
+- Product counts show total quantity per vendor
 
 ---
 
 #### **MDG-CONF-ASSIGNED** - After Assignment
 ```
-🔖#{num} ({source})
+🔖 {num} ({source})
 
 👍 Confirmed time
 
-{chef} {Shortcut}: {time} 🍕 {count}
+{chef} **{Shortcut}**: {time} ({count})
 
 [🚫 Unassign]
 ```
+
+**Persistence Fix (Nov 2025):**
+- MDG-CONF message no longer auto-deleted after vendor confirmation
+- Message persists and shows unassign button after assignment
+- Stored in `order["mdg_conf_message_id"]` STATE field
 
 ---
 
@@ -141,7 +169,7 @@ Select scheduled order:
 ```
 🚨 New order
 
-🔖 #{num}
+🔖 {num}
 
 {qty} x {Product}
 {qty} x {Product}
@@ -151,26 +179,34 @@ Select scheduled order:
 [Details ▸]
 ```
 
+**Format Changes (Nov 2025):**
+- Order number without # symbol
+- Smoothr D&D orders show all 3 digits
+- Shopify/Lieferando orders show last 2 digits
+
 ---
 
 #### **RG-DET** - Order Details (Expanded)
 ```
 🚨 New order
 
-🔖 #{num}
+🔖 {num}
 
 {qty} x {Product}
 {qty} x {Product}
 
 ❕ Note: {text}
 
-🧑 {Customer}
+👤 {Customer}
 🗺️ {Address}
 📞 {phone}
 ⏰ Ordered at: {HH:MM}
 
 [◂ Hide]
 ```
+
+**Format Changes (Nov 2025):**
+- Address shows street only (zip removed from RG display)
 
 ---
 
@@ -236,13 +272,18 @@ Please prepare 🔖 #{num} at {time} for courier."
 ```
 🚨 Order assigned 👉 to you (dishbee)
 
-👉 #{num} - {source}
-{chef} {Shortcut}: {time} 🍕 {count}
-{chef} {Shortcut}: {time} 🍕 {count} (multi-vendor)
+🔖 {num}
+
+{chef} {Shortcut}: {time} ({count})
+{chef} {Shortcut}: {time} ({count}) (multi-vendor)
+🗺️ [{Address}]({link})
+
 👤 {Customer}
-🧭 {Address} ({zip})
+
+❕ Note: {text} (optional)
 ❕ Tip: {amt}€ (optional)
 ❕ Cash: {amt}€ (optional)
+
 ☎️ {phone}
 
 [🧭 Navigate]
@@ -252,20 +293,32 @@ Please prepare 🔖 #{num} at {time} for courier."
 [✅ Delivered]
 ```
 
+**Format Changes (Nov 2025):**
+- Order number without source name
+- Restaurant lines show shortcut, time, and count in parentheses
+- Address with clickable map link placed after restaurant info
+- Customer name on separate line after address
+- Phone with ☎️ emoji (no "Call customer:" label)
+- Removed ** stars from buttons (Telegram doesn't support Markdown in buttons)
+
 ---
 
 #### **UPC-DELIVERED** - After Delivery
 ```
 📍 Delivered ✅ at {HH:MM}
 
-👉 #{num} - {source}
-{chef} {Shortcut}: {time} 🍕 {count}
+🔖 {num}
+
+{chef} {Shortcut}: {time} ({count})
 👤 {Customer}
-🧭 {Address} ({zip})
+🗺️ [{Address}]({link})
 ☎️ {phone}
 
 [❌ Undeliver]
 ```
+
+**Format Changes (Nov 2025):**
+- Consistent with UPC-ASSIGN format changes
 
 ---
 
@@ -313,7 +366,6 @@ ST-WRITE        {chef} {Vendor}: Issue with 🔖 #{num}: "{message}"
 ST-ASAP-SENT    ⚡ Asap request for 🔖 #{num} sent to {Shortcut}
 ST-TIME-SENT    🕒 Time request ({time}) for 🔖 #{num} sent to {Shortcut}
 ST-UPC-DELAY    🕒 DELAY request ({time}) for 🔖 #{num} sent to {Shortcut}
-ST-ASSIGN       Order 🔖 #{num} assigned to 🐝 {courier}
 ST-UNASSIGN     🔖 #{num} was unassigned by {courier}
 ST-DELIVER      🔖 #{num} delivered by {courier}
 ```
@@ -585,7 +637,8 @@ Core fields in `STATE[order_id]`:
         "phone": "+49123456789",
         "address": "Lederergasse 15",
         "zip": "94032",
-        "original_address": "Full for maps"
+        "original_address": "Full for maps",
+        "email": "john@example.com"  # Optional, shown in MDG-ORD-EXP
     },
     
     # Vendors
@@ -601,6 +654,7 @@ Core fields in `STATE[order_id]`:
         "Leckerolls": "14:35",
         "dean & david": "14:40"
     },
+    "is_asap": True,  # For Smoothr orders - False if scheduled
     "created_at": datetime,
     
     # Assignment
@@ -612,6 +666,7 @@ Core fields in `STATE[order_id]`:
     
     # Messages
     "mdg_message_id": 123456,
+    "mdg_conf_message_id": 123457,  # NEW: Tracks MDG-CONF for unassign
     "rg_message_ids": {
         "Leckerolls": 789,
         "dean & david": 790
@@ -645,6 +700,11 @@ Core fields in `STATE[order_id]`:
     "group_position": 1
 }
 ```
+
+**STATE Changes (Nov 2025):**
+- Added `mdg_conf_message_id` to track MDG-CONF message for unassign operations
+- Added `is_asap` boolean for Smoothr scheduled vs ASAP orders
+- Added `email` to customer dict (optional, shown in expanded view)
 
 ---
 
@@ -932,19 +992,26 @@ GOOGLE_MAPS_API_KEY=your_key  # District detection
 15. **Smoothr Product Count** - Removed order_type checks in mdg.py to enable product counts for all order types (315214c)
 16. **Smoothr Parser Format** - Fixed parse_smoothr_order() to handle "Product xQty - Total: X €" format from real webhooks (3a32623)
 17. **RG-SUM Status Display** - Added vendor parameter to build_status_lines() for vendor-specific status filtering in multi-vendor orders (a3101d8)
+18. **Order Number Format** - Removed # symbol from all order number displays system-wide (86f9539)
+19. **MDG-ORD Format Overhaul** - Reordered lines: address before vendor, customer after notes, clickable phone with emoji (ef10067)
+20. **Smoothr Scheduled Time** - Display scheduled delivery time for non-ASAP Smoothr orders in MDG-ORD (b2cdaa2, b868bd7)
+21. **STATE Corruption** - Added guard in upc.configure() to prevent STATE reconfiguration during circular imports (737fea0)
+22. **MDG-CONF Persistence** - Fixed MDG-CONF being auto-deleted after vendor confirmation by removing from cleanup array (17aa7e0)
+23. **Unassign Status Revert** - Unassign now pops "assigned" from status_history and updates MDG-ORD to show "Confirmed" status (a324a39)
 
 ## 🆕 NEW FEATURES (Oct-Nov 2025)
 
 1. **Undeliver Functionality** - Revert delivered orders back to assigned
 2. **Combine Orders UI** - Show assigned orders menu (Phase 2 complete)
 3. **Multi-Vendor Delay** - Select specific vendor for delay requests
-4. **Assignment Confirmation Format** - New format with vendor shortcuts + product counts
+4. **Assignment Confirmation Format** - New format with vendor shortcuts + product counts (9cf9c04)
 5. **Test Commands** - `/test_smoothr` and `/test_shopify` for order simulation
 6. **Enhanced UPC Delay** - Separate delay flow for single vs multi-vendor
 7. **Live Courier Detection** - Queries MDG admins API (fallback to COURIER_MAP)
 8. **Smoothr Parsing Enhancement** - Products, Tip, Note, Payment, Delivery Fee extraction (workflow equality with Shopify) (182d574, b2ddb0a, 8fbf060)
+9. **MDG-CONF Message Tracking** - New STATE field `mdg_conf_message_id` tracks confirmation message for unassign operations (566bfe5)
 
 ---
 
-**Last Updated**: November 12, 2025 • **Version**: 3.3 (RG-SUM Status Fix + Smoothr Parser)  
+**Last Updated**: November 17, 2025 • **Version**: 3.4 (Order Format Overhaul + Unassign Status Revert)  
 **See also**: AI-INSTRUCTIONS.md, SYSTEM-REFERENCE.md

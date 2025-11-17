@@ -1483,6 +1483,9 @@ def telegram_webhook():
                 
                 # VENDOR-SPECIFIC ACTIONS
                 elif action == "vendor_asap":
+                    # Import MDG builder functions
+                    from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard
+                    
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
                     if not order:
@@ -2004,6 +2007,9 @@ def telegram_webhook():
                     order["mdg_additional_messages"].append(msg.message_id)
                 
                 elif action == "time_same":
+                    # Import MDG builder functions
+                    from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard
+                    
                     # User clicked "Same" - send "together with" message to current order's vendors
                     order_id = data[1]
                     ref_order_id = data[2]
@@ -2193,6 +2199,9 @@ def telegram_webhook():
                         order["mdg_additional_messages"].append(msg.message_id)
                 
                 elif action == "same_selected":
+                    # Import MDG builder functions
+                    from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard
+                    
                     order_id, reference_order_id = data[1], data[2]
                     order = STATE.get(order_id)
                     reference_order = STATE.get(reference_order_id)
@@ -2523,6 +2532,9 @@ def telegram_webhook():
                     )
                 
                 elif action == "later_time":
+                    # Import MDG builder functions
+                    from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard
+                    
                     # Extract vendor SHORTCUT from callback data (format: later_time|order_id|time|vendor_shortcut)
                     order_id, selected_time, vendor_shortcut = data[1], data[2], data[3]
                     

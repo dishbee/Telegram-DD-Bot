@@ -17,7 +17,6 @@
 4. **Check every line** against original requirements
 5. **Explain exactly** what will change and why
 6. **TRACE THE ACTUAL CODE FLOW** before implementing - don't assume
-7. **Read user's ORIGINAL ASSIGNMENT first**, not existing broken code
 
 ### ❌ NEVER DO:
 1. **NO assumptions** - verify everything against assignment
@@ -142,7 +141,7 @@ Why needed: [one sentence]
 
 ---
 
-## �🛠️ DEVELOPMENT APPROACH
+## 🛠️ DEVELOPMENT APPROACH
 
 ### Implementation Pattern:
 1. **Analyze**: What exactly needs to change
@@ -150,6 +149,13 @@ Why needed: [one sentence]
 3. **Confirm**: Get user approval before proceeding - **MUST include visual representation of all affected UI elements**
 4. **Implement**: Complete working solution
 5. **Verify**: Ensure fix works without breaking other things
+
+### Git Deployment Rules:
+**CRITICAL**: Always combine git commands in ONE terminal call using `;` separator:
+```powershell
+git add file1.py file2.py; git commit -m "message"; git push origin main
+```
+**NEVER** run git commands separately (forces user to click "Allow" 3 times).
 
 ### When You Fuck Up:
 1. ✅ Admit the specific mistake immediately
@@ -309,7 +315,7 @@ DRIVERS={"Bee 1": 383910036, "Bee 2": 6389671774, "Bee 3": 8483568436}
 
 ---
 
-## 📝 Response Template (Use This Format)
+##  Response Template (Use This Format)
 
 When user requests a change:
 
