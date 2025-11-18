@@ -39,6 +39,10 @@ Historical issues that have caused failures:
 6. Making changes without user confirmation (caused frustration)
 7. **CLAIMING TO UNDERSTAND WITHOUT ACTUALLY TRACING CODE FLOW** (BTN-TIME failure - modified wrong function, didn't trace actual callback handlers)
 8. **READING EXISTING BROKEN CODE INSTEAD OF USER'S ORIGINAL ASSIGNMENT** (Fix #4 failure - looked at wrong implementation instead of user's specification)
+9. **ADDING IMPORTS WITHOUT CHECKING DEPENDENCIES** (Import fix cascades - fixed one handler, broke multi-vendor keyboard because didn't trace what functions actually do)
+10. **NOT RESPECTING SYSTEM COMPLEXITY** (Treating multi-module state machine like simple CRUD app - every change has ripple effects across MDG/RG/UPC)
+11. **TOUCHING WORKING CODE WITHOUT UNDERSTANDING WHY IT WORKS** (If something works, NEVER change it without full trace of execution path)
+12. **ASSUMING IMPORTS ARE ISOLATED CHANGES** (Imports affect execution order, STATE access timing, and function behavior - must verify ALL dependencies)
 
 ### When You Fuck Up
 
@@ -150,8 +154,36 @@ Why needed: [one sentence]
 - [ ] Did I list 3 specific things this could break?
 - [ ] Is my diff clean with NO extra changes?
 - [ ] Did I verify callback data formats won't break old buttons?
+- [ ] Did I check if this change affects multi-vendor vs single-vendor branching logic?
+- [ ] Did I verify STATE field dependencies for ALL functions being called?
+- [ ] Did I check execution order and timing of imports relative to STATE access?
 
 **If ANY answer is NO, STOP and redo the checklist.**
+
+### 6️⃣ DEPENDENCY VERIFICATION (FOR IMPORT CHANGES)
+
+**If adding/moving imports, answer these:**
+
+1. **What does the imported function DO?**
+   - List every STATE field it reads
+   - List every STATE field it modifies
+   - List every other function it calls
+
+2. **When is it called in the execution flow?**
+   - Is STATE fully populated at that point?
+   - Are there branching conditions (multi-vendor vs single-vendor)?
+   - Does it depend on previous handlers setting STATE values?
+
+3. **What could break if import timing changes?**
+   - Does it access STATE before it's initialized?
+   - Does it depend on other imports executing first?
+   - Will circular dependencies occur?
+
+**Example for `mdg_time_request_keyboard(order_id)`:**
+- Reads: `STATE[order_id]["vendors"]`, `STATE[order_id]["confirmed_times"]`
+- Branches: `if len(vendors) > 1` → different keyboard
+- Called: After `build_mdg_dispatch_text()` in most handlers
+- Risk: If STATE corrupted or vendors list empty, wrong keyboard shown
 
 ---
 
