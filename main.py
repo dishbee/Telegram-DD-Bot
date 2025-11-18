@@ -1075,6 +1075,10 @@ async def handle_pf_photo(message: dict):
         logger.info(f"  Time: {parsed_data['time']}")
         logger.info(f"  Total: {parsed_data['total']}€")
         
+        # Determine order type and display number (same as Smoothr)
+        from utils import get_smoothr_order_type
+        order_type, display_num = get_smoothr_order_type(parsed_data['order_num'])
+        
         # Create unique order ID
         order_id = f"PF_{parsed_data['order_num']}_{int(datetime.now().timestamp())}"
         vendor = "Pommes Freunde"
@@ -1082,8 +1086,8 @@ async def handle_pf_photo(message: dict):
         # Create STATE entry (following Smoothr pattern)
         STATE[order_id] = {
             "order_id": order_id,
-            "name": f"PF #{parsed_data['order_num']}",
-            "order_type": "smoothr",  # Treat as Lieferando variant
+            "name": display_num,  # e.g., "PJ" for 6-char codes
+            "order_type": order_type,  # "smoothr_lieferando" for 6-char codes
             "vendors": [vendor],
             "vendor_items": {vendor: []},  # No products
             "customer": {
