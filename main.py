@@ -1512,10 +1512,14 @@ def telegram_webhook():
             # =================================================================
             # PF PHOTO DETECTION (before vendor issue handling)
             # =================================================================
-            if chat_id == PF_RG_CHAT_ID and msg.get("photo"):
-                logger.info("=== PF PHOTO DETECTED ===")
-                run_async(handle_pf_photo(msg))
-                return "OK"
+            if chat_id == PF_RG_CHAT_ID:
+                logger.info(f"=== PF GROUP MESSAGE ===")
+                logger.info(f"Has photo field: {bool(msg.get('photo'))}")
+                logger.info(f"Message keys: {list(msg.keys())}")
+                if msg.get("photo"):
+                    logger.info("=== PF PHOTO DETECTED ===")
+                    run_async(handle_pf_photo(msg))
+                    return "OK"
             
             # Check if this is a vendor responding with issue description
             if text and chat_id in VENDOR_GROUP_MAP.values():
