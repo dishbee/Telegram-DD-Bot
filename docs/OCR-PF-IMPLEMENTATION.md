@@ -247,7 +247,7 @@ STATE[order_id] = {
 - [x] `PF_RG_CHAT_ID` added to `.env` and Render dashboard ✅ **DONE**
 - [x] Tesseract buildpack configured in Render ✅ **DONE** (Aptfile created)
 - [x] `ocr.py` module complete with parser ✅ **DONE** (Phase 2.1a + 2.1b)
-- [ ] `handle_pf_photo()` implemented
+- [x] `handle_pf_photo()` implemented ✅ **DONE** (Phase 3.1 + 3.2)
 - [ ] Retry logic tested locally
 - [ ] Error messages verified
 

@@ -30,6 +30,8 @@ from zoneinfo import ZoneInfo
 from typing import Dict, Any, List, Optional
 from flask import Flask, request, jsonify
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
+import tempfile
+import ocr
 from telegram.constants import ParseMode
 from telegram.request import HTTPXRequest
 from telegram.error import TelegramError, TimedOut, NetworkError
@@ -89,6 +91,7 @@ SMOOTHR_WEBHOOK_SECRET = os.environ.get("SMOOTHR_WEBHOOK_SECRET", "8Lfwef9XRhmCa
 DISPATCH_MAIN_CHAT_ID = int(os.environ["DISPATCH_MAIN_CHAT_ID"])
 VENDOR_GROUP_MAP: Dict[str, int] = json.loads(os.environ.get("VENDOR_GROUP_MAP", "{}"))
 DRIVERS: Dict[str, int] = json.loads(os.environ.get("DRIVERS", "{}"))
+PF_RG_CHAT_ID = int(os.environ.get("PF_RG_CHAT_ID", "-4955033989"))
 
 # Placeholder for restaurant accounts (to be added later)
 # Format: {"Restaurant Name": user_id} - user_id of restaurant's Telegram account
@@ -1029,6 +1032,115 @@ async def process_smoothr_order(smoothr_data: dict):
         raise
 
 
+async def handle_pf_photo(message: dict):
+    """
+    Handle photo sent to Pommes Freunde restaurant group.
+    Downloads photo, runs OCR, parses fields, creates STATE entry.
+    """
+    chat_id = message.get("chat", {}).get("id")
+    message_id = message.get("message_id")
+    photo_list = message.get("photo", [])
+    
+    if not photo_list:
+        logger.warning("handle_pf_photo called but no photo in message")
+        return
+    
+    # Get largest photo (last in list)
+    largest_photo = photo_list[-1]
+    file_id = largest_photo.get("file_id")
+    
+    logger.info(f"=== PF PHOTO RECEIVED ===")
+    logger.info(f"Chat ID: {chat_id}")
+    logger.info(f"Message ID: {message_id}")
+    logger.info(f"File ID: {file_id}")
+    
+    try:
+        # Download photo
+        file = await bot.get_file(file_id)
+        
+        # Save to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+            photo_path = temp_file.name
+            await file.download_to_drive(photo_path)
+            logger.info(f"Downloaded photo to {photo_path}")
+        
+        # Extract text via OCR
+        ocr_text = ocr.extract_text_from_image(photo_path)
+        logger.info(f"OCR extraction complete, text length: {len(ocr_text)}")
+        
+        # Parse order fields
+        parsed_data = ocr.parse_pf_order(ocr_text)
+        logger.info(f"Parsed PF order: #{parsed_data['order_num']}")
+        logger.info(f"  Customer: {parsed_data['customer']}")
+        logger.info(f"  Time: {parsed_data['time']}")
+        logger.info(f"  Total: {parsed_data['total']}€")
+        
+        # Create unique order ID
+        order_id = f"PF_{parsed_data['order_num']}_{int(datetime.now().timestamp())}"
+        vendor = "Pommes Freunde"
+        
+        # Create STATE entry (following Smoothr pattern)
+        STATE[order_id] = {
+            "order_id": order_id,
+            "name": f"PF #{parsed_data['order_num']}",
+            "order_type": "smoothr",  # Treat as Lieferando variant
+            "vendors": [vendor],
+            "vendor_items": {vendor: []},  # No products
+            "customer": {
+                "name": parsed_data['customer'],
+                "phone": parsed_data['phone'],
+                "address": parsed_data['address'],
+                "zip": parsed_data['zip']
+            },
+            "total": parsed_data['total'],
+            "note": parsed_data.get('note'),
+            "is_asap": parsed_data['time'] == 'asap',
+            "requested_time": None if parsed_data['time'] == 'asap' else parsed_data['time'],
+            "confirmed_time": None,
+            "confirmed_times": {},
+            "status": "new",
+            "status_history": [{"type": "new", "timestamp": now()}],
+            "assigned_to": None,
+            "mdg_message_id": None,
+            "rg_message_ids": {},
+            "vendor_expanded": {vendor: False},
+            "mdg_additional_messages": [],
+            "created_at": now(),
+        }
+        
+        # Send MDG-ORD
+        from mdg import build_mdg_dispatch_text
+        mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
+        keyboard = mdg_initial_keyboard(order_id)
+        mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard)
+        
+        if mdg_msg:
+            STATE[order_id]["mdg_message_id"] = mdg_msg.message_id
+        
+        # Send RG-SUM to PF group
+        rg_text = build_vendor_summary_text(STATE[order_id], vendor)
+        rg_keyboard = vendor_keyboard(order_id, vendor, expanded=False)
+        rg_msg = await safe_send_message(chat_id, rg_text, rg_keyboard)
+        
+        if rg_msg:
+            STATE[order_id]["rg_message_ids"][vendor] = rg_msg.message_id
+        
+        logger.info(f"✅ PF photo order {order_id} processed successfully")
+        
+    except ocr.ParseError as e:
+        logger.error(f"OCR parse error: {e}")
+        # TODO: Implement retry logic (Phase 4)
+        error_msg = "⚠️ The photo is not readable, please send it again. Make sure there are no light reflections, the whole text is visible (including Details opened) and camera is clean."
+        await safe_send_message(chat_id, error_msg)
+    
+    except Exception as e:
+        logger.error(f"Error processing PF photo: {e}")
+        logger.exception(e)
+        # Send alert to MDG
+        alert_msg = f"❌ **PF Photo Processing Error**\n\nFailed to process photo from Pommes Freunde.\n\nError: {str(e)[:200]}"
+        await safe_send_message(DISPATCH_MAIN_CHAT_ID, alert_msg)
+
+
 async def cleanup_mdg_messages(order_id: str):
     """Clean up additional MDG messages, keeping only the original order message"""
     order = STATE.get(order_id)
@@ -1392,6 +1504,14 @@ def telegram_webhook():
                         run_async(safe_send_message(DISPATCH_MAIN_CHAT_ID, error_msg))
                         
                         return "OK"  # Stop further processing even on error
+            
+            # =================================================================
+            # PF PHOTO DETECTION (before vendor issue handling)
+            # =================================================================
+            if chat_id == PF_RG_CHAT_ID and msg.get("photo"):
+                logger.info("=== PF PHOTO DETECTED ===")
+                run_async(handle_pf_photo(msg))
+                return "OK"
             
             # Check if this is a vendor responding with issue description
             if text and chat_id in VENDOR_GROUP_MAP.values():
