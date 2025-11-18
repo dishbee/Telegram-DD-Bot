@@ -243,10 +243,10 @@ STATE[order_id] = {
 
 ### Before Pushing to GitHub:
 
-- [ ] requirements.txt updated (pytesseract, Pillow)
-- [ ] `PF_RG_CHAT_ID` added to `.env` and Render dashboard
-- [ ] Tesseract buildpack configured in Render
-- [ ] `ocr.py` module complete with tests
+- [x] requirements.txt updated (pytesseract, Pillow) ✅ **DONE**
+- [x] `PF_RG_CHAT_ID` added to `.env` and Render dashboard ✅ **DONE**
+- [x] Tesseract buildpack configured in Render ✅ **DONE** (Aptfile created)
+- [x] `ocr.py` module complete with parser ✅ **DONE** (Phase 2.1a + 2.1b)
 - [ ] `handle_pf_photo()` implemented
 - [ ] Retry logic tested locally
 - [ ] Error messages verified
