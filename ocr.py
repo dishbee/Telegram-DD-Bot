@@ -7,16 +7,19 @@ import os
 import re
 from datetime import datetime
 from typing import Dict, Optional
-import pytesseract
+import easyocr
 from PIL import Image
 
 class ParseError(Exception):
     """Raised when OCR parsing fails"""
     pass
 
+# Initialize EasyOCR reader (cached globally)
+_reader = None
+
 def extract_text_from_image(photo_path: str) -> str:
     """
-    Run Tesseract OCR on image and return raw text.
+    Run EasyOCR on image and return raw text.
     
     Args:
         photo_path: Absolute path to downloaded photo
@@ -27,15 +30,17 @@ def extract_text_from_image(photo_path: str) -> str:
     Raises:
         ParseError: If image cannot be processed
     """
+    global _reader
     try:
-        # Load image
-        image = Image.open(photo_path)
-        
-        # Tesseract configuration: German + English, single block of text
-        custom_config = r'--oem 3 --psm 6 -l deu+eng'
+        # Initialize reader once (downloads models on first run)
+        if _reader is None:
+            _reader = easyocr.Reader(['de', 'en'], gpu=False)
         
         # Run OCR
-        text = pytesseract.image_to_string(image, config=custom_config)
+        results = _reader.readtext(photo_path)
+        
+        # Combine all text blocks into single string
+        text = '\n'.join([result[1] for result in results])
         
         # Log raw output for debugging
         print(f"[OCR] Raw text extracted from {photo_path}:")
