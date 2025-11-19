@@ -64,8 +64,6 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         # Add customer note if exists
         note = order.get("note", "")
         if note:
-            if not vendor_items:  # Add empty line only if no products shown
-                lines.append("")
             lines.append(f"❕ Note: {note}")
 
         # Join lines and prepend status

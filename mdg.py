@@ -314,7 +314,13 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         else:
             # Single vendor
             chef_emoji = chef_emojis[0]
-            vendor_line = f"{chef_emoji} **{shortcuts[0]}** ({vendor_counts[0]})"
+            # Don't show count for PF Lieferando orders (no products parsed)
+            order_type = order.get("order_type", "")
+            if order_type == "smoothr_lieferando" and vendors[0] == "Pommes Freunde":
+                # PF OCR order - no product count
+                vendor_line = f"{chef_emoji} **{shortcuts[0]}**"
+            else:
+                vendor_line = f"{chef_emoji} **{shortcuts[0]}** ({vendor_counts[0]})"
 
         customer_line = f"👤 {order['customer']['name']}"
 
@@ -442,12 +448,18 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 else:
                     items_text = '\n'.join(items_text_parts)
 
-            total = order.get("total", "0.00€")
-            payment = order.get("payment_method", "Paid")
-            if not (order_type == "shopify" and payment.lower() == "cash on delivery"):
-                items_text += f"\n\nTotal: {total}"
-
-            text += f"{items_text}"
+            # Only add product section if items exist
+            if items_text and items_text.strip():
+                text += f"{items_text}"
+                # Add total after products
+                total = order.get("total", "0.00€")
+                payment = order.get("payment_method", "Paid")
+                if not (order_type == "shopify" and payment.lower() == "cash on delivery"):
+                    text += f"\n\nTotal: {total}"
+            else:
+                # No products - just add total on next line
+                total = order.get("total", "0.00€")
+                text += f"Total: {total}"
             
         else:
             # Collapsed view - no products shown
