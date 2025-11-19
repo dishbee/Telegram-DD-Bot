@@ -1134,7 +1134,14 @@ async def handle_pf_photo(message: dict):
     except ocr.ParseError as e:
         logger.error(f"OCR parse error: {e}")
         # TODO: Implement retry logic (Phase 4)
-        error_msg = "⚠️ The photo is not readable, please send it again. Make sure there are no light reflections, the whole text is visible (including Details opened) and camera is clean."
+        error_msg = (
+            "⚠️ The photo is not readable. Please send it again. Make sure that:\n\n"
+            "- All text is visible\n"
+            "- Details are opened\n"
+            "- No light reflection is covering the content\n"
+            "- Phone camera is clean\n\n"
+            "This is automatic message. If two more attempts fail - we will contact you."
+        )
         await safe_send_message(chat_id, error_msg)
     
     except Exception as e:
