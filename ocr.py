@@ -55,7 +55,8 @@ def extract_text_from_image(photo_path: str) -> str:
         
         # Log raw output for debugging
         print(f"[OCR] Raw text extracted from {photo_path}:")
-        print(f"[OCR] {text[:500]}...")  # First 500 chars
+        print(f"[OCR] FULL TEXT:\n{text}")  # Show complete text for debugging
+        print(f"[OCR] Total length: {len(text)} characters")
         
         return text
         
