@@ -1034,27 +1034,22 @@ async def process_smoothr_order(smoothr_data: dict):
 
 async def handle_pf_photo(message: dict):
     """
-    Handle photo/document sent to Pommes Freunde restaurant group.
-    Downloads image, runs OCR, parses fields, creates STATE entry.
+    Handle photo sent to Pommes Freunde restaurant group.
+    Downloads photo, runs OCR, parses fields, creates STATE entry.
     """
     chat_id = message.get("chat", {}).get("id")
     message_id = message.get("message_id")
-    
-    # Check for both photo (compressed) and document (uncompressed)
     photo_list = message.get("photo", [])
-    document = message.get("document")
     
-    if photo_list:
-        # Get largest photo (last in list)
-        file_id = photo_list[-1].get("file_id")
-        logger.info(f"=== PF PHOTO RECEIVED (compressed) ===")
-    elif document and document.get("mime_type", "").startswith("image/"):
-        file_id = document.get("file_id")
-        logger.info(f"=== PF PHOTO RECEIVED (document) ===")
-    else:
-        logger.warning("handle_pf_photo called but no photo/document in message")
+    if not photo_list:
+        logger.warning("handle_pf_photo called but no photo in message")
         return
     
+    # Get largest photo (last in list)
+    largest_photo = photo_list[-1]
+    file_id = largest_photo.get("file_id")
+    
+    logger.info(f"=== PF PHOTO RECEIVED ===")
     logger.info(f"Chat ID: {chat_id}")
     logger.info(f"Message ID: {message_id}")
     logger.info(f"File ID: {file_id}")
@@ -1517,15 +1512,10 @@ def telegram_webhook():
             # =================================================================
             # PF PHOTO DETECTION (before vendor issue handling)
             # =================================================================
-            if chat_id == PF_RG_CHAT_ID:
-                # Check for both 'photo' (compressed) and 'document' (uncompressed image)
-                has_photo = msg.get("photo")
-                has_document = msg.get("document")
-                
-                if has_photo or (has_document and has_document.get("mime_type", "").startswith("image/")):
-                    logger.info("=== PF PHOTO DETECTED ===")
-                    run_async(handle_pf_photo(msg))
-                    return "OK"
+            if chat_id == PF_RG_CHAT_ID and msg.get("photo"):
+                logger.info("=== PF PHOTO DETECTED ===")
+                run_async(handle_pf_photo(msg))
+                return "OK"
             
             # Check if this is a vendor responding with issue description
             if text and chat_id in VENDOR_GROUP_MAP.values():
