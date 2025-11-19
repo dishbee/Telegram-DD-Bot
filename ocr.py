@@ -93,10 +93,10 @@ def parse_pf_order(ocr_text: str) -> dict:
         raise ParseError("ZIP code not found")
     result['zip'] = zip_match.group(1)
     
-    # 3. Customer (required): Line after order # and "Lieferung", before address
-    # Pattern: "#XXXXXX Lieferung ... \n Customer Name \n Address"
+    # 3. Customer (required): Line after order # line
+    # Pattern: "#XXXXXX Lieferung ... \n Customer Name"
     customer_match = re.search(
-        r'#\s*[A-Z0-9]{6}[^\n]*\n\s*([^\n]+?)\s*\n\s*[^\n]*\b940\d{2}\b',
+        r'#\s*[A-Z0-9]{6}\s+[^\n]*\n\s*([^\n]+)',
         ocr_text,
         re.IGNORECASE
     )
