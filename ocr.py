@@ -7,16 +7,19 @@ import os
 import re
 from datetime import datetime
 from typing import Dict, Optional
-import pytesseract
+from paddleocr import PaddleOCR
 from PIL import Image
 
 class ParseError(Exception):
     """Raised when OCR parsing fails"""
     pass
 
+# Initialize PaddleOCR once (cached globally)
+_ocr_reader = None
+
 def extract_text_from_image(photo_path: str) -> str:
     """
-    Run Tesseract OCR on image and return raw text.
+    Run PaddleOCR on image and return raw text.
     
     Args:
         photo_path: Absolute path to downloaded photo
@@ -27,15 +30,22 @@ def extract_text_from_image(photo_path: str) -> str:
     Raises:
         ParseError: If image cannot be processed
     """
+    global _ocr_reader
     try:
-        # Load image
-        image = Image.open(photo_path)
-        
-        # Tesseract configuration: German + English, single block of text
-        custom_config = r'--oem 3 --psm 6 -l deu+eng'
+        # Initialize reader once (downloads models on first run)
+        if _ocr_reader is None:
+            _ocr_reader = PaddleOCR(use_angle_cls=True, lang='german', use_gpu=False, show_log=False)
         
         # Run OCR
-        text = pytesseract.image_to_string(image, config=custom_config)
+        result = _ocr_reader.ocr(photo_path, cls=True)
+        
+        # Extract text from nested structure: [[[bbox], (text, confidence)]]
+        text_lines = []
+        if result and result[0]:
+            for line in result[0]:
+                text_lines.append(line[1][0])  # line[1] is (text, confidence), [0] is text
+        
+        text = '\n'.join(text_lines)
         
         # Log raw output for debugging
         print(f"[OCR] Raw text extracted from {photo_path}:")
