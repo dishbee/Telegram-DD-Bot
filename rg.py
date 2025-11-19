@@ -41,10 +41,13 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         # Get order type first
         order_type = order.get("order_type", "shopify")
         
-        # Build status lines - for DD/PF, status ends without newline
+        # Build status lines
         status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS, vendor=vendor)
+        
+        # For DD/PF: status has 2 newlines, we want only 1 before order number
         if order_type in ["smoothr_dnd", "smoothr_lieferando"]:
-            status_text = status_text.rstrip('\n')  # Remove trailing newline for DD/PF
+            if status_text.endswith('\n\n'):
+                status_text = status_text[:-1]  # Remove one newline (keep 1)
         
         # Get order number display
         # For Smoothr D&D App orders (3 digits): show all 3 digits
@@ -56,7 +59,7 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
 
         # Build message with order number
         if order_type in ["smoothr_dnd", "smoothr_lieferando"]:
-            # DD/PF: No blank line after status, blank line after order number
+            # DD/PF: blank line after order number, then customer info
             lines = [f"🔖 {order_number}", ""]
             customer_name = order.get('customer', {}).get('name', 'Unknown')
             address = order.get('customer', {}).get('address', 'No address')
