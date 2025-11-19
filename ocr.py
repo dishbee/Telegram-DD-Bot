@@ -37,7 +37,7 @@ def extract_text_from_image(photo_path: str) -> str:
             _ocr_reader = PaddleOCR(lang='en')
         
         # Run OCR
-        result = _ocr_reader.ocr(photo_path, cls=True)
+        result = _ocr_reader.ocr(photo_path)
         
         # Extract text from nested structure: [[[bbox], (text, confidence)]]
         text_lines = []
