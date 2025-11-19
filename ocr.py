@@ -6,8 +6,11 @@ Extracts text from order photos and parses required fields
 import os
 import re
 import requests
+import logging
 from datetime import datetime
 from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 class ParseError(Exception):
     """Raised when OCR parsing fails"""
@@ -54,9 +57,9 @@ def extract_text_from_image(photo_path: str) -> str:
             raise ParseError(f"OCR API error: {result.get('ErrorMessage', 'Unknown error')}")
         
         # Log raw output for debugging
-        print(f"[OCR] Raw text extracted from {photo_path}:")
-        print(f"[OCR] FULL TEXT:\n{text}")  # Show complete text for debugging
-        print(f"[OCR] Total length: {len(text)} characters")
+        logger.info(f"[OCR] Raw text extracted from {photo_path}:")
+        logger.info(f"[OCR] FULL TEXT:\n{text}")
+        logger.info(f"[OCR] Total length: {len(text)} characters")
         
         return text
         
