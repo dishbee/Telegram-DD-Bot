@@ -81,21 +81,47 @@ def parse_pf_order(ocr_text: str) -> dict:
     """
     result = {}
     
-    # 1. Order # (required): #XXXXXX (6 alphanumeric chars)
-    order_match = re.search(r'#([A-Z0-9]{6})', ocr_text, re.IGNORECASE)
+    # 1. Order # (required): #XXXXXX or # XXXXXX (6 alphanumeric chars)
+    order_match = re.search(r'#\s*([A-Z0-9]{6})', ocr_text, re.IGNORECASE)
     if not order_match:
         raise ParseError("Order number not found")
     result['order_num'] = order_match.group(1).upper()
     
-    # 2. Customer (required): Line after order #
-    # Pattern: After "#XXXXXX", next non-empty line before "Tel"
-    customer_match = re.search(r'#[A-Z0-9]{6}[^\n]*\n\s*([^\n]+?)(?=\s*\n|\s*Tel)', ocr_text, re.IGNORECASE)
+    # 2. ZIP (required): 5 digits (Passau = 940XX)
+    zip_match = re.search(r'\b(940\d{2})\b', ocr_text)
+    if not zip_match:
+        raise ParseError("ZIP code not found")
+    result['zip'] = zip_match.group(1)
+    
+    # 3. Customer (required): Line after order # and "Lieferung", before address
+    # Pattern: "#XXXXXX Lieferung ... \n Customer Name \n Address"
+    customer_match = re.search(
+        r'#\s*[A-Z0-9]{6}[^\n]*\n\s*([^\n]+?)\s*\n\s*[^\n]*\b940\d{2}\b',
+        ocr_text,
+        re.IGNORECASE
+    )
     if not customer_match:
         raise ParseError("Customer name not found")
     result['customer'] = customer_match.group(1).strip()
     
-    # 3. Phone (required): After "Tel"
-    phone_match = re.search(r'Tel\s*(\+?\d[\d\s]{7,20})', ocr_text, re.IGNORECASE)
+    # 4. Address (required): Line with street name/number before ZIP
+    # Pattern: "Street Name Number, \n ZIP City"
+    address_match = re.search(
+        r'([^\n]+?)\s*,?\s*\n\s*940\d{2}',
+        ocr_text
+    )
+    if not address_match:
+        raise ParseError("Address not found")
+    address = address_match.group(1).strip()
+    # Remove customer name if it leaked into address
+    if result['customer'] in address:
+        address = address.replace(result['customer'], '').strip()
+    # Remove trailing comma
+    address = address.rstrip(',').strip()
+    result['address'] = address
+    
+    # 5. Phone (required): After "Tel" (may or may not have space)
+    phone_match = re.search(r'Tel\s*(\+?[\d\s]{7,20})', ocr_text, re.IGNORECASE)
     if not phone_match:
         raise ParseError("Phone number not found")
     phone = phone_match.group(1).replace(' ', '').replace('\n', '')
@@ -103,29 +129,10 @@ def parse_pf_order(ocr_text: str) -> dict:
         raise ParseError(f"Invalid phone number length: {len(phone)}")
     result['phone'] = phone
     
-    # 4. ZIP (required): 5 digits (Passau = 940XX)
-    zip_match = re.search(r'\b(940\d{2})\b', ocr_text)
-    if not zip_match:
-        raise ParseError("ZIP code not found")
-    result['zip'] = zip_match.group(1)
-    
-    # 5. Address (required): Street + number before ZIP
-    # Look for pattern: "Customer\n Address line\n ZIP City"
-    address_match = re.search(
-        r'(?:Tel[^\n]*\n)\s*([^\n]+?)\s*,?\s*\n\s*940\d{2}', 
-        ocr_text, 
-        re.IGNORECASE
-    )
-    if not address_match:
-        raise ParseError("Address not found")
-    address = address_match.group(1).strip()
-    # Remove "Etage" line if present
-    address = re.sub(r',?\s*Etage:?\s*\d+', '', address, flags=re.IGNORECASE)
-    result['address'] = address
-    
-    # 6. Time (required): Either "ASAP" or "Lieferzeit HH:MM"
+    # 6. Time (required): Either "ASAP" or actual time near "Lieferzeit"
     asap_match = re.search(r'\bASAP\b', ocr_text, re.IGNORECASE)
-    time_match = re.search(r'Lieferzeit\s*(\d{1,2}):(\d{2})', ocr_text, re.IGNORECASE)
+    # Time shown at bottom: "Lieferzeit \n HH:MM"
+    time_match = re.search(r'Lieferzeit[^\d]*(\d{1,2}):(\d{2})', ocr_text, re.IGNORECASE)
     
     if asap_match:
         result['time'] = 'asap'
@@ -138,16 +145,16 @@ def parse_pf_order(ocr_text: str) -> dict:
     else:
         raise ParseError("Delivery time not found (neither ASAP nor Lieferzeit)")
     
-    # 7. Total (required): After "Total"
-    total_match = re.search(r'Total\s*(\d+[,\.]\d{2})\s*€', ocr_text, re.IGNORECASE)
+    # 7. Total (required): Line with "Total" followed by amount
+    # Must be at end of line to avoid partial matches like "Subtotal"
+    total_match = re.search(r'Total\s+(\d+[,\.]\d{2})\s*€?\s*$', ocr_text, re.IGNORECASE | re.MULTILINE)
     if not total_match:
         raise ParseError("Total price not found")
     total_str = total_match.group(1).replace(',', '.')
     result['total'] = float(total_str)
     
-    # 8. Note (optional): Yellow box text between bell icon and "Bestellinformation"
-    # Pattern: Quoted text or text after bell emoji/icon
-    note_match = re.search(r'[""""]([^""""\n]{10,})[""""]', ocr_text)
+    # 8. Note (optional): Text in quotes (Lieferando customer note)
+    note_match = re.search(r'[""""]([^""""\n]{5,})[""""]', ocr_text)
     if note_match:
         result['note'] = note_match.group(1).strip()
     else:
