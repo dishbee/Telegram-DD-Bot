@@ -65,6 +65,7 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
             address = order.get('customer', {}).get('address', 'No address')
             lines.append(f"👤 {customer_name}")
             lines.append(f"🗺️ {address}")
+            lines.append("")  # Blank line after customer info
         else:
             # Shopify: Blank line after order number
             lines = [f"🔖 {order_number}", ""]
