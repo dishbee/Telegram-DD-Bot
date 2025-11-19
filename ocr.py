@@ -34,7 +34,7 @@ def extract_text_from_image(photo_path: str) -> str:
     try:
         # Initialize reader once (downloads models on first run)
         if _ocr_reader is None:
-            _ocr_reader = PaddleOCR(use_angle_cls=True, lang='german', use_gpu=False)
+            _ocr_reader = PaddleOCR(lang='en')
         
         # Run OCR
         result = _ocr_reader.ocr(photo_path, cls=True)
