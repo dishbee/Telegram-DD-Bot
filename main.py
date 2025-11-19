@@ -372,22 +372,18 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     parts = command.split()
     if len(parts) == 1:
         # Random type
-        order_type = random.choice(["dishbee", "dishbee_asap", "dnd", "dnd_asap", "lieferando", "lieferando_asap"])
+        order_type = random.choice(["dnd", "dnd_asap", "lieferando", "lieferando_asap"])
     else:
         order_type = parts[1].lower()
     
     # Determine ASAP and order source
     is_asap = "asap" in order_type
     is_lieferando = "lieferando" in order_type
-    is_dishbee = "dishbee" in order_type
     
     # Random order code
     if is_lieferando:
         # Lieferando: 6-character alphanumeric (e.g., JR6ZO9, 3DX8TD)
         order_code = ''.join(random.choices('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', k=6))
-    elif is_dishbee:
-        # dishbee: 2-digit (e.g., 45, 01, 99)
-        order_code = str(random.randint(10, 99))
     else:
         # D&D App: 3-digit (e.g., 545, 123, 999)
         order_code = str(random.randint(100, 999))
@@ -614,19 +610,20 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
             {"title": "Choco Dream", "price": "6.00", "qty": 1},
             {"title": "Pistachio Love", "price": "6.50", "qty": 1}
         ],
-        "dean & david": [
-            {"title": "Caesar Salad", "price": "8.90", "qty": 1},
-            {"title": "Protein Bowl", "price": "10.50", "qty": 1},
-            {"title": "Green Smoothie", "price": "5.50", "qty": 1}
+        "i Sapori della Toscana": [
+            {"title": "Pizza Margherita", "price": "9.50", "qty": 1},
+            {"title": "Spaghetti Carbonara", "price": "12.90", "qty": 1},
+            {"title": "Tiramisu", "price": "5.50", "qty": 1}
         ],
         "Zweite Heimat": [
             {"title": "Burger Classic", "price": "11.50", "qty": 1},
             {"title": "Pommes", "price": "4.50", "qty": 1},
             {"title": "Cola 0.5L", "price": "3.50", "qty": 1}
         ],
-        "Pommes Freunde": [
-            {"title": "Pommes", "price": "4.00", "qty": 2},
-            {"title": "Fries: Chili-Cheese-Style", "price": "6.50", "qty": 1}
+        "Kahaani": [
+            {"title": "Chicken Tikka Masala", "price": "13.50", "qty": 1},
+            {"title": "Palak Paneer", "price": "11.90", "qty": 1},
+            {"title": "Garlic Naan", "price": "3.50", "qty": 2}
         ]
     }
     
