@@ -146,8 +146,8 @@ def parse_pf_order(ocr_text: str) -> dict:
         raise ParseError("Delivery time not found (neither ASAP nor Lieferzeit)")
     
     # 7. Total (required): Line with "Total" followed by amount
-    # Must be at end of line to avoid partial matches like "Subtotal"
-    total_match = re.search(r'Total\s+(\d+[,\.]\d{2})\s*€?\s*$', ocr_text, re.IGNORECASE | re.MULTILINE)
+    # Currency symbol may be misread (€ as c, e, etc.) or missing
+    total_match = re.search(r'Total\s+(\d+[,\.]\d{2})\s*[€cCeE]?\s*$', ocr_text, re.IGNORECASE | re.MULTILINE)
     if not total_match:
         raise ParseError("Total price not found")
     total_str = total_match.group(1).replace(',', '.')
