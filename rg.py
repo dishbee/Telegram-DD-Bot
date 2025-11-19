@@ -52,6 +52,15 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
 
         # Build message with order number
         lines = [f"🔖 {order_number}", ""]
+        
+        # For DD and PF orders, show customer/address in summary view
+        order_type = order.get("order_type", "shopify")
+        if order_type in ["smoothr_dnd", "smoothr_lieferando"]:
+            customer_name = order.get('customer', {}).get('name', 'Unknown')
+            address = order.get('customer', {}).get('address', 'No address')
+            lines.append(f"👤 {customer_name}")
+            lines.append(f"🗺️ {address}")
+            lines.append("")  # Empty line after customer info
 
         # Get vendor items - ONLY show products if they exist
         vendor_items = order.get("vendor_items", {}).get(vendor, [])
@@ -102,8 +111,14 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
             formatted_address = address.strip()
 
         details = f"{summary}\n"
-        details += f"👤 {customer_name}\n"
-        details += f"🗺️ {formatted_address}\n"
+        
+        # For Shopify orders, add customer/address here (not in summary)
+        # For DD/PF orders, skip (already in summary to avoid duplication)
+        order_type = order.get("order_type", "shopify")
+        if order_type == "shopify":
+            details += f"👤 {customer_name}\n"
+            details += f"🗺️ {formatted_address}\n"
+        
         details += f"📞 {phone}\n"
         details += f"⏰ Ordered at: {order_time}"
 
