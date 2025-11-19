@@ -5,21 +5,17 @@ Extracts text from order photos and parses required fields
 
 import os
 import re
+import requests
 from datetime import datetime
 from typing import Dict, Optional
-from paddleocr import PaddleOCR
-from PIL import Image
 
 class ParseError(Exception):
     """Raised when OCR parsing fails"""
     pass
 
-# Initialize PaddleOCR once (cached globally)
-_ocr_reader = None
-
 def extract_text_from_image(photo_path: str) -> str:
     """
-    Run PaddleOCR on image and return raw text.
+    Run OCR.space API on image and return raw text.
     
     Args:
         photo_path: Absolute path to downloaded photo
@@ -30,22 +26,32 @@ def extract_text_from_image(photo_path: str) -> str:
     Raises:
         ParseError: If image cannot be processed
     """
-    global _ocr_reader
+    api_key = os.getenv('OCR_API_KEY')
+    if not api_key:
+        raise ParseError("OCR_API_KEY not set in environment")
+    
     try:
-        # Initialize reader once (downloads models on first run)
-        if _ocr_reader is None:
-            _ocr_reader = PaddleOCR(lang='en')
+        # Call OCR.space API
+        with open(photo_path, 'rb') as f:
+            response = requests.post(
+                'https://api.ocr.space/parse/image',
+                files={'file': f},
+                data={
+                    'apikey': api_key,
+                    'language': 'ger',  # German for Lieferando orders
+                    'isOverlayRequired': False,
+                    'detectOrientation': True,
+                    'scale': True
+                },
+                timeout=30
+            )
         
-        # Run OCR
-        result = _ocr_reader.ocr(photo_path)
+        result = response.json()
         
-        # Extract text from nested structure: [[[bbox], (text, confidence)]]
-        text_lines = []
-        if result and result[0]:
-            for line in result[0]:
-                text_lines.append(line[1][0])  # line[1] is (text, confidence), [0] is text
-        
-        text = '\n'.join(text_lines)
+        if not result.get('IsErroredOnProcessing'):
+            text = result['ParsedResults'][0]['ParsedText']
+        else:
+            raise ParseError(f"OCR API error: {result.get('ErrorMessage', 'Unknown error')}")
         
         # Log raw output for debugging
         print(f"[OCR] Raw text extracted from {photo_path}:")

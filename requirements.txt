@@ -1,7 +1,4 @@
 python-telegram-bot[webhooks]==21.6
 Flask==3.0.3
 requests==2.32.3
-paddlepaddle
-paddleocr
-Pillow==10.4.0
 
