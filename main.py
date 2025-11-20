@@ -412,7 +412,7 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     country = "Germany"
     
     # Random phone (German mobile format)
-    phone = f"+49 {random.randint(150, 179)} {random.randint(1000000, 9999999)}"
+    phone = f"+49{random.randint(150, 179)}{random.randint(1000000, 9999999)}"
     
     # Random email
     email_domains = ["gmail.com", "web.de", "gmx.de", "outlook.com", "yahoo.de"]
@@ -592,7 +592,7 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
     address = random.choice(addresses)
     
     # Random phone (German mobile format)
-    phone = f"+49 {random.randint(150, 179)} {random.randint(1000000, 9999999)}"
+    phone = f"+49{random.randint(150, 179)}{random.randint(1000000, 9999999)}"
     
     # Random email
     email_domains = ["gmail.com", "web.de", "gmx.de", "outlook.com", "yahoo.de"]
