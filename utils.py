@@ -166,6 +166,26 @@ def validate_phone(phone: str) -> Optional[str]:
 
     return cleaned
 
+
+def format_phone_for_android(phone: str) -> str:
+    """Format phone number for Android auto-detection (no spaces, ensure international code)"""
+    if not phone or phone == "N/A":
+        return phone
+    
+    # Remove all spaces
+    cleaned = phone.replace(" ", "")
+    
+    # If already has international code (starts with +), keep it
+    if cleaned.startswith("+"):
+        return cleaned
+    
+    # If starts with 0 (German national format), convert to +49
+    if cleaned.startswith("0"):
+        return "+49" + cleaned[1:]
+    
+    # No prefix - assume German and add +49
+    return "+49" + cleaned
+
 def abbreviate_street(street_name: str, max_length: int = 20) -> str:
     """
     Abbreviate German street names for display in buttons (BTN-ORD-REF only).
