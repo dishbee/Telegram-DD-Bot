@@ -2868,6 +2868,14 @@ def telegram_webhook():
                                 vendor_keyboard(order_id, vendor, expanded, order)
                             )
                         
+                        # Delete RG-TIME-REQ message after confirmation
+                        rg_time_req_id = order.get("rg_time_request_ids", {}).get(vendor)
+                        if vendor_group_id and rg_time_req_id:
+                            await safe_delete_message(vendor_group_id, rg_time_req_id)
+                            # Remove from tracking dict
+                            if "rg_time_request_ids" in order:
+                                order["rg_time_request_ids"].pop(vendor, None)
+                        
                         # Delete the time picker message (cleanup)
                         chat_id = cq["message"]["chat"]["id"]
                         message_id = cq["message"]["message_id"]

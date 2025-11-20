@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-from utils import logger, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, RESTAURANT_SHORTCUTS, safe_send_message, safe_edit_message, safe_delete_message, get_error_description
+from utils import logger, COURIER_MAP, DISPATCH_MAIN_CHAT_ID, VENDOR_GROUP_MAP, RESTAURANT_SHORTCUTS, safe_send_message, safe_edit_message, safe_delete_message, get_error_description, format_phone_for_android
 
 # Timezone configuration for Passau, Germany (Europe/Berlin)
 TIMEZONE = ZoneInfo("Europe/Berlin")
@@ -393,7 +393,7 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
                     vendor_group_id,
                     rg_msg_id,
                     text,
-                    rg.vendor_keyboard(order_id, vendor, expanded)
+                    rg.vendor_keyboard(order_id, vendor, expanded, order)
                 )
 
         # Update MDG-CONF keyboard to show [🚫 Unassign] button
@@ -549,8 +549,8 @@ def build_assignment_message(order: dict) -> str:
         
         # Phone number section (without "Call customer:" label)
         phone = order['customer']['phone']
-        # Format as clickable tel: link for Android compatibility
-        phone_section = f"☎️ [{phone}](tel:{phone.replace(' ', '')})\n"
+        # Format for Android auto-detection (no spaces, ensure +49)
+        phone_section = f"☎️ {format_phone_for_android(phone)}\n"
         
         # Combine all sections (status first, then group_header if present)
         message = status_text + group_header + header + address_section + customer_section + optional_section + phone_section
@@ -678,7 +678,7 @@ async def handle_delivery_completion(order_id: str, user_id: int):
                     vendor_group_id,
                     rg_msg_id,
                     text,
-                    rg.vendor_keyboard(order_id, vendor, expanded)
+                    rg.vendor_keyboard(order_id, vendor, expanded, order)
                 )
 
         # Update UPC message with delivered status and replace keyboard with Undeliver button
@@ -776,7 +776,7 @@ async def handle_undelivery(order_id: str, user_id: int):
                     vendor_group_id,
                     rg_msg_id,
                     text,
-                    rg.vendor_keyboard(order_id, vendor, expanded)
+                    rg.vendor_keyboard(order_id, vendor, expanded, order)
                 )
         
         # Update UPC message - restore full keyboard
