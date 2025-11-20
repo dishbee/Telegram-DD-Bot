@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from utils import format_phone_for_android
+
 logger = logging.getLogger(__name__)
 
 # Timezone configuration for Passau, Germany (Europe/Berlin)
@@ -127,7 +129,8 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
             details += f"👤 {customer_name}\n"
             details += f"🗺️ {formatted_address}\n"
         
-        details += f"📞 {phone}\n"
+        # Format for Android auto-detection (no spaces, ensure +49)
+        details += f"📞 {format_phone_for_android(phone)}\n"
         details += f"⏰ Ordered at: {order_time}"
 
         return details
@@ -155,12 +158,29 @@ def vendor_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
 
 
 def vendor_keyboard(order_id: str, vendor: str, expanded: bool) -> InlineKeyboardMarkup:
-    """Build vendor toggle keyboard."""
+    """Build vendor toggle keyboard with conditional Problem button."""
     try:
+        from main import STATE
+        
         toggle_text = "◂ Hide" if expanded else "Details ▸"
-        return InlineKeyboardMarkup([
+        buttons = [
             [InlineKeyboardButton(toggle_text, callback_data=f"toggle|{order_id}|{vendor}|{int(now().timestamp())}")]
-        ])
+        ]
+        
+        # Add Problem button ONLY if:
+        # 1. Vendor has confirmed time (vendor in confirmed_times)
+        # 2. Order is NOT delivered yet (status != "delivered")
+        order = STATE.get(order_id)
+        if order:
+            vendor_confirmed = vendor in order.get("confirmed_times", {})
+            order_delivered = order.get("status") == "delivered"
+            
+            if vendor_confirmed and not order_delivered:
+                buttons.append([
+                    InlineKeyboardButton("🚩 Problem", callback_data=f"wrong|{order_id}|{vendor}")
+                ])
+        
+        return InlineKeyboardMarkup(buttons)
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building vendor keyboard: %s", exc)
         return InlineKeyboardMarkup([])

@@ -1642,11 +1642,17 @@ def telegram_webhook():
                             msg = f"Can you prepare *{addr}* ⚡ Asap?"
                         
                         # Send with restaurant response buttons
-                        await safe_send_message(
+                        rg_time_msg = await safe_send_message(
                             vendor_chat, 
                             msg,
                             restaurant_response_keyboard("ASAP", order_id, vendor)
                         )
+                        
+                        # Track RG-TIME-REQ message ID for later deletion
+                        if rg_time_msg:
+                            if "rg_time_request_ids" not in order:
+                                order["rg_time_request_ids"] = {}
+                            order["rg_time_request_ids"][vendor] = rg_time_msg.message_id
                     
                     # Add/update status in history (deduplicate by vendor)
                     existing_asap = next((s for s in order["status_history"] if s.get("type") == "asap_sent" and s.get("vendor") == vendor), None)
@@ -1787,11 +1793,17 @@ def telegram_webhook():
                                     order_num = order.get("name", "Unknown")
                                     msg = f"Can you prepare 🔖 {order_num} at {selected_time}?"
                                 
-                                await safe_send_message(
+                                rg_time_msg = await safe_send_message(
                                     vc,
                                     msg,
                                     restaurant_response_keyboard(selected_time, order_id, v)
                                 )
+                                
+                                # Track RG-TIME-REQ message ID for later deletion
+                                if rg_time_msg:
+                                    if "rg_time_request_ids" not in order:
+                                        order["rg_time_request_ids"] = {}
+                                    order["rg_time_request_ids"][v] = rg_time_msg.message_id
                     else:
                         # Multi-vendor - send to specific vendor
                         if vendor_chat:
@@ -1801,11 +1813,17 @@ def telegram_webhook():
                                 order_num = order.get("name", "Unknown")
                                 msg = f"Can you prepare 🔖 {order_num} at {selected_time}?"
                             
-                            await safe_send_message(
+                            rg_time_msg = await safe_send_message(
                                 vendor_chat,
                                 msg,
                                 restaurant_response_keyboard(selected_time, order_id, vendor)
                             )
+                            
+                            # Track RG-TIME-REQ message ID for later deletion
+                            if rg_time_msg:
+                                if "rg_time_request_ids" not in order:
+                                    order["rg_time_request_ids"] = {}
+                                order["rg_time_request_ids"][vendor] = rg_time_msg.message_id
                     
                     # Update state and MDG
                     order["requested_time"] = selected_time
@@ -2631,6 +2649,14 @@ def telegram_webhook():
                             vendor_keyboard(order_id, vendor, expanded)
                         )
                     
+                    # Delete RG-TIME-REQ message after confirmation
+                    rg_time_req_id = order.get("rg_time_request_ids", {}).get(vendor)
+                    if vendor_group_id and rg_time_req_id:
+                        await safe_delete_message(vendor_group_id, rg_time_req_id)
+                        # Remove from tracking dict
+                        if "rg_time_request_ids" in order:
+                            order["rg_time_request_ids"].pop(vendor, None)
+                    
                     # Check if all vendors confirmed - show assignment buttons
                     # CRITICAL: Only show buttons if order NOT already assigned
                     # This prevents duplicate assignment buttons appearing after delay confirmations
@@ -2735,6 +2761,14 @@ def telegram_webhook():
                                 text,
                                 vendor_keyboard(order_id, vendor, expanded)
                             )
+                        
+                        # Delete RG-TIME-REQ message after confirmation
+                        rg_time_req_id = order.get("rg_time_request_ids", {}).get(vendor)
+                        if vendor_group_id and rg_time_req_id:
+                            await safe_delete_message(vendor_group_id, rg_time_req_id)
+                            # Remove from tracking dict
+                            if "rg_time_request_ids" in order:
+                                order["rg_time_request_ids"].pop(vendor, None)
                         
                         # Check if all vendors confirmed - show assignment buttons
                         logger.info(f"DEBUG: Checking if all vendors confirmed for order {order_id}")
