@@ -549,7 +549,8 @@ def build_assignment_message(order: dict) -> str:
         
         # Phone number section (without "Call customer:" label)
         phone = order['customer']['phone']
-        phone_section = f"☎️ {phone}\n"
+        # Format as clickable tel: link for Android compatibility
+        phone_section = f"☎️ [{phone}](tel:{phone.replace(' ', '')})\n"
         
         # Combine all sections (status first, then group_header if present)
         message = status_text + group_header + header + address_section + customer_section + optional_section + phone_section
