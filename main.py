@@ -2059,11 +2059,17 @@ def telegram_webhook():
                                 order_num = order.get("name", "Unknown")
                                 msg = f"Can you prepare 🔖 {order_num} at {requested_time}?"
                             
-                            await safe_send_message(
+                            rg_time_msg = await safe_send_message(
                                 vendor_chat,
                                 msg,
                                 restaurant_response_keyboard(requested_time, order_id, vendor)
                             )
+                            
+                            # Track RG-TIME-REQ message ID for later deletion
+                            if rg_time_msg:
+                                if "rg_time_request_ids" not in order:
+                                    order["rg_time_request_ids"] = {}
+                                order["rg_time_request_ids"][vendor] = rg_time_msg.message_id
                     else:
                         # Single vendor: send to all vendors
                         for vendor in order["vendors"]:
@@ -2075,11 +2081,17 @@ def telegram_webhook():
                                     order_num = order.get("name", "Unknown")
                                     msg = f"Can you prepare 🔖 {order_num} at {requested_time}?"
                                 
-                                await safe_send_message(
+                                rg_time_msg = await safe_send_message(
                                     vendor_chat,
                                     msg,
                                     restaurant_response_keyboard(requested_time, order_id, vendor)
                                 )
+                                
+                                # Track RG-TIME-REQ message ID for later deletion
+                                if rg_time_msg:
+                                    if "rg_time_request_ids" not in order:
+                                        order["rg_time_request_ids"] = {}
+                                    order["rg_time_request_ids"][vendor] = rg_time_msg.message_id
                     
                     # Update MDG
                     order["requested_time"] = requested_time
@@ -2457,11 +2469,17 @@ def telegram_webhook():
                                 order_num = order.get("name", "Unknown")
                                 msg = f"Can you prepare 🔖 {order_num} at {selected_time}?"
                             
-                            await safe_send_message(
+                            rg_time_msg = await safe_send_message(
                                 vendor_chat,
                                 msg,
                                 restaurant_response_keyboard(selected_time, order_id, v)
                             )
+                            
+                            # Track RG-TIME-REQ message ID for later deletion
+                            if rg_time_msg:
+                                if "rg_time_request_ids" not in order:
+                                    order["rg_time_request_ids"] = {}
+                                order["rg_time_request_ids"][v] = rg_time_msg.message_id
                     
                     # Append status to history (one entry per target vendor)
                     for v in target_vendors:
