@@ -897,7 +897,7 @@ async def process_shopify_webhook(payload: dict):
             vendor_chat_id = VENDOR_GROUP_MAP.get(vendor)
             if vendor_chat_id:
                 rg_text = build_vendor_summary_text(STATE[order_id], vendor)
-                rg_keyboard = vendor_keyboard(order_id, vendor, False)
+                rg_keyboard = vendor_keyboard(order_id, vendor, False, STATE[order_id])
                 
                 rg_msg = await safe_send_message(vendor_chat_id, rg_text, rg_keyboard)
                 
@@ -1008,7 +1008,7 @@ async def process_smoothr_order(smoothr_data: dict):
             # Use standard RG summary builder (collapsed by default, same as Shopify)
             rg_text = build_vendor_summary_text(STATE[order_id], vendor)
             logger.info(f"DEBUG RG-SUM TEXT:\n{rg_text}")
-            rg_keyboard = vendor_keyboard(order_id, vendor, expanded=False)
+            rg_keyboard = vendor_keyboard(order_id, vendor, expanded=False, order=STATE[order_id])
             
             rg_msg = await safe_send_message(vendor_chat_id, rg_text, rg_keyboard)
             
@@ -1120,7 +1120,7 @@ async def handle_pf_photo(message: dict):
         
         # Send RG-SUM to PF group
         rg_text = build_vendor_summary_text(STATE[order_id], vendor)
-        rg_keyboard = vendor_keyboard(order_id, vendor, expanded=False)
+        rg_keyboard = vendor_keyboard(order_id, vendor, expanded=False, order=STATE[order_id])
         rg_msg = await safe_send_message(chat_id, rg_text, rg_keyboard)
         
         if rg_msg:
@@ -1689,7 +1689,7 @@ def telegram_webhook():
                             vendor_group_id,
                             rg_msg_id,
                             build_vendor_summary_text(order, vendor),
-                            vendor_keyboard(order_id, vendor, False)  # Preserve Details button
+                            vendor_keyboard(order_id, vendor, False, order)  # Preserve Details button
                         )
                     
                     # Clean up additional MDG messages
@@ -1948,7 +1948,7 @@ def telegram_webhook():
                                 vendor_group_id,
                                 rg_msg_id,
                                 build_vendor_summary_text(order, vendor),
-                                vendor_keyboard(order_id, vendor, False)  # Preserve Details button
+                                vendor_keyboard(order_id, vendor, False, order)  # Preserve Details button
                             )
                     
                     # Clean up additional MDG messages
@@ -2303,7 +2303,7 @@ def telegram_webhook():
                                 vendor_group_id,
                                 rg_msg_id,
                                 build_vendor_summary_text(order, vendor),
-                                vendor_keyboard(order_id, vendor, False)  # Preserve Details button
+                                vendor_keyboard(order_id, vendor, False, order)  # Preserve Details button
                             )
                     
                     # Clean up additional MDG messages
@@ -2582,7 +2582,7 @@ def telegram_webhook():
                         VENDOR_GROUP_MAP[vendor],
                         message_id,
                         text,
-                        vendor_keyboard(order_id, vendor, expanded)
+                        vendor_keyboard(order_id, vendor, expanded, order)
                     )
                 
                 elif action == "works":
@@ -2646,7 +2646,7 @@ def telegram_webhook():
                             vendor_group_id,
                             rg_msg_id,
                             text,
-                            vendor_keyboard(order_id, vendor, expanded)
+                            vendor_keyboard(order_id, vendor, expanded, order)
                         )
                     
                     # Delete RG-TIME-REQ message after confirmation
@@ -2759,7 +2759,7 @@ def telegram_webhook():
                                 vendor_group_id,
                                 rg_msg_id,
                                 text,
-                                vendor_keyboard(order_id, vendor, expanded)
+                                vendor_keyboard(order_id, vendor, expanded, order)
                             )
                         
                         # Delete RG-TIME-REQ message after confirmation
@@ -2865,7 +2865,7 @@ def telegram_webhook():
                                 vendor_group_id,
                                 rg_msg_id,
                                 text,
-                                vendor_keyboard(order_id, vendor, expanded)
+                                vendor_keyboard(order_id, vendor, expanded, order)
                             )
                         
                         # Delete the time picker message (cleanup)
@@ -3746,7 +3746,7 @@ def shopify_webhook():
                         vendor_msg = await safe_send_message(
                             vendor_chat,
                             vendor_text,
-                            vendor_keyboard(order_id, vendor, False)
+                            vendor_keyboard(order_id, vendor, False, order)
                         )
                         order["vendor_messages"][vendor] = vendor_msg.message_id
                         order["vendor_expanded"][vendor] = False

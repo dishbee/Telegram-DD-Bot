@@ -157,11 +157,9 @@ def vendor_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def vendor_keyboard(order_id: str, vendor: str, expanded: bool) -> InlineKeyboardMarkup:
+def vendor_keyboard(order_id: str, vendor: str, expanded: bool, order: Optional[Dict[str, Any]] = None) -> InlineKeyboardMarkup:
     """Build vendor toggle keyboard with conditional Problem button."""
     try:
-        from main import STATE
-        
         toggle_text = "◂ Hide" if expanded else "Details ▸"
         buttons = [
             [InlineKeyboardButton(toggle_text, callback_data=f"toggle|{order_id}|{vendor}|{int(now().timestamp())}")]
@@ -170,7 +168,6 @@ def vendor_keyboard(order_id: str, vendor: str, expanded: bool) -> InlineKeyboar
         # Add Problem button ONLY if:
         # 1. Vendor has confirmed time (vendor in confirmed_times)
         # 2. Order is NOT delivered yet (status != "delivered")
-        order = STATE.get(order_id)
         if order:
             vendor_confirmed = vendor in order.get("confirmed_times", {})
             order_delivered = order.get("status") == "delivered"
