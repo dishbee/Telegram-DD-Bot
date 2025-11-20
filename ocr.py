@@ -82,7 +82,8 @@ def parse_pf_order(ocr_text: str) -> dict:
     result = {}
     
     # 1. Order # (required): #XXXXXX or # XXXXXX (6 alphanumeric chars)
-    order_match = re.search(r'#\s*([A-Z0-9]{6})', ocr_text, re.IGNORECASE)
+    # OCR may misread # as * or other symbols
+    order_match = re.search(r'[#*]\s*([A-Z0-9]{6})', ocr_text, re.IGNORECASE)
     if not order_match:
         raise ParseError("Order number not found")
     result['order_num'] = order_match.group(1).upper()
@@ -94,12 +95,24 @@ def parse_pf_order(ocr_text: str) -> dict:
     result['zip'] = zip_match.group(1)
     
     # 3. Customer (required): Line after order # line
-    # Pattern: "#XXXXXX Lieferung ... \n Customer Name"
+    # Skip UI text like "x", "Drucken", "Details ausblenden"
+    # Pattern: Find first proper name (at least 2 words starting with capitals)
+    order_line_end = re.search(r'#\s*[A-Z0-9]{6}\s+[^\n]*', ocr_text, re.IGNORECASE)
+    if not order_line_end:
+        raise ParseError("Order line not found for customer extraction")
+    
+    # Search text after order line for customer name
+    text_after_order = ocr_text[order_line_end.end():]
+    # Find first line with proper German name (capitalized, 2+ words)
+    # Handles: "Max Müller", "Anna-Maria Schmidt", "Jean-Claude König"
     customer_match = re.search(
-        r'#\s*[A-Z0-9]{6}\s+[^\n]*\n\s*([^\n]+)',
-        ocr_text,
-        re.IGNORECASE
+        r'\n\s*([A-ZÄÖÜ][a-zäöüß\-]+(?:\s+[A-ZÄÖÜ][a-zäöüß\-]+)+)',
+        text_after_order
     )
+    # Fallback: Accept single word names (3+ chars, capitalized)
+    if not customer_match:
+        customer_match = re.search(r'\n\s*([A-ZÄÖÜ][a-zäöüß]{2,})', text_after_order)
+    
     if not customer_match:
         raise ParseError("Customer name not found")
     result['customer'] = customer_match.group(1).strip()
@@ -147,7 +160,8 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     # 7. Total (required): Line with "Total" followed by amount
     # Currency symbol may be misread (€ as c, e, etc.) or missing
-    total_match = re.search(r'Total\s+(\d+[,\.]\d{2})\s*[€cCeE]?\s*$', ocr_text, re.IGNORECASE | re.MULTILINE)
+    # Match "Total" but not "Subtotal" by using word boundary
+    total_match = re.search(r'\bTotal\s+(\d+[,\.]\d{2})', ocr_text, re.IGNORECASE)
     if not total_match:
         raise ParseError("Total price not found")
     total_str = total_match.group(1).replace(',', '.')
