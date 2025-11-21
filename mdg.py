@@ -1039,21 +1039,14 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
         # Get confirmed_times dict for multi-vendor
         confirmed_times = order_data.get("confirmed_times")
         
-        # Get courier shortcut
-        bee_shortcuts = {
-            383910036: "B1",
-            6389671774: "B2",
-            8483568436: "B3"
-        }
-        
-        if assigned_to in bee_shortcuts:
-            courier_shortcut = bee_shortcuts[assigned_to]
+        # Get courier shortcut using COURIER_SHORTCUTS mapping
+        courier_name = COURIER_MAP.get(str(assigned_to), {}).get("username", "")
+        if courier_name in COURIER_SHORTCUTS:
+            courier_shortcut = COURIER_SHORTCUTS[courier_name]
+        elif courier_name and len(courier_name) >= 2:
+            courier_shortcut = courier_name[:2].upper()
         else:
-            courier_name = COURIER_MAP.get(str(assigned_to), {}).get("username", "")
-            if courier_name and len(courier_name) >= 2:
-                courier_shortcut = courier_name[:2].upper()
-            else:
-                courier_shortcut = "??"
+            courier_shortcut = "??"
         
         # For multi-vendor orders, create SEPARATE entry per vendor (like scheduled orders)
         if len(vendors) > 1 and confirmed_times:
@@ -1061,27 +1054,16 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
                 vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
                 vendor_time = confirmed_times.get(vendor, "??:??")
                 
-                # Start with full street name
+                # Start with full street name (no house number, no zip)
                 final_address = street
                 
-                # Build button text to check length (with zip code)
-                zip_display = f" ({zip_code})" if zip_code else ""
-                button_text = f"{order_num} - {vendor_shortcut} - {vendor_time} - {final_address}{zip_display} ({courier_shortcut})"
+                # Build button text: {num} - {vendor} - {time} - {street} - {courier}
+                button_text = f"{order_num} - {vendor_shortcut} - {vendor_time} - {final_address} - {courier_shortcut}"
                 
-                # TIER 1: If button text > 30 chars, apply standard abbreviations
-                if len(button_text) > 30:
-                    final_address = abbreviate_street(street)
-                    button_text = f"{order_num} - {vendor_shortcut} - {vendor_time} - {final_address}{zip_display} ({courier_shortcut})"
-                
-                # TIER 2: If button text STILL > 30 chars, apply aggressive abbreviation (first 4 letters)
-                if len(button_text) > 30:
-                    house_match = re.search(r'\s+(\d+[a-zA-Z]?)$', street)
-                    house_num = f" {house_match.group(1)}" if house_match else ""
-                    street_only = street[:house_match.start()] if house_match else street
-                    street_clean = re.sub(r'^(Doktor-|Professor-|Sankt-|Dr\.-|Prof\.-|St\.-)', '', street_only)
-                    if '-' in street_clean:
-                        street_clean = street_clean.split('-')[0]
-                    final_address = street_clean[:4] + house_num
+                # If > 30 chars (single-line limit), reduce street name letter-by-letter
+                while len(button_text) > 30 and len(final_address) > 1:
+                    final_address = final_address[:-1]
+                    button_text = f"{order_num} - {vendor_shortcut} - {vendor_time} - {final_address} - {courier_shortcut}"
                 
                 assigned.append({
                     "order_id": oid,
@@ -1089,7 +1071,6 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
                     "vendor_shortcut": vendor_shortcut,
                     "confirmed_time": vendor_time,
                     "address": final_address,
-                    "zip": zip_code,
                     "assigned_to": assigned_to,
                     "courier_shortcut": courier_shortcut
                 })
@@ -1098,27 +1079,16 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
             vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper()) if vendors else "??"
             confirmed_time = order_data.get("confirmed_time", "??:??")
             
-            # Start with full street name
+            # Start with full street name (no house number, no zip)
             final_address = street
             
-            # Build button text to check length (with zip code)
-            zip_display = f" ({zip_code})" if zip_code else ""
-            button_text = f"{order_num} - {vendor_shortcut} - {confirmed_time} - {final_address}{zip_display} ({courier_shortcut})"
+            # Build button text: {num} - {vendor} - {time} - {street} - {courier}
+            button_text = f"{order_num} - {vendor_shortcut} - {confirmed_time} - {final_address} - {courier_shortcut}"
             
-            # TIER 1: If button text > 30 chars, apply standard abbreviations
-            if len(button_text) > 30:
-                final_address = abbreviate_street(street)
-                button_text = f"{order_num} - {vendor_shortcut} - {confirmed_time} - {final_address}{zip_display} ({courier_shortcut})"
-            
-            # TIER 2: If button text STILL > 30 chars, apply aggressive abbreviation (first 4 letters)
-            if len(button_text) > 30:
-                house_match = re.search(r'\s+(\d+[a-zA-Z]?)$', street)
-                house_num = f" {house_match.group(1)}" if house_match else ""
-                street_only = street[:house_match.start()] if house_match else street
-                street_clean = re.sub(r'^(Doktor-|Professor-|Sankt-|Dr\.-|Prof\.-|St\.-)', '', street_only)
-                if '-' in street_clean:
-                    street_clean = street_clean.split('-')[0]
-                final_address = street_clean[:4] + house_num
+            # If > 30 chars (single-line limit), reduce street name letter-by-letter
+            while len(button_text) > 30 and len(final_address) > 1:
+                final_address = final_address[:-1]
+                button_text = f"{order_num} - {vendor_shortcut} - {confirmed_time} - {final_address} - {courier_shortcut}"
             
             assigned.append({
                 "order_id": oid,
@@ -1126,7 +1096,6 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
                 "vendor_shortcut": vendor_shortcut,
                 "confirmed_time": confirmed_time,
                 "address": final_address,
-                "zip": zip_code,
                 "assigned_to": assigned_to,
                 "courier_shortcut": courier_shortcut
             })
@@ -1217,15 +1186,13 @@ def build_combine_keyboard(order_id: str, assigned_orders: List[Dict[str, str]])
     buttons = []
     
     for order in assigned_orders:
-        # Use PRE-ABBREVIATED address from get_assigned_orders() (already tier 1/2 processed)
+        # Use PRE-TRUNCATED address from get_assigned_orders() (already fits 30-char limit)
         address = order["address"]
-        zip_code = order.get("zip", "")
         
-        # Build button text: {num} - {vendor} - {time} - {address} ({zip}) ({courier})
-        zip_display = f" ({zip_code})" if zip_code else ""
-        button_text = f"{order['order_num']} - {order['vendor_shortcut']} - {order['confirmed_time']} - {address}{zip_display} ({order['courier_shortcut']})"
+        # Build button text: {num} - {vendor} - {time} - {address} - {courier}
+        button_text = f"{order['order_num']} - {order['vendor_shortcut']} - {order['confirmed_time']} - {address} - {order['courier_shortcut']}"
         
-        # Truncate to 64 chars max (Telegram button limit)
+        # Hard-truncate to 64 chars max (Telegram button limit) as safety fallback
         if len(button_text) > 64:
             button_text = button_text[:61] + "..."
         
