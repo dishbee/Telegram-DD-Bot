@@ -120,7 +120,7 @@ def parse_pf_order(ocr_text: str) -> dict:
     # 4. Address (required): Line with street name/number before ZIP
     # Pattern: "Street Name Number, \n ZIP City"
     address_match = re.search(
-        r'([^\n]+?)\s*,?\s*\n\s*940\d{2}',
+        r'([^\n]+)\s*,?\s*\n\s*940\d{2}',
         ocr_text
     )
     if not address_match:
@@ -161,7 +161,23 @@ def parse_pf_order(ocr_text: str) -> dict:
     # 7. Total (required): Line with "Total" followed by amount
     # Currency symbol may be misread (€ as c, e, etc.) or missing
     # Match "Total" but not "Subtotal" by using word boundary
+    # Try multiple patterns to handle OCR variations
     total_match = re.search(r'\bTotal\s+(\d+[,\.]\d{2})', ocr_text, re.IGNORECASE)
+    
+    # Fallback 1: "Total" on one line, amount on next line
+    if not total_match:
+        total_match = re.search(r'\bTotal\s*\n\s*(\d+[,\.]\d{2})', ocr_text, re.IGNORECASE)
+    
+    # Fallback 2: Look for currency amount near bottom (last 200 chars)
+    if not total_match:
+        text_end = ocr_text[-200:]
+        total_match = re.search(r'(\d+[,\.]\d{2})\s*[€ecC]', text_end)
+    
+    # Fallback 3: Any currency amount in format XX,XX or XX.XX in last 200 chars
+    if not total_match:
+        text_end = ocr_text[-200:]
+        total_match = re.search(r'(\d{2,3}[,\.]\d{2})', text_end)
+    
     if not total_match:
         raise ParseError("Total price not found")
     total_str = total_match.group(1).replace(',', '.')
