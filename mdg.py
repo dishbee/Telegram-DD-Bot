@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from utils import get_district_from_address, abbreviate_street
+from utils import get_district_from_address, abbreviate_street, format_phone_for_android
 
 logger = logging.getLogger(__name__)
 
@@ -364,9 +364,8 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         phone = order['customer']['phone']
         phone_line = ""
         if phone and phone != "N/A":
-            # Remove spaces from tel: URI for clickability (display keeps spaces)
-            phone_uri = phone.replace(" ", "")
-            phone_line = f"[📞 {phone}](tel:{phone_uri})"
+            # Format for Android auto-detection (no spaces, ensure +49)
+            phone_line = f"📞 {format_phone_for_android(phone)}"
 
         # Build base text (always shown)
         text = f"{title}\n"
@@ -881,9 +880,9 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
         # Create one button per row (vertical layout)
         for i, time_str in enumerate(intervals):
             minutes = minute_increments[i]
-            # Format: "⏰ 18:10 → in5m" (RG) or "+5m → ⏰ 18:10" (UPC)
+            # Format: "⏰ 18:10 → in 5 m" (RG) or "+5m → ⏰ 18:10" (UPC)
             if prefix == "in":
-                button_text = f"⏰ {time_str} → in{minutes}m"
+                button_text = f"⏰ {time_str} → in {minutes} m"
             else:
                 button_text = f"+{minutes}m → ⏰ {time_str}"
             
@@ -900,7 +899,7 @@ def time_picker_keyboard(order_id: str, action: str, requested_time: Optional[st
             exact_callback = f"vendor_exact_time|{order_id}|{vendor_shortcut}|{action}"
         else:
             exact_callback = f"exact_time|{order_id}|{action}"
-        rows.append([InlineKeyboardButton("EXACT TIME ⏰", callback_data=exact_callback)])
+        rows.append([InlineKeyboardButton("Time picker🕒", callback_data=exact_callback)])
         
         # Add Back button
         rows.append([InlineKeyboardButton("← Back", callback_data="hide")])
