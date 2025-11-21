@@ -121,7 +121,13 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
     for order_id, order_data in STATE.items():
         if order_id == current_order_id:
             continue
-        if not order_data.get("confirmed_time"):
+        
+        # Check if order has ANY confirmed time (single-vendor OR multi-vendor)
+        confirmed_time = order_data.get("confirmed_time")
+        confirmed_times = order_data.get("confirmed_times", {})
+        has_confirmation = confirmed_time or (confirmed_times and any(confirmed_times.values()))
+        
+        if not has_confirmation:
             continue
         
         # Filter by vendor if specified
