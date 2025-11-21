@@ -104,9 +104,9 @@ def parse_pf_order(ocr_text: str) -> dict:
     # Search text after order line for customer name
     text_after_order = ocr_text[order_line_end.end():]
     # Find first line with proper German name (capitalized, 2+ words)
-    # Handles: "Max Müller", "Anna-Maria Schmidt", "Jean-Claude König"
+    # Handles: "Max Müller", "Anna-Maria Schmidt", "Jean-Claude König" (on same line only)
     customer_match = re.search(
-        r'\n\s*([A-ZÄÖÜ][a-zäöüß\-]+(?:\s+[A-ZÄÖÜ][a-zäöüß\-]+)+)',
+        r'\n\s*([A-ZÄÖÜ][a-zäöüß\-]+(?:[ \t]+[A-ZÄÖÜ][a-zäöüß\-]+)+)',
         text_after_order
     )
     # Fallback: Accept single word names (3+ chars, capitalized)
