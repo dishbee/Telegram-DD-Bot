@@ -151,9 +151,16 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
             if order_data.get("order_type") == "shopify":
                 display_name = f"{order_data['name'][-2:]}"
             else:
-                address_parts = order_data['customer']['address'].split(',')
-                street_info = address_parts[0] if address_parts else "Unknown"
-                display_name = f"*{street_info}*"
+                # Safely access customer address for Smoothr orders
+                customer = order_data.get('customer', {})
+                address = customer.get('address', '')
+                if address:
+                    address_parts = address.split(',')
+                    street_info = address_parts[0] if address_parts else "Unknown"
+                    display_name = f"*{street_info}*"
+                else:
+                    # Fallback to order name if address missing
+                    display_name = f"Order {order_data.get('name', 'Unknown')}"
 
             recent.append({
                 "order_id": order_id,
