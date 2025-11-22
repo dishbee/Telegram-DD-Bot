@@ -502,6 +502,7 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
             ])
 
         vendors = order.get("vendors", [])
+        logger.info(f"🔍 MDG_INITIAL_KEYBOARD DEBUG - order_id: {order_id}, vendors: {vendors}, len: {len(vendors)}")
         order.setdefault("mdg_expanded", False)  # Track expansion state
         
         is_expanded = order.get("mdg_expanded", False)
