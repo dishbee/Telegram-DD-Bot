@@ -701,36 +701,33 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
         elif status_type == "asap_sent":
             # Show only LATEST asap_sent status (replace, don't accumulate)
             vendor = latest.get("vendor", "")
-            chef_emoji = get_chef_emoji(vendor)
             shortcut = f"**{get_vendor_shortcut(vendor)}**"
-            return f"📍 Sent ⚡ Asap to {chef_emoji} {shortcut}\n\n"
+            return f"[⚡ Asap] → {shortcut}\n\n"
         
         elif status_type == "time_sent":
             # Show only LATEST time_sent status (replace, don't accumulate)
             vendor = latest.get("vendor", "")
             time = latest.get("time", "")
-            chef_emoji = get_chef_emoji(vendor)
             shortcut = f"**{get_vendor_shortcut(vendor)}**"
-            return f"📍 Sent 🕒 {time} to {chef_emoji} {shortcut}\n\n"
+            return f"[🕒 {time}] → {shortcut}\n\n"
         
         elif status_type == "confirmed":
             # Show only LATEST confirmed status (replace, don't accumulate)
             vendor = latest.get("vendor", "")
             time = latest.get("time", "")
-            chef_emoji = get_chef_emoji(vendor)
             shortcut = f"**{get_vendor_shortcut(vendor)}**"
-            return f"📍 Confirmed 👍 {time} by {chef_emoji} {shortcut}\n\n"
+            return f"{shortcut} → 👍 {time}\n\n"
         
         elif status_type == "assigned":
             courier = latest.get("courier", "Unknown")
             shortcut = get_courier_shortcut(courier)
-            return f"📍 Assigned 👉 to 🐝 {shortcut}\n\n"
+            return f"👉 {shortcut}\n\n"
         
         elif status_type == "delivered":
             courier = latest.get("courier", "Unknown")
             time = latest.get("time", "")
             shortcut = get_courier_shortcut(courier)
-            return f"📍 Delivered ✅ at {time} by 🐝 {shortcut}\n\n"
+            return f"✅ Delivered {time} ({shortcut})\n\n"
     
     # === RG STATUS LINES ===
     elif message_type == "rg":
@@ -751,32 +748,32 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
             return "🚨 New order\n\n"
         
         elif status_type == "asap_sent":
-            return "📍 Asked for ⚡ Asap by dishbee\n\n"
+            return "⚡ Asap?\n\n"
         
         elif status_type == "time_sent":
             time = latest.get("time", "")
-            return f"📍 Asked for 🕒 {time} by dishbee\n\n"
+            return f"🕒 {time}?\n\n"
         
         elif status_type == "confirmed":
             time = latest.get("time", "")
-            return f"📍 Prepare 🫕 at {time}\n\n"
+            return f"🔔 Prepare at {time}\n\n"
         
         elif status_type == "delivered":
-            return "📍 Delivered ✅\n\n"
+            return "✅ Delivered\n\n"
     
     # === UPC STATUS LINES ===
     elif message_type == "upc":
         if status_type == "assigned":
-            return "� Assigned order (dishbee)\n\n"
+            return "👇 Assigned order\n\n"
         
         elif status_type == "delay_sent":
             vendors = latest.get("vendors", [])
             shortcuts = "+".join([f"**{get_vendor_shortcut(v)}**" for v in vendors])
-            return f"📍 Delay ⏰ sent to {shortcuts}\n\n"
+            return f"⏳ Delay → {shortcuts}\n\n"
         
         elif status_type == "delivered":
             time = latest.get("time", "")
-            return f"📍 Delivered ✅ at {time}\n\n"
+            return f"✅ Delivered: {time}\n\n"
     
     # Default: no status line
     return ""
