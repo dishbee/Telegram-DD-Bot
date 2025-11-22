@@ -447,6 +447,9 @@ def build_assignment_message(order: dict) -> str:
         # Build status lines (prepend to message)
         status_text = build_status_lines(order, "upc", RESTAURANT_SHORTCUTS, COURIER_SHORTCUTS)
         
+        # Add separator line after status
+        separator = "___________________\n\n"
+        
         # Add empty line after status if order is in a Group (combining system)
         if order.get("group_id") and status_text:
             status_text += "\n"
@@ -471,7 +474,7 @@ def build_assignment_message(order: dict) -> str:
             group_total = len(group_orders)
             group_header = f"{group_color} Group: {group_position}/{group_total}\n\n"
         
-        # Header: 🔖 #34
+        # Header: 🔖 01
         if order_type == "shopify":
             order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
         else:
@@ -514,7 +517,10 @@ def build_assignment_message(order: dict) -> str:
                 else:
                     product_count += 1
             
-            restaurant_section += f"{chef_emoji} {vendor_shortcut}: {pickup_time}  ({product_count})\n"
+            # New format: 👩‍🍳 ZH (3)  🕒 23:57
+            restaurant_section += f"{chef_emoji} {vendor_shortcut} ({product_count})  🕒 {pickup_time}\n"
+        
+        restaurant_section += "\n"
         
         # Customer info
         customer_name = order['customer']['name']
@@ -532,11 +538,28 @@ def build_assignment_message(order: dict) -> str:
         # Build clickable map link (same format as MDG-ORD)
         original_address = order['customer'].get('original_address', address)
         maps_link = f"https://www.google.com/maps?q={original_address.replace(' ', '+')}"
-        address_section = f"{restaurant_section}🗺️ [{formatted_address}]({maps_link})\n"
+        address_section = f"🗺️ [{formatted_address}]({maps_link})\n\n"
         
-        customer_section = f"\n👤 {customer_name}\n"
+        customer_section = f"👤 {customer_name}\n\n"
         
-        # Optional info (note, tips, cash on delivery)
+        # Phone number section (without "Call customer:" label)
+        phone = order['customer']['phone']
+        # Format for Android auto-detection (no spaces, ensure +49)
+        phone_section = f"☎️ {format_phone_for_android(phone)}\n\n"
+        
+        # Determine source for footer
+        if order_type == "shopify":
+            source_footer = "🔗 dishbee\n"
+        elif order_type == "smoothr_dishbee":
+            source_footer = "🔗 dishbee\n"
+        elif order_type == "smoothr_dnd":
+            source_footer = "🔗 D&D App\n"
+        elif order_type == "smoothr_lieferando":
+            source_footer = "🔗 Lieferando\n"
+        else:
+            source_footer = "🔗 dishbee\n"
+        
+        # Optional info (note, tips, cash on delivery) - after source
         optional_section = ""
         
         note = order.get("note", "")
@@ -552,13 +575,8 @@ def build_assignment_message(order: dict) -> str:
         if payment and payment.lower() == "cash on delivery":
             optional_section += f"❕ Cash: {total}\n"
         
-        # Phone number section (without "Call customer:" label)
-        phone = order['customer']['phone']
-        # Format for Android auto-detection (no spaces, ensure +49)
-        phone_section = f"☎️ {format_phone_for_android(phone)}\n"
-        
-        # Combine all sections (status first, then group_header if present)
-        message = status_text + group_header + header + address_section + customer_section + optional_section + phone_section
+        # Combine all sections: status → separator → header → vendors → address → customer → phone → source → optional
+        message = status_text + separator + group_header + header + restaurant_section + address_section + customer_section + phone_section + source_footer + optional_section
         
         return message
 
