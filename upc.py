@@ -448,7 +448,7 @@ def build_assignment_message(order: dict) -> str:
         status_text = build_status_lines(order, "upc", RESTAURANT_SHORTCUTS, COURIER_SHORTCUTS)
         
         # Add separator line after status
-        separator = "—————————————————————\n\n"
+        separator = "--------------------------------\n\n"
         
         # Add empty line after status if order is in a Group (combining system)
         if order.get("group_id") and status_text:
@@ -564,16 +564,16 @@ def build_assignment_message(order: dict) -> str:
         
         note = order.get("note", "")
         if note:
-            optional_section += f"\n❕ Note: {note}\n"
+            optional_section += f"\n\n❕ Note: {note}\n"
         
         tips = order.get("tips", 0.0)
         if tips and float(tips) > 0:
-            optional_section += f"❕ Tip: {float(tips):.2f}€\n"
+            optional_section += f"\n❕ Tip: {float(tips):.2f}€\n"
         
         payment = order.get("payment_method", "Paid")
         total = order.get("total", "0.00€")
         if payment and payment.lower() == "cash on delivery":
-            optional_section += f"❕ Cash: {total}\n"
+            optional_section += f"\n❕ Cash: {total}\n"
         
         # Combine all sections: status → separator → header → vendors → address → customer → phone → source → optional
         message = status_text + separator + group_header + header + restaurant_section + address_section + customer_section + phone_section + source_footer + optional_section
