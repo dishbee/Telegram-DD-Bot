@@ -373,33 +373,59 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             # Format for Android auto-detection (no spaces, ensure +49)
             phone_line = f"📞 {format_phone_for_android(phone)}"
 
-        # Build base text (always shown)
-        text = f"{title}\n"
+        # Determine source label
+        order_type = order.get("order_type", "shopify")
+        if order_type == "shopify":
+            source_line = "🔗 dishbee"
+        elif order_type == "smoothr_dishbee":
+            source_line = "🔗 dishbee"
+        elif order_type == "smoothr_dnd":
+            source_line = "🔗 D&D App"
+        elif order_type == "smoothr_lieferando":
+            source_line = "🔗 Lieferando"
+        else:
+            source_line = "🔗 dishbee"
+
+        # Build base text with separator and proper spacing
+        text = "--------------------------------\n"
+        text += "\n"  # Blank line after separator
+        text += f"{title}\n"
         text += "\n"  # Blank line after order number
-        text += f"{address_line}\n"  # Address first
-        text += f"{vendor_line}\n"  # Vendor second
+        text += f"{vendor_line}\n"
         text += "\n"  # Blank line after vendor
-        # Add notes/tips/cash if present
+        text += f"{address_line}\n"
+        text += "\n"  # Blank line after address
+        text += f"{customer_line}\n"
+        text += "\n"  # Blank line after customer
+        text += f"{phone_line}\n"
+        text += "\n"  # Blank line after phone
+        text += f"{source_line}"
+        # Add notes/tips/cash after source (if present)
         if note_line or tips_line or payment_line:
+            text += "\n\n"  # Blank line before notes section
             text += note_line
+            if note_line:
+                text += "\n"  # Blank line after note
             text += tips_line
+            if tips_line:
+                text += "\n"  # Blank line after tip
             text += payment_line
-            text += "\n"  # Blank line after notes section
-        text += f"{customer_line}\n"  # Customer after notes
-        text += f"{phone_line}"  # Phone last, no newline
+            if payment_line:
+                text = text.rstrip("\n")  # Remove trailing newline from payment
 
         # Add product details if requested
         if show_details:
             logger.info(f"DISTRICT DEBUG - Entering show_details block for order {order.get('name', 'Unknown')}")
             logger.info(f"DISTRICT DEBUG - original_address value: '{original_address}'")
             
-            # Blank line after phone before expanded details
-            text += "\n"
+            # Blank line before expanded details
+            text += "\n\n"
             
             # Add email if available (expanded view only, before district)
             email = order['customer'].get('email')
             if email:
                 text += f"✉️ {email}\n"
+                text += "\n"  # Blank line after email
             
             # Add district line at the beginning of details section
             district = get_district_from_address(original_address)
@@ -410,12 +436,10 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 # Get zip code directly from STATE (works for both Shopify and Smoothr)
                 zip_code = order['customer'].get('zip', '')
                 text += f"🏙️ {district} ({zip_code})\n"
+                text += "\n"  # Blank line after district
                 logger.info(f"Added district line: 🏙️ {district} ({zip_code})")
             else:
                 logger.info(f"No district found for address: {original_address}")
-            
-            # Blank line after district/email before products
-            text += "\n"
             
             # Build product list (works for both Shopify and Smoothr)
             if len(vendors) > 1:
@@ -425,7 +449,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 for vendor in vendors:
                     # Use shortcut instead of full vendor name
                     shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-                    items_text_parts.append(f"\n**{shortcut}**: ")
+                    items_text_parts.append(f"**{shortcut}**:")
                     vendor_products = vendor_items.get(vendor, [])
                     for item in vendor_products:
                         clean_item = item.lstrip('- ').strip()
@@ -455,14 +479,15 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
 
             # Only add product section if items exist
             if items_text and items_text.strip():
-                text += f"{items_text}"
+                text += f"{items_text}\n"
+                text += "\n"  # Blank line after products
                 # Add total after products
                 total = order.get("total", "0.00€")
                 payment = order.get("payment_method", "Paid")
                 if not (order_type == "shopify" and payment.lower() == "cash on delivery"):
-                    text += f"\n\nTotal: {total}"
+                    text += f"Total: {total}"
             else:
-                # No products - just add total on next line
+                # No products - just add total
                 total = order.get("total", "0.00€")
                 text += f"Total: {total}"
             
@@ -470,8 +495,8 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             # Collapsed view - no products shown
             pass
 
-        # Prepend status lines at the top (remove one trailing newline)
-        return status_text.rstrip('\n') + '\n' + text
+        # Prepend status lines at the top
+        return status_text + text
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building MDG text: %s", exc)
         return f"Error formatting order {order.get('name', 'Unknown')}"

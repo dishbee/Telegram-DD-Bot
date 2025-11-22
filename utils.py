@@ -685,18 +685,8 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
     # === MDG STATUS LINES ===
     if message_type == "mdg":
         if status_type == "new":
-            # Determine source: Shopify vs Smoothr
-            order_type = order.get("order_type", "shopify")
-            if order_type == "shopify":
-                return "🚨 New order (dishbee)\n\n"
-            elif order_type == "smoothr_dishbee":
-                return "🚨 New order (dishbee)\n\n"
-            elif order_type == "smoothr_dnd":
-                return "🚨 New order (D&D App)\n\n"
-            elif order_type == "smoothr_lieferando":
-                return "🚨 New order (Lieferando)\n\n"
-            else:
-                return "🚨 New order\n\n"
+            # Source now shown in separate 🔗 line in message body
+            return "🚨 New order\n"
         
         elif status_type == "asap_sent":
             # Show only LATEST asap_sent status (replace, don't accumulate)
