@@ -172,8 +172,8 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     # 6. Time (required): Either "ASAP" or actual time near "Lieferzeit"
     asap_match = re.search(r'\bASAP\b', ocr_text, re.IGNORECASE)
-    # Time pattern: "Lieferzeit \n 10 MIN \n HH:MM" (skip the duration line)
-    time_match = re.search(r'Lieferzeit.*?(\d{1,2}):(\d{2})', ocr_text, re.IGNORECASE | re.DOTALL)
+    # For pre-orders: "Der Kunde erwartet, dass die Bestellung geliefert wird um: HH:MM"
+    time_match = re.search(r'Der Kunde erwartet.*?(\d{1,2}):(\d{2})', ocr_text, re.IGNORECASE | re.DOTALL)
     
     if asap_match:
         result['time'] = 'asap'
