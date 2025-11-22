@@ -3877,6 +3877,7 @@ def shopify_webhook():
         
         # Build order object
         order = {
+            "order_id": order_id,
             "name": order_name,
             "order_type": "shopify",
             "vendors": vendors,
