@@ -129,17 +129,25 @@ def parse_pf_order(ocr_text: str) -> dict:
     if not order_line_end:
         raise ParseError("Order line not found for customer extraction")
     
-    # Search text after order line for customer name
+    # Search text after order line but BEFORE "Tel" or "Bestellinf" for customer name
+    # This prevents matching product names like "Ix Hot Cheese"
     text_after_order = ocr_text[order_line_end.end():]
+    # Limit search to text before "Tel" or "Bestellinf"
+    tel_match = re.search(r'\bTel\b', text_after_order, re.IGNORECASE)
+    bestellung_match = re.search(r'\bBestellinf', text_after_order, re.IGNORECASE)
+    search_end = min(tel_match.start() if tel_match else len(text_after_order),
+                     bestellung_match.start() if bestellung_match else len(text_after_order))
+    customer_search_text = text_after_order[:search_end]
+    
     # Find first line with proper German name (capitalized, 2+ words)
     # Handles: "Max Müller", "Anna-Maria Schmidt", "Jean-Claude König" (on same line only)
     customer_match = re.search(
         r'\n\s*([A-ZÄÖÜ][a-zäöüß\-]+(?:[ \t]+[A-ZÄÖÜ][a-zäöüß\-]+)+)',
-        text_after_order
+        customer_search_text
     )
     # Fallback: Accept single word names (3+ chars, capitalized)
     if not customer_match:
-        customer_match = re.search(r'\n\s*([A-ZÄÖÜ][a-zäöüß]{2,})', text_after_order)
+        customer_match = re.search(r'\n\s*([A-ZÄÖÜ][a-zäöüß]{2,})', customer_search_text)
     
     if not customer_match:
         raise ParseError("Customer name not found")
