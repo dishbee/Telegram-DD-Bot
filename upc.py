@@ -639,6 +639,10 @@ async def handle_delivery_completion(order_id: str, user_id: int):
         assignee_info = COURIER_MAP.get(str(user_id), {})
         assignee_name = assignee_info.get("username", f"User{user_id}")
         
+        # Get courier shortcut for display
+        from mdg import COURIER_SHORTCUTS
+        courier_shortcut = COURIER_SHORTCUTS.get(assignee_name, assignee_name[:2] if len(assignee_name) >= 2 else assignee_name)
+        
         # Append status to history
         delivery_time = now().strftime("%H:%M")
         order["status_history"].append({
@@ -650,7 +654,7 @@ async def handle_delivery_completion(order_id: str, user_id: int):
         
         # Send confirmation to MDG with courier name and delivery time
         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        delivered_msg = f"🔖 {order_num} was delivered by {assignee_name} at {delivery_time}"
+        delivered_msg = f"Order 🔖 {order_num}: ✅ Delivered by 🐝 {courier_shortcut} at {delivery_time}"
         await send_status_message(DISPATCH_MAIN_CHAT_ID, delivered_msg)
         
         # Delete MDG-CONF and other temporary messages
