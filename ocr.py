@@ -49,12 +49,33 @@ def extract_text_from_image(photo_path: str) -> str:
                 timeout=30
             )
         
-        result = response.json()
+        # Check HTTP status first
+        if response.status_code != 200:
+            logger.error(f"[OCR] API returned status {response.status_code}")
+            logger.error(f"[OCR] Response text: {response.text[:500]}")
+            raise ParseError(f"OCR API HTTP error: {response.status_code}")
         
-        if not result.get('IsErroredOnProcessing'):
-            text = result['ParsedResults'][0]['ParsedText']
-        else:
-            raise ParseError(f"OCR API error: {result.get('ErrorMessage', 'Unknown error')}")
+        # Check if response is valid JSON
+        try:
+            result = response.json()
+        except ValueError as e:
+            logger.error(f"[OCR] Invalid JSON response from API")
+            logger.error(f"[OCR] Response text: {response.text[:500]}")
+            raise ParseError(f"OCR API returned invalid JSON: {str(e)}")
+        
+        # Check for API errors
+        if result.get('IsErroredOnProcessing'):
+            error_msg = result.get('ErrorMessage', 'Unknown error')
+            logger.error(f"[OCR] API processing error: {error_msg}")
+            raise ParseError(f"OCR API error: {error_msg}")
+        
+        # Check if parsed results exist
+        if not result.get('ParsedResults') or len(result['ParsedResults']) == 0:
+            logger.error(f"[OCR] No ParsedResults in API response")
+            logger.error(f"[OCR] Full response: {result}")
+            raise ParseError("OCR API returned no results")
+        
+        text = result['ParsedResults'][0]['ParsedText']
         
         # Log raw output for debugging
         logger.info(f"[OCR] Raw text extracted from {photo_path}:")
@@ -63,8 +84,15 @@ def extract_text_from_image(photo_path: str) -> str:
         
         return text
         
+    except ParseError:
+        # Re-raise ParseError as-is (already has descriptive message)
+        raise
+    except requests.RequestException as e:
+        logger.error(f"[OCR] Network error calling OCR API: {str(e)}")
+        raise ParseError(f"Network error: {str(e)}")
     except Exception as e:
-        raise ParseError(f"Failed to extract text from image: {str(e)}")
+        logger.error(f"[OCR] Unexpected error: {str(e)}")
+        raise ParseError(f"Unexpected error: {str(e)}")
 
 def parse_pf_order(ocr_text: str) -> dict:
     """
