@@ -448,7 +448,7 @@ def build_assignment_message(order: dict) -> str:
         status_text = build_status_lines(order, "upc", RESTAURANT_SHORTCUTS, COURIER_SHORTCUTS)
         
         # Add separator line after status
-        separator = "--------------------------------\n\n"
+        separator = "--------------------------------\n"
         
         # Add empty line after status if order is in a Group (combining system)
         if order.get("group_id") and status_text:
