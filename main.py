@@ -914,7 +914,7 @@ async def process_shopify_webhook(payload: dict):
         
         # Send to MDG
         mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
-        mdg_keyboard = mdg_initial_keyboard(order_id)
+        mdg_keyboard = mdg_initial_keyboard(STATE[order_id])
         mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, mdg_keyboard)
         
         if mdg_msg:
@@ -1025,7 +1025,7 @@ async def process_smoothr_order(smoothr_data: dict):
         mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
         
         # Send MDG-ORD with initial keyboard
-        keyboard = mdg_initial_keyboard(order_id)
+        keyboard = mdg_initial_keyboard(STATE[order_id])
         mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard)
         
         if mdg_msg:
@@ -1142,7 +1142,7 @@ async def handle_pf_photo(message: dict):
         # Send MDG-ORD
         from mdg import build_mdg_dispatch_text
         mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
-        keyboard = mdg_initial_keyboard(order_id)
+        keyboard = mdg_initial_keyboard(STATE[order_id])
         mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard)
         
         if mdg_msg:
@@ -1928,7 +1928,7 @@ def telegram_webhook():
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        mdg_initial_keyboard(order_id)
+                        mdg_initial_keyboard(order)
                     )
                 
                 # ORIGINAL TIME REQUEST ACTIONS (MDG)
@@ -3938,7 +3938,7 @@ def shopify_webhook():
                 mdg_msg = await safe_send_message(
                     DISPATCH_MAIN_CHAT_ID,
                     mdg_text,
-                    mdg_initial_keyboard(order_id)
+                    mdg_initial_keyboard(order)
                 )
                 order["mdg_message_id"] = mdg_msg.message_id
                 

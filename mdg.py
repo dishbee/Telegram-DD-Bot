@@ -477,7 +477,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         return f"Error formatting order {order.get('name', 'Unknown')}"
 
 
-def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
+def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
     """
     Build initial MDG keyboard with Details button above time request buttons.
     
@@ -493,14 +493,7 @@ def mdg_initial_keyboard(order_id: str) -> InlineKeyboardMarkup:
     [Ask 👨‍🍳 LR]
     """
     try:
-        order = STATE.get(order_id)
-        if not order:
-            return InlineKeyboardMarkup([
-                [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}")],
-                [InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}")],
-                [InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{int(now().timestamp())}")]
-            ])
-
+        order_id = order["order_id"]
         vendors = order.get("vendors", [])
         logger.info(f"🔍 MDG_INITIAL_KEYBOARD DEBUG - order_id: {order_id}, vendors: {vendors}, len: {len(vendors)}")
         order.setdefault("mdg_expanded", False)  # Track expansion state
