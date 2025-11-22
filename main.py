@@ -3363,7 +3363,7 @@ def telegram_webhook():
                     if order:
                         order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
                         courier_name = cq["from"].get("first_name", "Unknown")
-                        await safe_send_message(DISPATCH_MAIN_CHAT_ID, f"Order 🔖 {order_num} assigned to 🐝 {courier_name}")
+                        await send_status_message(DISPATCH_MAIN_CHAT_ID, f"Order 🔖 {order_num} assigned to 🐝 {courier_name}")
                 
                 elif action == "assign_to_menu":
                     """
