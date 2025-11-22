@@ -188,23 +188,30 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     # 7. Total (required): Line with "Total" followed by amount
     # Currency symbol may be misread (€ as c, e, etc.) or missing
-    # Match "Total" but not "Subtotal" by using word boundary
-    # Try multiple patterns to handle OCR variations
-    total_match = re.search(r'\bTotal\s+(\d+[,\.]\d{2})', ocr_text, re.IGNORECASE)
+    # CRITICAL: Must match "Total" keyword to avoid matching Stempelkarte or other amounts
+    # Use word boundary to exclude "Subtotal"
+    
+    # Pattern 1: "Total" followed by spaces/tabs and amount on same line
+    total_match = re.search(r'\bTotal\s*[\s\t]*(\d+[,\.]\d{2})', ocr_text, re.IGNORECASE)
     
     # Fallback 1: "Total" on one line, amount on next line
     if not total_match:
         total_match = re.search(r'\bTotal\s*\n\s*(\d+[,\.]\d{2})', ocr_text, re.IGNORECASE)
     
-    # Fallback 2: Look for currency amount near bottom (last 200 chars)
+    # Fallback 2: "Total" with currency symbol explicitly
     if not total_match:
-        text_end = ocr_text[-200:]
-        total_match = re.search(r'(\d+[,\.]\d{2})\s*[€ecC]', text_end)
+        total_match = re.search(r'\bTotal[^\d]*(\d+[,\.]\d{2})\s*[€ecC]', ocr_text, re.IGNORECASE)
     
-    # Fallback 3: Any currency amount in format XX,XX or XX.XX in last 200 chars
+    # Fallback 3: Find all amounts after "Total" keyword and take the first one
     if not total_match:
-        text_end = ocr_text[-200:]
-        total_match = re.search(r'(\d{2,3}[,\.]\d{2})', text_end)
+        # Find "Total" position first
+        total_pos = re.search(r'\bTotal\b', ocr_text, re.IGNORECASE)
+        if total_pos:
+            # Look for amount within 100 chars after "Total"
+            text_after_total = ocr_text[total_pos.end():total_pos.end()+100]
+            amount_match = re.search(r'(\d+[,\.]\d{2})', text_after_total)
+            if amount_match:
+                total_match = amount_match
     
     if not total_match:
         raise ParseError("Total price not found")
