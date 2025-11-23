@@ -328,17 +328,12 @@ def build_assignment_confirmation_message(order: dict) -> str:
     confirmed_times = order.get("confirmed_times", {})
     vendor_items = order.get("vendor_items", {})
     
-    # Extract order number (last 2 digits)
-    order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-    
-    # Extract source from order name (e.g., "dishbee 01" -> "dishbee")
-    full_name = str(order.get("name", ""))
-    if " " in full_name:
-        source = full_name.rsplit(" ", 1)[0]  # Split from right, take first part
-    elif order.get("order_type") == "smoothr":
-        source = "smoothr"
+    # Extract order number (last 2 digits for Shopify, full for Smoothr)
+    order_type = order.get("order_type", "shopify")
+    if order_type == "shopify":
+        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
     else:
-        source = "shopify"
+        order_num = order.get('name', 'Order')
     
     # Chef emojis for variety
     chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
@@ -359,16 +354,57 @@ def build_assignment_confirmation_message(order: dict) -> str:
                 product_count += 1
         vendor_counts.append(product_count)
     
-    # Build header with new format
-    message = f"🔖 {order_num} ({source})\n\n👍 Confirmed time\n\n"
+    # Build status line (changes after assignment)
+    assigned_to = order.get("assigned_to")
+    if assigned_to:
+        # Get courier name from DRIVERS
+        courier_name = None
+        for name, cid in DRIVERS.items():
+            if cid == assigned_to:
+                courier_name = name
+                break
+        
+        # Fallback: try to get from bot API
+        if not courier_name:
+            courier_name = f"User{assigned_to}"
+        
+        status_line = f"📌 Assigned: 🐝 {courier_name}"
+    else:
+        status_line = "📌 Order to assign"
     
-    # Vendor details with rotating chef emojis and product counts
+    # Build address line with Google Maps link
+    full_address = order['customer']['address']
+    zip_code = order['customer'].get('zip', '')
+    original_address = order['customer'].get('original_address', full_address)
+    
+    # Format address: street (zip)
+    address_parts = full_address.split(',')
+    if len(address_parts) >= 2:
+        street_part = address_parts[0].strip()
+        zip_part = address_parts[-1].strip().strip('()')
+        display_address = f"{street_part} ({zip_part})"
+    else:
+        if zip_code:
+            display_address = f"{full_address.strip()} ({zip_code})"
+        else:
+            display_address = full_address.strip()
+    
+    maps_link = f"https://www.google.com/maps?q={original_address.replace(' ', '+')}"
+    address_line = f"🗺️ [{display_address}]({maps_link})"
+    
+    # Build message
+    message = f"{status_line}\n────────────────\n\n{address_line}\n\n"
+    
+    # Vendor time lines
     for idx, vendor in enumerate(vendors):
         pickup_time = confirmed_times.get(vendor, "ASAP")
         chef_emoji = chef_emojis[idx % len(chef_emojis)]
         vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
         count = vendor_counts[idx]
-        message += f"{chef_emoji} **{vendor_shortcut}**: {pickup_time} ({count})\n"
+        message += f"🕒 {pickup_time} ➞ {chef_emoji} {vendor_shortcut} ({count})\n"
+    
+    # Add order number at bottom
+    message += f"\n🔖 {order_num}"
     
     return message
 
