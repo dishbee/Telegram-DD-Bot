@@ -2,7 +2,7 @@
 
 ## ⚠️ CRITICAL: User Context
 
-**User is NOT a coder** and cannot fix anything. Paid for Claude Pro and expects **production-quality results**.
+**User is NOT a coder** and cannot fix anything. Paid for Claude Pro and expects **production-quality results**. 
 
 **DEPLOYMENT**: This is a **TEST ENVIRONMENT**. Breaking things is acceptable if it leads to proper fixes. Focus on **FIXING CORRECTLY** over reverting quickly.
 
@@ -17,6 +17,7 @@
 4. **Check every line** against original requirements
 5. **Explain exactly** what will change and why
 6. **TRACE THE ACTUAL CODE FLOW** before implementing - don't assume
+7. **READ THE ACTUAL CODE FIRST** - never hallucinate message formats or behavior, always read the code to see what it actually does
 
 ### ❌ NEVER DO:
 1. **NO assumptions** - verify everything against assignment
@@ -29,6 +30,7 @@
 8. **NO claiming you understand** without actually tracing code flow
 9. **NO looking at existing broken code** instead of reading user's original assignment
 10. **NO MAKING THINGS UP** - if you don't see it in the code or requirements, it doesn't exist
+11. **NO HALLUCINATING MESSAGE FORMATS** - always read the actual code to see what messages look like, never guess or assume based on comments or documentation
 
 ---
 
@@ -43,6 +45,11 @@ Historical issues that caused failures:
 6. ❌ Making changes without user confirmation (caused frustration)
 7. ❌ **CLAIMING TO UNDERSTAND WITHOUT TRACING CODE FLOW** (BTN-TIME failure - modified wrong function)
 8. ❌ **READING EXISTING BROKEN CODE INSTEAD OF USER'S ASSIGNMENT** (Fix #4 failure)
+9. ❌ **ADDING IMPORTS WITHOUT CHECKING DEPENDENCIES** (Import fix cascades - fixed one handler, broke multi-vendor keyboard because didn't trace what functions actually do)
+10. ❌ **NOT RESPECTING SYSTEM COMPLEXITY** (Treating multi-module state machine like simple CRUD app - every change has ripple effects across MDG/RG/UPC)
+11. ❌ **TOUCHING WORKING CODE WITHOUT UNDERSTANDING WHY IT WORKS** (If something works, NEVER change it without full trace of execution path)
+12. ❌ **ASSUMING IMPORTS ARE ISOLATED CHANGES** (Imports affect execution order, STATE access timing, and function behavior - must verify ALL dependencies)
+13. ❌ **HALLUCINATING MESSAGE FORMATS FROM DOCUMENTATION** (RG-SUM spacing failure - read examples in instructions instead of actual code in rg.py/utils.py, resulted in wrong blank line placement)
 
 ---
 
@@ -136,8 +143,36 @@ Why needed: [one sentence]
 - [ ] Did I list 3 specific things this could break?
 - [ ] Is my diff clean with NO extra changes?
 - [ ] Did I verify callback data formats won't break old buttons?
+- [ ] Did I check if this change affects multi-vendor vs single-vendor branching logic?
+- [ ] Did I verify STATE field dependencies for ALL functions being called?
+- [ ] Did I check execution order and timing of imports relative to STATE access?
 
 **If ANY answer is NO, you must STOP and redo the checklist.**
+
+### 6️⃣ DEPENDENCY VERIFICATION (FOR IMPORT CHANGES)
+
+**If adding/moving imports, answer these:**
+
+1. **What does the imported function DO?**
+   - List every STATE field it reads
+   - List every STATE field it modifies
+   - List every other function it calls
+
+2. **When is it called in the execution flow?**
+   - Is STATE fully populated at that point?
+   - Are there branching conditions (multi-vendor vs single-vendor)?
+   - Does it depend on previous handlers setting STATE values?
+
+3. **What could break if import timing changes?**
+   - Does it access STATE before it's initialized?
+   - Does it depend on other imports executing first?
+   - Will circular dependencies occur?
+
+**Example for `mdg_time_request_keyboard(order_id)`:**
+- Reads: `STATE[order_id]["vendors"]`, `STATE[order_id]["confirmed_times"]`
+- Branches: `if len(vendors) > 1` → different keyboard
+- Called: After `build_mdg_dispatch_text()` in most handlers
+- Risk: If STATE corrupted or vendors list empty, wrong keyboard shown
 
 ---
 
@@ -199,7 +234,7 @@ Before proceeding with ANY change, verify:
 BOT_TOKEN=7064983715:AAH6xz2p1QxP5h2EZMIp1Uw9pq57zUX3ikM
 SHOPIFY_WEBHOOK_SECRET=0cd9ef469300a40e7a9c03646e4336a19c592bb60cae680f86b41074250e9666
 DISPATCH_MAIN_CHAT_ID=-4825320632
-VENDOR_GROUP_MAP={"Pommes Freunde": -4955033989, "Zweite Heimat": -4850816432, "Julis Spätzlerei": -4870635901, "i Sapori della Toscana": -4833204954, "Kahaani": -4665514846, "Leckerolls": -4839028336, "dean & david": -4901870176}
+VENDOR_GROUP_MAP={"Pommes Freunde": -4955033989, "Zweite Heimat": -4850816432, "Julis Spätzlerei": -4870635901, "i Sapori della Toscana": -4833204954, "Kahaani": -5072102362, "Leckerolls": -4839028336, "dean & david": -4901870176}
 DRIVERS={"Bee 1": 383910036, "Bee 2": 6389671774, "Bee 3": 8483568436}
 ```
 
@@ -274,24 +309,32 @@ DRIVERS={"Bee 1": 383910036, "Bee 2": 6389671774, "Bee 3": 8483568436}
 - **Original message**: Smoothr deletes the bot's raw message after parsing
 
 ### RG-SUM Format Rules:
-**Summary View (Collapsed):**
+
+⚠️ **CRITICAL**: NEVER trust these examples - ALWAYS read the actual code in `rg.py`, `mdg.py`, `utils.py` to see real output formats.
+
+**Shopify Orders - Summary View (Collapsed):**
 ```
 🚨 New order
 
-🔖 Order #{num}
+🔖 {last 2 digits}
 
-[Products listed here if exist]
+{qty} x {Product}
+{qty} x {Product}
+
+❕ Note: {text} (optional)
 
 [Details ▸]
 ```
 
-**Details View (Expanded):**
+**Shopify Orders - Details View (Expanded):**
 ```
 🚨 New order
 
-🔖 Order #{num}
+🔖 {last 2 digits}
 
-[Products if exist]
+{qty} x {Product}
+
+❕ Note: {text}
 
 👤 Customer Name
 🗺️ Address
@@ -301,7 +344,42 @@ DRIVERS={"Bee 1": 383910036, "Bee 2": 6389671774, "Bee 3": 8483568436}
 [◂ Hide]
 ```
 
-**NEVER show customer details in summary view** - only in expanded view.
+**DD/PF Orders - Summary View (Collapsed):**
+```
+🚨 New order
+🔖 {num}
+
+👤 Customer Name
+🗺️ Address
+
+{qty} x {Product} (if products exist)
+
+❕ Note: {text} (optional)
+
+[Details ▸]
+```
+
+**DD/PF Orders - Details View (Expanded):**
+```
+🚨 New order
+🔖 {num}
+
+👤 Customer Name
+🗺️ Address
+
+{qty} x {Product}
+
+❕ Note: {text}
+
+📞 Phone
+⏰ Ordered at: HH:MM
+
+[◂ Hide]
+```
+
+**Key Differences:**
+- **Shopify**: Customer details ONLY in expanded view, blank line after status
+- **DD/PF**: Customer details in BOTH views, NO blank line after status, customer shown before products
 
 ---
 

@@ -166,10 +166,28 @@ Select scheduled order:
 ### 🏪 RG Messages
 
 #### **RG-SUM** - Order Summary (Collapsed)
+
+**Shopify Orders:**
 ```
 🚨 New order
 
+🔖 {last 2 digits}
+
+{qty} x {Product}
+{qty} x {Product}
+
+❕ Note: {text} (optional)
+
+[Details ▸]
+```
+
+**DD/PF Orders (smoothr_dnd, smoothr_lieferando):**
+```
+🚨 New order
 🔖 {num}
+
+👤 {Customer}
+🗺️ {Address}
 
 {qty} x {Product}
 {qty} x {Product}
@@ -183,16 +201,19 @@ Select scheduled order:
 - Order number without # symbol
 - Smoothr D&D orders show all 3 digits
 - Shopify/Lieferando orders show last 2 digits
+- **DD/PF orders**: NO blank line after status, customer/address shown before products
+- **Shopify orders**: Blank line after status, customer details only in expanded view
 
 ---
 
 #### **RG-DET** - Order Details (Expanded)
+
+**Shopify Orders:**
 ```
 🚨 New order
 
-🔖 {num}
+🔖 {last 2 digits}
 
-{qty} x {Product}
 {qty} x {Product}
 
 ❕ Note: {text}
@@ -205,8 +226,28 @@ Select scheduled order:
 [◂ Hide]
 ```
 
+**DD/PF Orders:**
+```
+🚨 New order
+🔖 {num}
+
+👤 {Customer}
+🗺️ {Address}
+
+{qty} x {Product}
+
+❕ Note: {text}
+
+📞 {phone}
+⏰ Ordered at: {HH:MM}
+
+[◂ Hide]
+```
+
 **Format Changes (Nov 2025):**
 - Address shows street only (zip removed from RG display)
+- **DD/PF**: Customer/address NOT duplicated (already in summary), only phone/time appended
+- **Shopify**: Customer/address added in expanded view only
 
 ---
 
@@ -998,6 +1039,7 @@ GOOGLE_MAPS_API_KEY=your_key  # District detection
 21. **STATE Corruption** - Added guard in upc.configure() to prevent STATE reconfiguration during circular imports (737fea0)
 22. **MDG-CONF Persistence** - Fixed MDG-CONF being auto-deleted after vendor confirmation by removing from cleanup array (17aa7e0)
 23. **Unassign Status Revert** - Unassign now pops "assigned" from status_history and updates MDG-ORD to show "Confirmed" status (a324a39)
+24. **RG-SUM Format Split** - DD/PF orders now show customer/address before products in both collapsed and expanded views (812f8a9, f35cad8, 718c6d0)
 
 ## 🆕 NEW FEATURES (Oct-Nov 2025)
 

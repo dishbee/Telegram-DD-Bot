@@ -447,8 +447,8 @@ def build_assignment_message(order: dict) -> str:
         # Build status lines (prepend to message)
         status_text = build_status_lines(order, "upc", RESTAURANT_SHORTCUTS, COURIER_SHORTCUTS)
         
-        # Add separator line after status
-        separator = "────────────────\n"
+        # Add separator line after status (with blank line after)
+        separator = "────────────────\n\n"
         
         # Add empty line after status if order is in a Group (combining system)
         if order.get("group_id") and status_text:
@@ -551,14 +551,6 @@ def build_assignment_message(order: dict) -> str:
         else:
             source_footer = "🔗 dishbee\n"
         
-        # Order number footer: 🔖 01
-        if order_type == "shopify":
-            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        else:
-            order_num = order.get('name', 'Order')
-        
-        order_footer = f"\n🔖 {order_num}"
-        
         # Optional info (note, tips, cash on delivery) - after source
         optional_section = ""
         
@@ -574,6 +566,18 @@ def build_assignment_message(order: dict) -> str:
         total = order.get("total", "0.00€")
         if payment and payment.lower() == "cash on delivery":
             optional_section += f"\n❕ Cash: {total}\n"
+        
+        # Order number footer: 🔖 01 - conditional newline based on optional_section
+        if order_type == "shopify":
+            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+        else:
+            order_num = order.get('name', 'Order')
+        
+        # Add newline before order number only if NO optional info
+        if optional_section:
+            order_footer = f"🔖 {order_num}"
+        else:
+            order_footer = f"\n🔖 {order_num}"
         
         # Combine all sections: status → separator → group → vendors → address → customer → phone → source → optional → order number
         message = status_text + separator + group_header + restaurant_section + address_section + customer_section + phone_section + source_footer + optional_section + order_footer
