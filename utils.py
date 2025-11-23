@@ -754,7 +754,7 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
     # === UPC STATUS LINES ===
     elif message_type == "upc":
         if status_type == "assigned":
-            return "👇 Assigned order\n\n"
+            return "👇 Assigned order\n"
         
         elif status_type == "delay_sent":
             vendors = latest.get("vendors", [])
