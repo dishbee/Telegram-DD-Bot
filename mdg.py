@@ -1071,19 +1071,16 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
         # Get confirmed_times dict for multi-vendor
         confirmed_times = order_data.get("confirmed_times")
         
-        # Get courier shortcut using DRIVERS reverse lookup
+        # Get courier name using DRIVERS reverse lookup
         courier_name = None
         for name, uid in DRIVERS.items():
             if uid == assigned_to:
                 courier_name = name
                 break
         
-        if courier_name and courier_name in COURIER_SHORTCUTS:
-            courier_shortcut = COURIER_SHORTCUTS[courier_name]
-        elif courier_name and len(courier_name) >= 2:
-            courier_shortcut = courier_name[:2].upper()
-        else:
-            courier_shortcut = "??"
+        # Use full courier name ("Bee 1", "Bee 2", "Bee 3")
+        if not courier_name:
+            courier_name = "??"
         
         # For multi-vendor orders, create SEPARATE entry per vendor (like scheduled orders)
         if len(vendors) > 1 and confirmed_times:
@@ -1095,12 +1092,12 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
                 final_address = street
                 
                 # Build button text: {address} - {time} - {vendor}  |  {courier}
-                button_text = f"{final_address} - {vendor_time} - {vendor_shortcut}  |  {courier_shortcut}"
+                button_text = f"{final_address} - {vendor_time} - {vendor_shortcut}  |  {courier_name}"
                 
                 # If > 30 chars (single-line limit), reduce street name letter-by-letter
                 while len(button_text) > 30 and len(final_address) > 1:
                     final_address = final_address[:-1]
-                    button_text = f"{final_address} - {vendor_time} - {vendor_shortcut}  |  {courier_shortcut}"
+                    button_text = f"{final_address} - {vendor_time} - {vendor_shortcut}  |  {courier_name}"
                 
                 assigned.append({
                     "order_id": oid,
@@ -1109,7 +1106,7 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
                     "confirmed_time": vendor_time,
                     "address": final_address,
                     "assigned_to": assigned_to,
-                    "courier_shortcut": courier_shortcut
+                    "courier_name": courier_name
                 })
         else:
             # Single vendor order
@@ -1120,12 +1117,12 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
             final_address = street
             
             # Build button text: {address} - {time} - {vendor}  |  {courier}
-            button_text = f"{final_address} - {confirmed_time} - {vendor_shortcut}  |  {courier_shortcut}"
+            button_text = f"{final_address} - {confirmed_time} - {vendor_shortcut}  |  {courier_name}"
             
             # If > 30 chars (single-line limit), reduce street name letter-by-letter
             while len(button_text) > 30 and len(final_address) > 1:
                 final_address = final_address[:-1]
-                button_text = f"{final_address} - {confirmed_time} - {vendor_shortcut}  |  {courier_shortcut}"
+                button_text = f"{final_address} - {confirmed_time} - {vendor_shortcut}  |  {courier_name}"
             
             assigned.append({
                 "order_id": oid,
@@ -1134,11 +1131,11 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
                 "confirmed_time": confirmed_time,
                 "address": final_address,
                 "assigned_to": assigned_to,
-                "courier_shortcut": courier_shortcut
+                "courier_name": courier_name
             })
     
-    # Sort by courier shortcut (groups orders by courier together)
-    assigned.sort(key=lambda x: x["courier_shortcut"])
+    # Sort by courier name (groups orders by courier together)
+    assigned.sort(key=lambda x: x["courier_name"])
     
     return assigned
 
@@ -1227,7 +1224,7 @@ def build_combine_keyboard(order_id: str, assigned_orders: List[Dict[str, str]])
         address = order["address"]
         
         # Build button text: {address} - {time} - {vendor}  |  {courier}
-        button_text = f"{address} - {order['confirmed_time']} - {order['vendor_shortcut']}  |  {order['courier_shortcut']}"
+        button_text = f"{address} - {order['confirmed_time']} - {order['vendor_shortcut']}  |  {order['courier_name']}"
         
         # Hard-truncate to 64 chars max (Telegram button limit) as safety fallback
         if len(button_text) > 64:
