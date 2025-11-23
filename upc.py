@@ -448,7 +448,7 @@ def build_assignment_message(order: dict) -> str:
         status_text = build_status_lines(order, "upc", RESTAURANT_SHORTCUTS, COURIER_SHORTCUTS)
         
         # Add separator line after status
-        separator = "--------------------------------\n"
+        separator = "────────────────\n"
         
         # Add empty line after status if order is in a Group (combining system)
         if order.get("group_id") and status_text:
@@ -473,14 +473,6 @@ def build_assignment_message(order: dict) -> str:
             group_orders = get_group_orders(STATE, group_id)
             group_total = len(group_orders)
             group_header = f"{group_color} Group: {group_position}/{group_total}\n\n"
-        
-        # Header: 🔖 01
-        if order_type == "shopify":
-            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        else:
-            order_num = order.get('name', 'Order')
-        
-        header = f"🔖 {order_num}\n\n"
         
         # Restaurant info with confirmed times and product quantities
         vendors = order.get("vendors", [])
@@ -517,8 +509,8 @@ def build_assignment_message(order: dict) -> str:
                 else:
                     product_count += 1
             
-            # New format: 👩‍🍳 ZH (3)  🕒 23:57
-            restaurant_section += f"{chef_emoji} {vendor_shortcut} ({product_count})  🕒 {pickup_time}\n"
+            # New format: 🕒 23:57 ➞ 👩‍🍳 ZH (3)
+            restaurant_section += f"🕒 {pickup_time} ➞ {chef_emoji} {vendor_shortcut} ({product_count})\n"
         
         restaurant_section += "\n"
         
@@ -559,6 +551,14 @@ def build_assignment_message(order: dict) -> str:
         else:
             source_footer = "🔗 dishbee\n"
         
+        # Order number footer: 🔖 01
+        if order_type == "shopify":
+            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+        else:
+            order_num = order.get('name', 'Order')
+        
+        order_footer = f"\n🔖 {order_num}"
+        
         # Optional info (note, tips, cash on delivery) - after source
         optional_section = ""
         
@@ -575,8 +575,8 @@ def build_assignment_message(order: dict) -> str:
         if payment and payment.lower() == "cash on delivery":
             optional_section += f"\n❕ Cash: {total}\n"
         
-        # Combine all sections: status → separator → header → vendors → address → customer → phone → source → optional
-        message = status_text + separator + group_header + header + restaurant_section + address_section + customer_section + phone_section + source_footer + optional_section
+        # Combine all sections: status → separator → group → vendors → address → customer → phone → source → optional → order number
+        message = status_text + separator + group_header + restaurant_section + address_section + customer_section + phone_section + source_footer + optional_section + order_footer
         
         return message
 
