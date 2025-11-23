@@ -706,7 +706,7 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
             vendor = latest.get("vendor", "")
             time = latest.get("time", "")
             shortcut = f"**{get_vendor_shortcut(vendor)}**"
-            return f"{shortcut} → 👍 {time}\n\n"
+            return f"{shortcut} → 👍 {time}\n"
         
         elif status_type == "assigned":
             courier = latest.get("courier", "Unknown")
