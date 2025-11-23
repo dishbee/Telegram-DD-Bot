@@ -419,6 +419,62 @@ def build_assignment_confirmation_message(order: dict) -> str:
     return message
 
 # =============================================================================
+# MENU COMMANDS (/scheduled, /assigned)
+# =============================================================================
+
+async def handle_scheduled_command(chat_id: int, trigger_message_id: int):
+    """Handle /scheduled command - show list of scheduled orders."""
+    from mdg_menu_commands import build_scheduled_list_message, close_button_keyboard
+    
+    try:
+        # Build message text
+        text = build_scheduled_list_message(STATE, now)
+        
+        # Build keyboard
+        keyboard = close_button_keyboard()
+        
+        # Send message
+        await safe_send_message(chat_id, text, keyboard, parse_mode=None)
+        
+        # Delete trigger message (the /scheduled command itself)
+        try:
+            await bot.delete_message(chat_id, trigger_message_id)
+        except Exception as e:
+            logger.debug(f"Could not delete trigger message: {e}")
+        
+        logger.info("✅ Scheduled orders list sent")
+    except Exception as e:
+        logger.error(f"❌ Failed to send scheduled orders list: {e}")
+        logger.exception(e)
+
+
+async def handle_assigned_command(chat_id: int, trigger_message_id: int):
+    """Handle /assigned command - show list of assigned orders."""
+    from mdg_menu_commands import build_assigned_list_message, close_button_keyboard
+    
+    try:
+        # Build message text
+        text = build_assigned_list_message(STATE, DRIVERS)
+        
+        # Build keyboard
+        keyboard = close_button_keyboard()
+        
+        # Send message
+        await safe_send_message(chat_id, text, keyboard, parse_mode=None)
+        
+        # Delete trigger message (the /assigned command itself)
+        try:
+            await bot.delete_message(chat_id, trigger_message_id)
+        except Exception as e:
+            logger.debug(f"Could not delete trigger message: {e}")
+        
+        logger.info("✅ Assigned orders list sent")
+    except Exception as e:
+        logger.error(f"❌ Failed to send assigned orders list: {e}")
+        logger.exception(e)
+
+
+# =============================================================================
 # TEST SMOOTHR ORDER COMMAND
 # =============================================================================
 
@@ -1529,6 +1585,19 @@ def telegram_webhook():
             
             # Get chat_id early for command detection
             chat_id = chat.get('id')
+            
+            # =================================================================
+            # MENU COMMANDS (scheduled, assigned)
+            # =================================================================
+            if text == "/scheduled":
+                logger.info("=== SCHEDULED ORDERS COMMAND ===")
+                run_async(handle_scheduled_command(chat_id, msg.get('message_id')))
+                return "OK"
+            
+            if text == "/assigned":
+                logger.info("=== ASSIGNED ORDERS COMMAND ===")
+                run_async(handle_assigned_command(chat_id, msg.get('message_id')))
+                return "OK"
             
             # =================================================================
             # TEST SMOOTHR COMMAND (anyone can trigger)
@@ -2778,6 +2847,16 @@ def telegram_webhook():
                 elif action == "hide":
                     # Generic hide/back button - deletes any temporary message
                     logger.info(f"Hiding temporary message")
+                    
+                    # Delete the message
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                    
+                    await safe_delete_message(chat_id, message_id)
+                
+                elif action == "close_temp":
+                    # Close button for menu command lists (/scheduled, /assigned)
+                    logger.info(f"Closing menu command list")
                     
                     # Delete the message
                     chat_id = cq["message"]["chat"]["id"]
