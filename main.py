@@ -357,14 +357,24 @@ def build_assignment_confirmation_message(order: dict) -> str:
     # Build status line (changes after assignment)
     assigned_to = order.get("assigned_to")
     if assigned_to:
-        # Get courier name from DRIVERS
+        # Get courier name from status_history (populated by send_assignment_to_private_chat)
         courier_name = None
-        for name, cid in DRIVERS.items():
-            if cid == assigned_to:
-                courier_name = name
+        status_history = order.get("status_history", [])
+        
+        # Find most recent "assigned" status entry with proper courier name
+        for entry in reversed(status_history):
+            if entry.get("type") == "assigned" and entry.get("courier_id") == assigned_to:
+                courier_name = entry.get("courier")
                 break
         
-        # Fallback: try to get from bot API
+        # Fallback: reverse lookup in DRIVERS if not in history yet
+        if not courier_name:
+            for name, cid in DRIVERS.items():
+                if cid == assigned_to:
+                    courier_name = name
+                    break
+        
+        # Final fallback (should never reach here)
         if not courier_name:
             courier_name = f"User{assigned_to}"
         
