@@ -1071,9 +1071,14 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
         # Get confirmed_times dict for multi-vendor
         confirmed_times = order_data.get("confirmed_times")
         
-        # Get courier shortcut using COURIER_SHORTCUTS mapping
-        courier_name = COURIER_MAP.get(str(assigned_to), {}).get("username", "")
-        if courier_name in COURIER_SHORTCUTS:
+        # Get courier shortcut using DRIVERS reverse lookup
+        courier_name = None
+        for name, uid in DRIVERS.items():
+            if uid == assigned_to:
+                courier_name = name
+                break
+        
+        if courier_name and courier_name in COURIER_SHORTCUTS:
             courier_shortcut = COURIER_SHORTCUTS[courier_name]
         elif courier_name and len(courier_name) >= 2:
             courier_shortcut = courier_name[:2].upper()
@@ -1089,13 +1094,13 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
                 # Start with full street name (no house number, no zip)
                 final_address = street
                 
-                # Build button text: {num} - {vendor} - {time} - {street} - {courier}
-                button_text = f"{order_num} - {vendor_shortcut} - {vendor_time} - {final_address} - {courier_shortcut}"
+                # Build button text: {address} - {time} - {vendor}  |  {courier}
+                button_text = f"{final_address} - {vendor_time} - {vendor_shortcut}  |  {courier_shortcut}"
                 
                 # If > 30 chars (single-line limit), reduce street name letter-by-letter
                 while len(button_text) > 30 and len(final_address) > 1:
                     final_address = final_address[:-1]
-                    button_text = f"{order_num} - {vendor_shortcut} - {vendor_time} - {final_address} - {courier_shortcut}"
+                    button_text = f"{final_address} - {vendor_time} - {vendor_shortcut}  |  {courier_shortcut}"
                 
                 assigned.append({
                     "order_id": oid,
@@ -1114,13 +1119,13 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
             # Start with full street name (no house number, no zip)
             final_address = street
             
-            # Build button text: {num} - {vendor} - {time} - {street} - {courier}
-            button_text = f"{order_num} - {vendor_shortcut} - {confirmed_time} - {final_address} - {courier_shortcut}"
+            # Build button text: {address} - {time} - {vendor}  |  {courier}
+            button_text = f"{final_address} - {confirmed_time} - {vendor_shortcut}  |  {courier_shortcut}"
             
             # If > 30 chars (single-line limit), reduce street name letter-by-letter
             while len(button_text) > 30 and len(final_address) > 1:
                 final_address = final_address[:-1]
-                button_text = f"{order_num} - {vendor_shortcut} - {confirmed_time} - {final_address} - {courier_shortcut}"
+                button_text = f"{final_address} - {confirmed_time} - {vendor_shortcut}  |  {courier_shortcut}"
             
             assigned.append({
                 "order_id": oid,
@@ -1221,8 +1226,8 @@ def build_combine_keyboard(order_id: str, assigned_orders: List[Dict[str, str]])
         # Use PRE-TRUNCATED address from get_assigned_orders() (already fits 30-char limit)
         address = order["address"]
         
-        # Build button text: {num} - {vendor} - {time} - {address} - {courier}
-        button_text = f"{order['order_num']} - {order['vendor_shortcut']} - {order['confirmed_time']} - {address} - {order['courier_shortcut']}"
+        # Build button text: {address} - {time} - {vendor}  |  {courier}
+        button_text = f"{address} - {order['confirmed_time']} - {order['vendor_shortcut']}  |  {order['courier_shortcut']}"
         
         # Hard-truncate to 64 chars max (Telegram button limit) as safety fallback
         if len(button_text) > 64:
@@ -1274,11 +1279,15 @@ async def show_combine_orders_menu(state_dict, order_id: str, chat_id: int, mess
     full_name = order.get("name", "??")
     order_num = full_name[-2:] if len(full_name) >= 2 else full_name
     
+    # Get street from current order for header (no truncation)
+    customer = order.get("customer", {})
+    street = customer.get("address", "Unknown")
+    
     # Build keyboard
     keyboard = build_combine_keyboard(order_id, assigned_orders)
     
-    # Edit message with combine menu
-    text = f"📌 Combine 🔖 {order_num} with:"
+    # Edit message with combine menu - show street and order number
+    text = f"📌 Combine 🗺️ {street} (🔖 {order_num}) with:"
     
     logger.info(f"Showing {len(assigned_orders)} assigned orders for combining")
     
