@@ -648,11 +648,6 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
             {"title": "Burger Classic", "price": "11.50", "qty": 1},
             {"title": "Pommes", "price": "4.50", "qty": 1},
             {"title": "Cola 0.5L", "price": "3.50", "qty": 1}
-        ],
-        "Kahaani": [
-            {"title": "Chicken Tikka Masala", "price": "13.50", "qty": 1},
-            {"title": "Palak Paneer", "price": "11.90", "qty": 1},
-            {"title": "Garlic Naan", "price": "3.50", "qty": 2}
         ]
     }
     
