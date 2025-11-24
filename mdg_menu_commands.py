@@ -27,17 +27,29 @@ def build_scheduled_list_message(state_dict: dict, now_func) -> str:
     cutoff = now_func() - timedelta(hours=5)
     scheduled = []
     
+    import logging
+    logger = logging.getLogger(__name__)
+    
     for oid, order in state_dict.items():
         # Must have confirmed_times, not delivered, within 5 hours
+        order_name = order.get("name", "??")
+        
         confirmed_times = order.get("confirmed_times", {})
         if not confirmed_times:
+            logger.info(f"SCHED DEBUG: Order {order_name} skipped - no confirmed_times")
             continue
         # Skip only delivered orders, not assigned ones
         if order.get("status") == "delivered":
+            logger.info(f"SCHED DEBUG: Order {order_name} skipped - status is delivered")
             continue
         created_at = order.get("created_at")
         if not created_at or created_at < cutoff:
+            logger.info(f"SCHED DEBUG: Order {order_name} skipped - outside 5h window (created_at={created_at}, cutoff={cutoff})")
             continue
+        
+        assigned_to = order.get("assigned_to")
+        status = order.get("status")
+        logger.info(f"SCHED DEBUG: Order {order_name} INCLUDED - status={status}, assigned_to={assigned_to}")
         
         # Get order number (last 2 digits)
         order_num = order.get("name", "")[-2:] if len(order.get("name", "")) >= 2 else order.get("name", "??")
