@@ -1656,6 +1656,16 @@ def telegram_webhook():
                 run_async(handle_test_shopify_command(chat_id, text, msg.get('message_id')))
                 return "OK"
             
+            # Handle underscore-based test commands for BotFather compatibility
+            if text.startswith("/test_shopify_"):
+                logger.info("=== TEST SHOPIFY UNDERSCORE COMMAND DETECTED ===")
+                # Extract mode from command (e.g., "zh" from "/test_shopify_zh")
+                mode = text.replace("/test_shopify_", "").split()[0].split("@")[0]
+                # Convert to format expected by handler: "/test_shopify {mode}"
+                converted_command = f"/test_shopify {mode}"
+                run_async(handle_test_shopify_command(chat_id, converted_command, msg.get('message_id')))
+                return "OK"
+            
             # =================================================================
             # SMOOTHR ORDER DETECTION
             # =================================================================
