@@ -118,6 +118,10 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
     five_hours_ago = now() - timedelta(hours=5)
     recent: List[Dict[str, str]] = []
 
+    logger.info(f"SCHED-BTN: Checking recent orders for button visibility (current: {current_order_id}, vendor: {vendor})")
+    logger.info(f"SCHED-BTN: Five hours ago cutoff: {five_hours_ago}")
+    logger.info(f"SCHED-BTN: Total orders in STATE: {len(STATE)}")
+
     for order_id, order_data in STATE.items():
         if order_id == current_order_id:
             continue
@@ -127,12 +131,18 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
         confirmed_times = order_data.get("confirmed_times", {})
         has_confirmation = confirmed_time or (confirmed_times and any(confirmed_times.values()))
         
+        status = order_data.get("status")
+        created_at = order_data.get("created_at")
+        
+        logger.info(f"SCHED-BTN: Order {order_id} - confirmed_time={confirmed_time}, confirmed_times={confirmed_times}, has_confirmation={has_confirmation}, status={status}, created_at={created_at}")
+        
         if not has_confirmation:
+            logger.info(f"SCHED-BTN: Order {order_id} - SKIP: no confirmation")
             continue
         
         # Filter out delivered orders - only show scheduled (new/assigned)
-        status = order_data.get("status")
         if status == "delivered":
+            logger.info(f"SCHED-BTN: Order {order_id} - SKIP: status is delivered")
             continue
         
         # Filter by vendor if specified
