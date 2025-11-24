@@ -1589,12 +1589,12 @@ def telegram_webhook():
             # =================================================================
             # MENU COMMANDS (scheduled, assigned)
             # =================================================================
-            if text == "/scheduled":
+            if text.startswith("/scheduled"):
                 logger.info("=== SCHEDULED ORDERS COMMAND ===")
                 run_async(handle_scheduled_command(chat_id, msg.get('message_id')))
                 return "OK"
             
-            if text == "/assigned":
+            if text.startswith("/assigned"):
                 logger.info("=== ASSIGNED ORDERS COMMAND ===")
                 run_async(handle_assigned_command(chat_id, msg.get('message_id')))
                 return "OK"
