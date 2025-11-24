@@ -1651,12 +1651,7 @@ def telegram_webhook():
             # =================================================================
             # TEST SHOPIFY COMMAND (anyone can trigger)
             # =================================================================
-            if text.startswith("/test_shopify"):
-                logger.info("=== TEST SHOPIFY COMMAND DETECTED ===")
-                run_async(handle_test_shopify_command(chat_id, text, msg.get('message_id')))
-                return "OK"
-            
-            # Handle underscore-based test commands for BotFather compatibility
+            # Check underscore commands FIRST (more specific match)
             if text.startswith("/test_shopify_"):
                 logger.info("=== TEST SHOPIFY UNDERSCORE COMMAND DETECTED ===")
                 # Extract mode from command (e.g., "zh" from "/test_shopify_zh")
@@ -1664,6 +1659,12 @@ def telegram_webhook():
                 # Convert to format expected by handler: "/test_shopify {mode}"
                 converted_command = f"/test_shopify {mode}"
                 run_async(handle_test_shopify_command(chat_id, converted_command, msg.get('message_id')))
+                return "OK"
+            
+            # Then check general command (space-separated)
+            if text.startswith("/test_shopify"):
+                logger.info("=== TEST SHOPIFY COMMAND DETECTED ===")
+                run_async(handle_test_shopify_command(chat_id, text, msg.get('message_id')))
                 return "OK"
             
             # =================================================================
