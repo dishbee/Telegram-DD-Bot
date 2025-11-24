@@ -668,10 +668,17 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
     Handle /test_shopify command to send simulated Shopify webhook orders.
     
     Command formats:
-    - /test_shopify single      → Single vendor order (basic)
-    - /test_shopify multi       → Multi-vendor order (2-3 vendors, basic)
+    - /test_shopify single      → Single vendor order (random vendor)
+    - /test_shopify multi       → Multi-vendor order (2-3 vendors)
     - /test_shopify single all  → Single vendor with tip + note + COD
-    - /test_shopify multi all   → Multi-vendor (2-3 vendors) with tip + note + COD
+    - /test_shopify multi all   → Multi-vendor with tip + note + COD
+    - /test_shopify zh          → Zweite Heimat order
+    - /test_shopify pf          → Pommes Freunde order
+    - /test_shopify ka          → Kahaani order
+    - /test_shopify sa          → i Sapori della Toscana order
+    - /test_shopify js          → Julis Spätzlerei order
+    - /test_shopify lr          → Leckerolls order
+    - /test_shopify dd          → dean & david order
     """
     import random
     from datetime import datetime
@@ -682,17 +689,33 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
     # Parse command
     parts = command.split()
     if len(parts) < 2:
-        await safe_send_message(chat_id, "❌ Usage: `/test_shopify single` or `/test_shopify multi`", parse_mode=None)
+        await safe_send_message(chat_id, "❌ Usage: `/test_shopify single`, `/test_shopify multi`, or `/test_shopify {shortcut}`", parse_mode=None)
         return
     
     order_mode = parts[1].lower()
     include_all = len(parts) >= 3 and parts[2].lower() == "all"
     
-    if order_mode not in ["single", "multi"]:
-        await safe_send_message(chat_id, "❌ Invalid mode. Use: `single` or `multi`", parse_mode=None)
-        return
+    # Map shortcuts to full vendor names
+    shortcut_to_vendor = {
+        "zh": "Zweite Heimat",
+        "pf": "Pommes Freunde",
+        "ka": "Kahaani",
+        "sa": "i Sapori della Toscana",
+        "js": "Julis Spätzlerei",
+        "lr": "Leckerolls",
+        "dd": "dean & david"
+    }
     
-    is_multi = (order_mode == "multi")
+    # Check if it's a vendor shortcut
+    if order_mode in shortcut_to_vendor:
+        is_multi = False
+        specific_vendor = shortcut_to_vendor[order_mode]
+    elif order_mode in ["single", "multi"]:
+        is_multi = (order_mode == "multi")
+        specific_vendor = None
+    else:
+        await safe_send_message(chat_id, "❌ Invalid mode. Use: `single`, `multi`, or vendor shortcut (zh/pf/ka/sa/js/lr/dd)", parse_mode=None)
+        return
     
     # Generate order ID (incremental Shopify-style)
     global _test_shopify_counter
@@ -750,17 +773,35 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
             {"title": "Burger Classic", "price": "11.50", "qty": 1},
             {"title": "Pommes", "price": "4.50", "qty": 1},
             {"title": "Cola 0.5L", "price": "3.50", "qty": 1}
+        ],
+        "Pommes Freunde": [
+            {"title": "Pommes Classic", "price": "4.90", "qty": 1},
+            {"title": "Chili Cheese Fries", "price": "6.50", "qty": 1},
+            {"title": "Sweet Potato Fries", "price": "5.90", "qty": 1}
+        ],
+        "Kahaani": [
+            {"title": "Chicken Tikka Masala", "price": "13.90", "qty": 1},
+            {"title": "Palak Paneer", "price": "12.50", "qty": 1},
+            {"title": "Naan Bread", "price": "3.50", "qty": 2}
+        ],
+        "dean & david": [
+            {"title": "Caesar Salad", "price": "8.90", "qty": 1},
+            {"title": "Smoothie Bowl", "price": "7.50", "qty": 1},
+            {"title": "Green Juice", "price": "5.90", "qty": 1}
         ]
     }
     
     # Select vendors
     all_vendors = list(products_by_vendor.keys())
-    if is_multi:
+    if specific_vendor:
+        # Specific vendor requested via shortcut
+        selected_vendors = [specific_vendor]
+    elif is_multi:
         # Multi: 2-3 vendors
         num_vendors = random.randint(2, 3)
         selected_vendors = random.sample(all_vendors, num_vendors)
     else:
-        # Single: 1 vendor
+        # Single: 1 random vendor
         selected_vendors = [random.choice(all_vendors)]
     
     # Build line items
