@@ -130,6 +130,11 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
         if not has_confirmation:
             continue
         
+        # Filter out delivered orders - only show scheduled (new/assigned)
+        status = order_data.get("status")
+        if status == "delivered":
+            continue
+        
         # Filter by vendor if specified
         if vendor and vendor not in order_data.get("vendors", []):
             continue
