@@ -28,11 +28,12 @@ def build_scheduled_list_message(state_dict: dict, now_func) -> str:
     scheduled = []
     
     for oid, order in state_dict.items():
-        # Must have confirmed_times, not assigned, within 5 hours
+        # Must have confirmed_times, not delivered, within 5 hours
         confirmed_times = order.get("confirmed_times", {})
         if not confirmed_times:
             continue
-        if order.get("assigned_to"):
+        # Skip only delivered orders, not assigned ones
+        if order.get("status") == "delivered":
             continue
         created_at = order.get("created_at")
         if not created_at or created_at < cutoff:
