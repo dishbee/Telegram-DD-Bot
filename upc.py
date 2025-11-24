@@ -481,12 +481,8 @@ def build_assignment_message(order: dict) -> str:
         
         restaurant_section = ""
         for idx, vendor in enumerate(vendors):
-            # For Smoothr scheduled orders, show original customer-requested time
-            # For all other orders, show restaurant-confirmed time
-            if order.get("original_requested_time"):
-                pickup_time = order["original_requested_time"]
-            else:
-                pickup_time = confirmed_times.get(vendor, "ASAP")
+            # Always show restaurant-confirmed time (when courier should pick up from restaurant)
+            pickup_time = confirmed_times.get(vendor, "ASAP")
             chef_emoji = chef_emojis[idx % len(chef_emojis)]
             
             # Use vendor shortcut instead of full name

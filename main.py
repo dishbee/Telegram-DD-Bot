@@ -2001,8 +2001,7 @@ def telegram_webhook():
                                     order["rg_time_request_ids"] = {}
                                 order["rg_time_request_ids"][vendor] = rg_time_msg.message_id
                     
-                    # Update state and MDG
-                    order["requested_time"] = selected_time
+                    # Send status to MDG (DO NOT overwrite requested_time - preserves customer's original request)
                     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
                     vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper()) if vendor != 'all' else 'vendors'
                     await send_status_message(
