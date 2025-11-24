@@ -4,7 +4,7 @@ Menu command handlers for /scheduled and /assigned commands.
 Generates list messages with full street names (no truncation).
 """
 
-from datetime import timedelta
+from datetime import timedelta, datetime
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from typing import Dict, List
 
@@ -43,6 +43,14 @@ def build_scheduled_list_message(state_dict: dict, now_func) -> str:
             logger.info(f"SCHED DEBUG: Order {order_name} skipped - status is delivered")
             continue
         created_at = order.get("created_at")
+        # Convert created_at to datetime if it's a string (Shopify orders use ISO strings)
+        if isinstance(created_at, str):
+            try:
+                created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            except:
+                logger.info(f"SCHED DEBUG: Order {order_name} skipped - invalid created_at format: {created_at}")
+                continue
+        
         if not created_at or created_at < cutoff:
             logger.info(f"SCHED DEBUG: Order {order_name} skipped - outside 5h window (created_at={created_at}, cutoff={cutoff})")
             continue
