@@ -672,13 +672,9 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
     - /test_shopify multi       → Multi-vendor order (2-3 vendors)
     - /test_shopify single all  → Single vendor with tip + note + COD
     - /test_shopify multi all   → Multi-vendor with tip + note + COD
-    - /test_shopify zh          → Zweite Heimat order
-    - /test_shopify pf          → Pommes Freunde order
-    - /test_shopify ka          → Kahaani order
-    - /test_shopify sa          → i Sapori della Toscana order
-    - /test_shopify js          → Julis Spätzlerei order
-    - /test_shopify lr          → Leckerolls order
-    - /test_shopify dd          → dean & david order
+    
+    Note: For vendor-specific orders, use individual commands:
+    /test_js, /test_zh, /test_ka, /test_sa, /test_lr
     """
     import random
     from datetime import datetime
@@ -900,6 +896,278 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
         logger.info(f"✅ Test Shopify order {order_id} processing complete")
     except Exception as e:
         logger.error(f"❌ Failed to process test Shopify order: {e}")
+        logger.exception(e)
+
+
+# =============================================================================
+# TEST PF COMMAND
+# =============================================================================
+
+async def handle_test_pf_command(chat_id: int, message_id: int):
+    """
+    Handle /test_pf command to simulate PF OCR photo order.
+    
+    Generates Pommes Freunde order with 6-character Lieferando code (parsed by OCR).
+    """
+    import random
+    from datetime import timedelta, datetime
+    
+    # Delete the command message
+    await safe_delete_message(chat_id, message_id)
+    
+    # Random 6-character Lieferando code
+    order_code = ''.join(random.choices('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', k=6))
+    
+    # Random customer data
+    first_names = ["Max", "Anna", "Thomas", "Julia", "Michael", "Sarah", "Peter", "Lisa", "David", "Maria"]
+    last_names = ["Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Wagner", "Becker", "Schulz", "Hoffmann"]
+    customer_name = f"{random.choice(first_names)} {random.choice(last_names)}"
+    
+    # Random Passau addresses
+    streets = [
+        "Ludwigstraße 15",
+        "Innstraße 28",
+        "Domplatz 5",
+        "Neuburger Straße 110",
+        "Spitalhofstraße 94",
+        "Theresienstraße 32",
+        "Nikolastraße 7",
+        "Grabengasse 12",
+        "Lederergasse 8",
+        "Dr.-Hans-Kapfinger-Straße 20"
+    ]
+    street = random.choice(streets)
+    zip_code = "94032"
+    
+    # Random phone (German mobile format)
+    phone = f"+49{random.randint(150, 179)}{random.randint(1000000, 9999999)}"
+    
+    # Random delivery time (30-120 minutes from now)
+    minutes_ahead = random.randint(30, 120)
+    delivery_time = (now() + timedelta(minutes=minutes_ahead)).strftime("%H:%M")
+    
+    # Random total
+    total = f"{random.uniform(15.0, 35.0):.2f}"
+    
+    # Random note (optional)
+    notes = ["Please ring twice", "Leave at the door", "Call when you arrive", ""]
+    note = random.choice(notes)
+    
+    logger.info(f"🧪 TEST PF ORDER GENERATED:")
+    logger.info(f"   Code: {order_code}")
+    logger.info(f"   Customer: {customer_name}")
+    logger.info(f"   Time: {delivery_time}")
+    logger.info(f"   Total: {total}€")
+    
+    # Simulate OCR parsed data structure
+    from utils import get_smoothr_order_type
+    order_type, display_num = get_smoothr_order_type(order_code)
+    
+    # Create unique order ID
+    order_id = f"PF_{order_code}_{int(datetime.now().timestamp())}"
+    vendor = "Pommes Freunde"
+    
+    # Create STATE entry (following PF OCR pattern from handle_pf_photo)
+    STATE[order_id] = {
+        "order_id": order_id,
+        "name": display_num,
+        "order_type": order_type,
+        "vendors": [vendor],
+        "vendor_items": {vendor: []},
+        "customer": {
+            "name": customer_name,
+            "phone": phone,
+            "address": street,
+            "zip": zip_code
+        },
+        "total": total,
+        "note": note if note else None,
+        "is_asap": False,
+        "requested_time": delivery_time,
+        "original_requested_time": delivery_time,
+        "confirmed_time": None,
+        "confirmed_times": {},
+        "status": "new",
+        "status_history": [{"type": "new", "timestamp": now()}],
+        "assigned_to": None,
+        "mdg_message_id": None,
+        "rg_message_ids": {},
+        "vendor_expanded": {vendor: False},
+        "mdg_additional_messages": [],
+        "created_at": now(),
+    }
+    
+    # Send MDG-ORD
+    from mdg import build_mdg_dispatch_text, mdg_initial_keyboard
+    mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
+    keyboard = mdg_initial_keyboard(STATE[order_id])
+    mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard)
+    
+    if mdg_msg:
+        STATE[order_id]["mdg_message_id"] = mdg_msg.message_id
+    
+    # Send RG-SUM to PF group
+    from rg import build_vendor_summary_text, vendor_keyboard
+    rg_text = build_vendor_summary_text(STATE[order_id], vendor)
+    rg_keyboard = vendor_keyboard(order_id, vendor, expanded=False, order=STATE[order_id])
+    rg_msg = await safe_send_message(VENDOR_GROUP_MAP[vendor], rg_text, rg_keyboard)
+    
+    if rg_msg:
+        STATE[order_id]["rg_message_ids"][vendor] = rg_msg.message_id
+    
+    logger.info(f"✅ Test PF order {order_id} processed successfully")
+
+
+# =============================================================================
+# TEST VENDOR COMMAND (Shopify)
+# =============================================================================
+
+async def handle_test_vendor_command(chat_id: int, vendor: str, message_id: int):
+    """
+    Handle /test_{vendor} commands for Shopify single-vendor orders.
+    
+    Args:
+        vendor: Full vendor name (e.g., "Julis Spätzlerei")
+    """
+    import random
+    from datetime import datetime
+    
+    # Delete the command message
+    await safe_delete_message(chat_id, message_id)
+    
+    # Generate order ID
+    global _test_shopify_counter
+    if '_test_shopify_counter' not in globals():
+        _test_shopify_counter = 7404590039300
+    _test_shopify_counter += 1
+    order_id = str(_test_shopify_counter)
+    order_number = f"dishbee {order_id[-2:]}"
+    
+    # Random customer data
+    first_names = ["Max", "Anna", "Thomas", "Julia", "Michael", "Sarah", "Peter", "Lisa", "David", "Maria"]
+    last_names = ["Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Wagner", "Becker", "Schulz", "Hoffmann"]
+    customer_name = f"{random.choice(first_names)} {random.choice(last_names)}"
+    
+    # Random Passau addresses
+    addresses = [
+        {"street": "Ludwigstraße 15", "zip": "94032", "city": "Passau"},
+        {"street": "Innstraße 28", "zip": "94032", "city": "Passau"},
+        {"street": "Domplatz 5", "zip": "94032", "city": "Passau"},
+        {"street": "Neuburger Straße 110", "zip": "94036", "city": "Passau"},
+        {"street": "Spitalhofstraße 94", "zip": "94032", "city": "Passau"},
+    ]
+    address = random.choice(addresses)
+    
+    # Random phone
+    phone = f"+49{random.randint(150, 179)}{random.randint(1000000, 9999999)}"
+    
+    # Random email
+    email_domains = ["gmail.com", "web.de", "gmx.de", "outlook.com", "yahoo.de"]
+    email = f"{customer_name.split()[0].lower()}.{customer_name.split()[1].lower()}@{random.choice(email_domains)}"
+    
+    # Product templates per vendor
+    products_by_vendor = {
+        "Julis Spätzlerei": [
+            {"title": "Bergkäse", "price": "9.50", "qty": 1},
+            {"title": "Champignon-Rahm", "price": "8.50", "qty": 1},
+            {"title": "Linsen mit Spätzle", "price": "10.00", "qty": 1}
+        ],
+        "Leckerolls": [
+            {"title": "Classic", "price": "5.50", "qty": 2},
+            {"title": "Choco Dream", "price": "6.00", "qty": 1},
+            {"title": "Pistachio Love", "price": "6.50", "qty": 1}
+        ],
+        "i Sapori della Toscana": [
+            {"title": "Pizza Margherita", "price": "9.50", "qty": 1},
+            {"title": "Spaghetti Carbonara", "price": "12.90", "qty": 1},
+            {"title": "Tiramisu", "price": "5.50", "qty": 1}
+        ],
+        "Zweite Heimat": [
+            {"title": "Burger Classic", "price": "11.50", "qty": 1},
+            {"title": "Pommes", "price": "4.50", "qty": 1},
+            {"title": "Cola 0.5L", "price": "3.50", "qty": 1}
+        ],
+        "Kahaani": [
+            {"title": "Chicken Tikka Masala", "price": "13.90", "qty": 1},
+            {"title": "Palak Paneer", "price": "12.50", "qty": 1},
+            {"title": "Naan Bread", "price": "3.50", "qty": 2}
+        ]
+    }
+    
+    # Build line items for this vendor
+    line_items = []
+    vendor_items = {vendor: []}
+    total = 0.0
+    
+    vendor_products = products_by_vendor.get(vendor, [
+        {"title": "Item 1", "price": "10.00", "qty": 1},
+        {"title": "Item 2", "price": "8.50", "qty": 1}
+    ])
+    
+    # Pick 2-3 products
+    num_products = random.randint(2, min(3, len(vendor_products)))
+    selected_products = random.sample(vendor_products, num_products)
+    
+    for product in selected_products:
+        price = float(product["price"])
+        qty = product["qty"]
+        total += price * qty
+        
+        line_item = {
+            "title": product["title"],
+            "quantity": qty,
+            "price": str(price),
+            "vendor": vendor
+        }
+        line_items.append(line_item)
+        vendor_items[vendor].append(f"{qty} x {product['title']}")
+    
+    # Build Shopify webhook payload
+    webhook_payload = {
+        "id": int(order_id),
+        "name": order_number,
+        "created_at": datetime.utcnow().isoformat() + "Z",
+        "total_price": f"{total:.2f}",
+        "financial_status": "paid",
+        "customer": {
+            "first_name": customer_name.split()[0],
+            "last_name": customer_name.split()[1],
+            "phone": phone,
+            "email": email
+        },
+        "shipping_address": {
+            "address1": address["street"],
+            "city": address["city"],
+            "zip": address["zip"],
+            "country": "Germany",
+            "phone": phone
+        },
+        "billing_address": {
+            "address1": address["street"],
+            "city": address["city"],
+            "zip": address["zip"],
+            "country": "Germany",
+            "phone": phone
+        },
+        "line_items": line_items,
+        "note": None,
+        "payment_gateway_names": ["shopify_payments"],
+        "total_tip_received": "0.00"
+    }
+    
+    vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+    logger.info(f"🧪 TEST VENDOR ORDER GENERATED:")
+    logger.info(f"   Vendor: **{vendor_shortcut}**")
+    logger.info(f"   ID: {order_id} ({order_number})")
+    logger.info(f"   Customer: {customer_name}")
+    logger.info(f"   Total: {total:.2f}€")
+    
+    # Process through Shopify webhook handler
+    try:
+        run_async(process_shopify_webhook(webhook_payload))
+        logger.info(f"✅ Test vendor order {order_id} processing complete")
+    except Exception as e:
+        logger.error(f"❌ Failed to process test vendor order: {e}")
         logger.exception(e)
 
 
@@ -1628,14 +1896,14 @@ def telegram_webhook():
             chat_id = chat.get('id')
             
             # =================================================================
-            # MENU COMMANDS (scheduled, assigned)
+            # MENU COMMANDS (sched, assign)
             # =================================================================
-            if text.startswith("/scheduled"):
+            if text.startswith("/sched"):
                 logger.info("=== SCHEDULED ORDERS COMMAND ===")
                 run_async(handle_scheduled_command(chat_id, msg.get('message_id')))
                 return "OK"
             
-            if text.startswith("/assigned"):
+            if text.startswith("/assign"):
                 logger.info("=== ASSIGNED ORDERS COMMAND ===")
                 run_async(handle_assigned_command(chat_id, msg.get('message_id')))
                 return "OK"
@@ -1643,7 +1911,7 @@ def telegram_webhook():
             # =================================================================
             # TEST SMOOTHR COMMAND (anyone can trigger)
             # =================================================================
-            if text.startswith("/test_smoothr"):
+            if text.startswith("/testsm"):
                 logger.info("=== TEST SMOOTHR COMMAND DETECTED ===")
                 run_async(handle_test_smoothr_command(chat_id, text, msg.get('message_id')))
                 return "OK"
@@ -1651,22 +1919,47 @@ def telegram_webhook():
             # =================================================================
             # TEST SHOPIFY COMMAND (anyone can trigger)
             # =================================================================
-            # Check underscore commands FIRST (more specific match)
-            if text.startswith("/test_shopify_"):
-                logger.info("=== TEST SHOPIFY UNDERSCORE COMMAND DETECTED ===")
-                # Extract mode from command (e.g., "zh" from "/test_shopify_zh")
-                mode = text.replace("/test_shopify_", "").split()[0].split("@")[0]
-                # Convert to format expected by handler: "/test_shopify {mode}"
-                converted_command = f"/test_shopify {mode}"
-                run_async(handle_test_shopify_command(chat_id, converted_command, msg.get('message_id')))
-                return "OK"
-            
-            # Then check general command (space-separated)
-            if text.startswith("/test_shopify"):
+            if text.startswith("/testsh"):
                 logger.info("=== TEST SHOPIFY COMMAND DETECTED ===")
                 run_async(handle_test_shopify_command(chat_id, text, msg.get('message_id')))
                 return "OK"
-            
+
+            # =================================================================
+            # TEST PF COMMAND (anyone can trigger)
+            # =================================================================
+            if text.startswith("/testpf"):
+                logger.info("=== TEST PF COMMAND DETECTED ===")
+                run_async(handle_test_pf_command(chat_id, msg.get('message_id')))
+                return "OK"
+
+            # =================================================================
+            # TEST VENDOR COMMANDS (anyone can trigger)
+            # =================================================================
+            if text.startswith("/testjs"):
+                logger.info("=== TEST JS COMMAND DETECTED ===")
+                run_async(handle_test_vendor_command(chat_id, "Julis Spätzlerei", msg.get('message_id')))
+                return "OK"
+
+            if text.startswith("/testzh"):
+                logger.info("=== TEST ZH COMMAND DETECTED ===")
+                run_async(handle_test_vendor_command(chat_id, "Zweite Heimat", msg.get('message_id')))
+                return "OK"
+
+            if text.startswith("/testka"):
+                logger.info("=== TEST KA COMMAND DETECTED ===")
+                run_async(handle_test_vendor_command(chat_id, "Kahaani", msg.get('message_id')))
+                return "OK"
+
+            if text.startswith("/testsa"):
+                logger.info("=== TEST SA COMMAND DETECTED ===")
+                run_async(handle_test_vendor_command(chat_id, "i Sapori della Toscana", msg.get('message_id')))
+                return "OK"
+
+            if text.startswith("/testlr"):
+                logger.info("=== TEST LR COMMAND DETECTED ===")
+                run_async(handle_test_vendor_command(chat_id, "Leckerolls", msg.get('message_id')))
+                return "OK"
+
             # =================================================================
             # SMOOTHR ORDER DETECTION
             # =================================================================
