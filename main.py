@@ -98,6 +98,10 @@ PF_RG_CHAT_ID = int(os.environ.get("PF_RG_CHAT_ID", "-4955033989"))
 # Format: {"Restaurant Name": user_id} - user_id of restaurant's Telegram account
 RESTAURANT_ACCOUNTS: Dict[str, int] = json.loads(os.environ.get("RESTAURANT_ACCOUNTS", "{}"))
 
+# Render API configuration for log fetching
+RENDER_API_KEY = os.environ.get("RENDER_API_KEY", "rnd_7AT2OkbYomjMCx6xFshxJDIXsW8z")
+RENDER_SERVICE_ID = "srv-ctbnhd08fa8c739kiqr0"
+
 # --- CONSTANTS AND MAPPINGS ---
 # Restaurant shortcut mapping (per assignment in Doc)
 RESTAURANT_SHORTCUTS = {
@@ -1820,6 +1824,98 @@ def health_check():
         "orders_in_state": len(STATE),
         "timestamp": now().isoformat()
     }), 200
+
+
+@app.route("/logs/<int:hours>", methods=["GET"])
+def get_logs(hours):
+    """
+    Fetch Render logs and return as downloadable .txt file.
+    
+    Usage: GET /logs/24 - fetches last 24 hours
+    
+    Returns:
+        200: File download with logs
+        500: Error fetching logs
+    """
+    try:
+        # Calculate time range
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(hours=hours)
+        
+        current_start = start_time.isoformat() + "Z"
+        current_end = end_time.isoformat() + "Z"
+        
+        all_logs = []
+        page = 1
+        has_more = True
+        
+        headers = {
+            "Authorization": f"Bearer {RENDER_API_KEY}",
+            "Accept": "application/json"
+        }
+        
+        # Paginate through all logs
+        while has_more:
+            url = "https://api.render.com/v1/logs"
+            params = {
+                "serviceId": RENDER_SERVICE_ID,
+                "startTime": current_start,
+                "endTime": current_end,
+                "limit": 1000
+            }
+            
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            logs = data.get("logs", [])
+            has_more = data.get("hasMore", False)
+            
+            all_logs.extend(logs)
+            
+            if has_more and "nextStartTime" in data and "nextEndTime" in data:
+                current_start = data["nextStartTime"]
+                current_end = data["nextEndTime"]
+                page += 1
+            else:
+                has_more = False
+        
+        # Format logs as text
+        lines = []
+        lines.append("=" * 80)
+        lines.append(f"Render Logs - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        lines.append(f"Service ID: {RENDER_SERVICE_ID}")
+        lines.append(f"Time range: Last {hours} hours")
+        lines.append(f"Total entries: {len(all_logs)}")
+        lines.append("=" * 80)
+        lines.append("")
+        
+        for log in all_logs:
+            timestamp = log.get("timestamp", "")
+            message = log.get("message", "")
+            
+            if timestamp:
+                try:
+                    dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                    formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    formatted_time = timestamp
+                lines.append(f"[{formatted_time}] {message}")
+            else:
+                lines.append(message)
+        
+        # Return as downloadable file
+        from flask import Response
+        filename = f"render_logs_{datetime.utcnow().strftime('%Y-%m-%d_%H-%M')}.txt"
+        return Response(
+            "\n".join(lines),
+            mimetype="text/plain",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"Error fetching logs: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/smoothr", methods=["POST"])
