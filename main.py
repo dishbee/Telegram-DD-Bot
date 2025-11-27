@@ -28,6 +28,7 @@ import requests  # Add this for synchronous HTTP calls
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Dict, Any, List, Optional
+import shutil
 from flask import Flask, request, jsonify
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 import tempfile
@@ -124,6 +125,88 @@ bot = Bot(token=BOT_TOKEN, request=request_cfg)
 # --- GLOBAL STATE ---
 STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
+
+# --- STATE PERSISTENCE ---
+STATE_FILE = "state.json"
+
+def save_state():
+    """
+    Save STATE to JSON file atomically.
+    Uses temp file + rename for atomic write safety.
+    """
+    try:
+        # Create temp file in same directory as target (required for atomic rename)
+        fd, temp_path = tempfile.mkstemp(dir=".", suffix=".tmp", prefix="state_")
+        
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            # Convert datetime objects to ISO strings for JSON serialization
+            serializable_state = {}
+            for order_id, order_data in STATE.items():
+                serializable_order = {}
+                for key, value in order_data.items():
+                    if isinstance(value, datetime):
+                        serializable_order[key] = value.isoformat()
+                    elif isinstance(value, list):
+                        # Handle status_history with datetime timestamps
+                        serializable_list = []
+                        for item in value:
+                            if isinstance(item, dict):
+                                serializable_item = {}
+                                for k, v in item.items():
+                                    serializable_item[k] = v.isoformat() if isinstance(v, datetime) else v
+                                serializable_list.append(serializable_item)
+                            else:
+                                serializable_list.append(item)
+                        serializable_order[key] = serializable_list
+                    else:
+                        serializable_order[key] = value
+                serializable_state[order_id] = serializable_order
+            
+            json.dump(serializable_state, f, indent=2, ensure_ascii=False)
+        
+        # Atomic rename (OS-level guarantee)
+        shutil.move(temp_path, STATE_FILE)
+        logger.info(f"💾 STATE saved ({len(STATE)} orders)")
+    except Exception as e:
+        logger.error(f"Failed to save STATE: {e}")
+        # Clean up temp file if rename failed
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except:
+            pass
+
+def load_state():
+    """Load STATE from JSON file on startup."""
+    global STATE
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                STATE = json.load(f)
+            
+            # Convert ISO strings back to datetime objects
+            for order_id, order_data in STATE.items():
+                for key, value in order_data.items():
+                    if isinstance(value, str) and "T" in value:  # ISO datetime string
+                        try:
+                            order_data[key] = datetime.fromisoformat(value)
+                        except:
+                            pass  # Not a datetime, leave as string
+                    elif isinstance(value, list):
+                        # Handle status_history with datetime timestamps
+                        for item in value:
+                            if isinstance(item, dict):
+                                for k, v in item.items():
+                                    if isinstance(v, str) and "T" in v:
+                                        try:
+                                            item[k] = datetime.fromisoformat(v)
+                                        except:
+                                            pass
+            
+            logger.info(f"📂 STATE loaded ({len(STATE)} orders)")
+    except Exception as e:
+        logger.error(f"Failed to load STATE: {e}")
+        STATE = {}  # Fallback to empty
 
 # --- RESTAURANT COMMUNICATION TRACKING ---
 # Track forwarded messages from restaurants to MDG for reply functionality
@@ -1347,6 +1430,9 @@ async def process_shopify_webhook(payload: dict):
         
         logger.info(f"✅ Shopify order {order_id} processed successfully")
         
+        # Save STATE after processing
+        save_state()
+        
     except Exception as e:
         logger.error(f"❌ Error processing Shopify webhook: {e}")
         logger.exception(e)
@@ -1458,6 +1544,9 @@ async def process_smoothr_order(smoothr_data: dict):
             logger.warning(f"No vendor_chat_id found for {vendor}, Smoothr order {order_id}")
         
         logger.info(f"✅ Smoothr order {order_id} processed successfully")
+        
+        # Save STATE after processing
+        save_state()
     
     except Exception as e:
         logger.error(f"❌ Error processing Smoothr order: {e}")
@@ -1583,6 +1672,9 @@ async def handle_pf_photo(message: dict):
         # Send alert to MDG
         alert_msg = f"❌ **PF Photo Processing Error**\n\nFailed to process photo from Pommes Freunde.\n\nError: {str(e)[:200]}"
         await safe_send_message(DISPATCH_MAIN_CHAT_ID, alert_msg)
+    finally:
+        # Save STATE after processing (whether success or failure)
+        save_state()
 
 
 async def cleanup_mdg_messages(order_id: str):
@@ -4196,6 +4288,9 @@ def telegram_webhook():
             
             except Exception as e:
                 logger.error(f"Callback processing error: {e}")
+            finally:
+                # Save STATE after callback processing
+                save_state()
         
         # Run the async handler in background
         run_async(handle())
@@ -4451,6 +4546,9 @@ def shopify_webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     logger.info(f"Starting Complete Assignment Implementation on port {port}")
+    
+    # Load STATE from file
+    load_state()
     
     # Start the event loop in a separate thread
     def run_event_loop():
