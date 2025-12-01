@@ -40,7 +40,8 @@ RESTAURANT_SHORTCUTS = {
     "Leckerolls": "LR",
     "dean & david": "DD",
     "Pommes Freunde": "PF",
-    "Wittelsbacher Apotheke": "AP"
+    "Wittelsbacher Apotheke": "AP",
+    "Safi": "SF"
 }
 
 # Google Maps API key for district detection (optional)

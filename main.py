@@ -28,7 +28,6 @@ import requests  # Add this for synchronous HTTP calls
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Dict, Any, List, Optional
-import shutil
 from flask import Flask, request, jsonify
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 import tempfile
@@ -109,6 +108,7 @@ RESTAURANT_SHORTCUTS = {
     "dean & david": "DD",
     "Pommes Freunde": "PF",
     "Wittelsbacher Apotheke": "AP",
+    "Safi": "SF",
 }
 
 # --- TELEGRAM BOT CONFIGURATION ---
@@ -2011,6 +2011,11 @@ def telegram_webhook():
             if text.startswith("/testlr"):
                 logger.info("=== TEST LR COMMAND DETECTED ===")
                 run_async(handle_test_vendor_command(chat_id, "Leckerolls", msg.get('message_id')))
+                return "OK"
+
+            if text.startswith("/testsf"):
+                logger.info("=== TEST SF COMMAND DETECTED ===")
+                run_async(handle_test_vendor_command(chat_id, "Safi", msg.get('message_id')))
                 return "OK"
 
             # =================================================================
