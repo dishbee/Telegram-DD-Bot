@@ -598,8 +598,14 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
 def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build MDG time request buttons per assignment requirements. Includes Details button."""
     try:
+        logger.info(f"MDG-KB-DEBUG: Building keyboard for order_id={order_id}")
+        logger.info(f"MDG-KB-DEBUG: STATE has {len(STATE)} orders, keys={list(STATE.keys())[:10]}")
+        
         order = STATE.get(order_id)
+        logger.info(f"MDG-KB-DEBUG: order lookup result: {order is not None}")
+        
         if not order:
+            logger.warning(f"MDG-KB-DEBUG: Order {order_id} NOT FOUND in STATE! Returning fallback keyboard")
             return InlineKeyboardMarkup([
                 [InlineKeyboardButton("Details ▸", callback_data=f"mdg_toggle|{order_id}|{int(now().timestamp())}")],
                 [InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}")],
@@ -607,6 +613,7 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
             ])
 
         vendors = order.get("vendors", [])
+        logger.info(f"MDG-KB-DEBUG: Retrieved vendors={vendors}, len={len(vendors)}, type={type(vendors)}")
         order.setdefault("mdg_expanded", False)  # Track expansion state
         
         is_expanded = order.get("mdg_expanded", False)
