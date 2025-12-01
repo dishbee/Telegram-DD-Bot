@@ -157,11 +157,12 @@ def load_state():
     try:
         redis_orders = redis_get_all_orders()
         if redis_orders:
-            STATE = redis_orders
+            STATE.clear()
+            STATE.update(redis_orders)
             logger.info(f"📂 Redis: Loaded {len(STATE)} orders")
         else:
             logger.info("📂 Redis: No existing orders found (starting fresh)")
-            STATE = {}
+            STATE.clear()
     except Exception as e:
         logger.error(f"Failed to load STATE from Redis: {e}")
         STATE = {}  # Fallback to empty
