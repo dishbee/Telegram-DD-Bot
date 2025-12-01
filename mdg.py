@@ -289,11 +289,27 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         # Build title line (NO "dishbee" in order number line)
         title = f"🔖 {order_num}"
         
-        # Add scheduled delivery time for Smoothr orders (if not ASAP)
+        # Add scheduled delivery date/time for Smoothr orders (if not ASAP)
         is_asap = order.get("is_asap", True)
         requested_time = order.get("requested_time")
-        if not is_asap and requested_time:
-            title += f"\n⏰ {requested_time}"
+        if not is_asap and requested_time and order_type.startswith("smoothr_"):
+            # Check if order is for a different date than today
+            order_datetime = order.get("created_at")  # Full datetime from parser
+            if order_datetime and hasattr(order_datetime, 'date'):
+                from datetime import datetime
+                order_date = order_datetime.date()
+                today = datetime.now().date()
+                
+                if order_date != today:
+                    # Future date order - show date AND time
+                    title += f"\n🗓️ {order_datetime.strftime('%d.%m.%Y')}"
+                    title += f"\n⏰ {requested_time}"
+                else:
+                    # Same day order - show time only
+                    title += f"\n⏰ {requested_time}"
+            else:
+                # Fallback: no datetime info, show time only
+                title += f"\n⏰ {requested_time}"
 
         # Build vendor line with product counts (works for both Shopify and Smoothr)
         vendor_items = order.get("vendor_items", {})
