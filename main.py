@@ -126,86 +126,44 @@ bot = Bot(token=BOT_TOKEN, request=request_cfg)
 STATE: Dict[str, Dict[str, Any]] = {}
 RECENT_ORDERS: List[Dict[str, Any]] = []
 
-# --- STATE PERSISTENCE ---
-STATE_FILE = "state.json"
+# --- STATE PERSISTENCE (Redis) ---
+from redis_state import (
+    redis_save_order,
+    redis_get_order,
+    redis_get_all_orders,
+    redis_get_order_count,
+    redis_delete_order
+)
 
 def save_state():
     """
-    Save STATE to JSON file atomically.
-    Uses temp file + rename for atomic write safety.
+    Save STATE to Redis.
+    Saves each order individually for atomic updates.
     """
     try:
-        # Create temp file in same directory as target (required for atomic rename)
-        fd, temp_path = tempfile.mkstemp(dir=".", suffix=".tmp", prefix="state_")
+        success_count = 0
+        for order_id, order_data in STATE.items():
+            if redis_save_order(order_id, order_data):
+                success_count += 1
         
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            # Convert datetime objects to ISO strings for JSON serialization
-            serializable_state = {}
-            for order_id, order_data in STATE.items():
-                serializable_order = {}
-                for key, value in order_data.items():
-                    if isinstance(value, datetime):
-                        serializable_order[key] = value.isoformat()
-                    elif isinstance(value, list):
-                        # Handle status_history with datetime timestamps
-                        serializable_list = []
-                        for item in value:
-                            if isinstance(item, dict):
-                                serializable_item = {}
-                                for k, v in item.items():
-                                    serializable_item[k] = v.isoformat() if isinstance(v, datetime) else v
-                                serializable_list.append(serializable_item)
-                            else:
-                                serializable_list.append(item)
-                        serializable_order[key] = serializable_list
-                    else:
-                        serializable_order[key] = value
-                serializable_state[order_id] = serializable_order
-            
-            json.dump(serializable_state, f, indent=2, ensure_ascii=False)
-        
-        # Atomic rename (OS-level guarantee)
-        shutil.move(temp_path, STATE_FILE)
-        logger.info(f"💾 STATE saved ({len(STATE)} orders)")
+        if success_count > 0:
+            logger.info(f"💾 Redis: Saved {success_count}/{len(STATE)} orders")
     except Exception as e:
-        logger.error(f"Failed to save STATE: {e}")
-        # Clean up temp file if rename failed
-        try:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-        except:
-            pass
+        logger.error(f"Failed to save STATE to Redis: {e}")
 
 def load_state():
-    """Load STATE from JSON file on startup."""
+    """Load STATE from Redis on startup."""
     global STATE
     try:
-        if os.path.exists(STATE_FILE):
-            with open(STATE_FILE, 'r', encoding='utf-8') as f:
-                STATE = json.load(f)
-            
-            # Convert ISO strings back to datetime objects
-            for order_id, order_data in STATE.items():
-                for key, value in order_data.items():
-                    if isinstance(value, str) and "T" in value:  # ISO datetime string
-                        try:
-                            order_data[key] = datetime.fromisoformat(value)
-                        except:
-                            pass  # Not a datetime, leave as string
-                    elif isinstance(value, list):
-                        # Handle status_history with datetime timestamps
-                        for item in value:
-                            if isinstance(item, dict):
-                                for k, v in item.items():
-                                    if isinstance(v, str) and "T" in v:
-                                        try:
-                                            item[k] = datetime.fromisoformat(v)
-                                        except:
-                                            pass
-            
-            logger.info(f"📂 STATE loaded ({len(STATE)} orders)")
+        redis_orders = redis_get_all_orders()
+        if redis_orders:
+            STATE = redis_orders
+            logger.info(f"📂 Redis: Loaded {len(STATE)} orders")
+        else:
+            logger.info("📂 Redis: No existing orders found (starting fresh)")
+            STATE = {}
     except Exception as e:
-        logger.error(f"Failed to load STATE: {e}")
+        logger.error(f"Failed to load STATE from Redis: {e}")
         STATE = {}  # Fallback to empty
 
 # --- RESTAURANT COMMUNICATION TRACKING ---
@@ -1814,10 +1772,13 @@ async def forward_mdg_reply_to_restaurant(from_user: Dict[str, Any], reply_text:
 @app.route("/", methods=["GET"])
 def health_check():
     """Health check endpoint for monitoring"""
+    redis_count = redis_get_order_count()
     return jsonify({
         "status": "healthy",
         "service": "telegram-dispatch-bot",
-        "orders_in_state": len(STATE),
+        "orders_in_memory": len(STATE),
+        "orders_in_redis": redis_count,
+        "redis_connected": redis_count >= 0,
         "timestamp": now().isoformat()
     }), 200
 
