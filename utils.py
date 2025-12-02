@@ -730,6 +730,14 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
     
     # === RG STATUS LINES ===
     elif message_type == "rg":
+        # Extract order number for display in status line (Shopify only)
+        order_type = order.get("order_type", "shopify")
+        order_num = ""
+        if order_type == "shopify":
+            # Shopify: last 2 digits
+            order_num = f" (# {order.get('name', '')[-2:]})" if len(order.get('name', '')) >= 2 else ""
+        # DD/PF orders: no order number in status (keep original format)
+        
         # For RG messages with vendor parameter, filter status_history to vendor-specific statuses
         if vendor:
             # Find latest status matching this vendor (for asap_sent, time_sent, confirmed)
@@ -738,27 +746,27 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
             if not vendor_statuses:
                 # No vendor-specific status yet, fall back to "new" if it exists
                 if status_type == "new":
-                    return "🚨 New order\n\n"
+                    return f"🚨 New order{order_num}\n\n"
                 return ""
             latest = vendor_statuses[-1]
             status_type = latest.get("type")
         
         if status_type == "new":
-            return "🚨 New order\n\n"
+            return f"🚨 New order{order_num}\n\n"
         
         elif status_type == "asap_sent":
-            return "⚡ Asap?\n\n"
+            return f"⚡ Asap?{order_num}\n\n"
         
         elif status_type == "time_sent":
             time = latest.get("time", "")
-            return f"🕒 {time}?\n\n"
+            return f"🕒 {time}?{order_num}\n\n"
         
         elif status_type == "confirmed":
             time = latest.get("time", "")
-            return f"🔔 Prepare at {time}\n\n"
+            return f"🔔 Prepare at {time}{order_num}\n\n"
         
         elif status_type == "delivered":
-            return "✅ Delivered\n\n"
+            return f"✅ Delivered{order_num}\n\n"
     
     # === UPC STATUS LINES ===
     elif message_type == "upc":
