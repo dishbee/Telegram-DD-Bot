@@ -461,9 +461,9 @@ def build_assignment_message(order: dict) -> str:
                 if entry.get("type") == "delivered" and "time" in entry:
                     delivery_time = entry["time"]
                     break
-            status_text = f"✅ Delivered: {delivery_time}" if delivery_time else "✅ Delivered"
+            status_text = f"✅ Delivered: {delivery_time}\n" if delivery_time else "✅ Delivered\n"
         elif "👇 Assigned order" in status_text:
-            status_text = f"👇 Assigned order #{order_num}"
+            status_text = f"👇 Assigned order #{order_num}\n"
         
         # Add separator line after status (with blank line after)
         separator = "────────────────\n\n"
@@ -648,6 +648,13 @@ def problem_options_keyboard(order_id: str) -> InlineKeyboardMarkup:
                 callback_data=f"call_vendor|{order_id}|{vendor}"
             )
             buttons.append([call_btn])
+        
+        # Back button
+        back_btn = InlineKeyboardButton(
+            "← Back",
+            callback_data="hide"
+        )
+        buttons.append([back_btn])
         
         return InlineKeyboardMarkup(buttons)
     
