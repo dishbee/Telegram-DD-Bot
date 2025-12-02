@@ -203,19 +203,10 @@ def validate_phone(phone: str) -> Optional[str]:
 def should_use_address_format(order: Dict, vendor: Optional[str] = None) -> bool:
     """
     Check if RG-TIME-REQ message should use address format.
-    Returns True for dean & david and Pommes Freunde orders only.
+    Returns True for all vendors (unified format).
     """
-    if vendor:
-        return vendor in ["dean & david", "Pommes Freunde"]
-    
-    # Check order type (Smoothr orders)
-    order_type = order.get("order_type", "")
-    if order_type in ["smoothr_dnd", "smoothr_lieferando"]:
-        return True
-    
-    # Check if any vendor is DD or PF
-    vendors = order.get("vendors", [])
-    return "dean & david" in vendors or "Pommes Freunde" in vendors
+    # All vendors now use address format
+    return True
 
 
 def get_street_address(order: Dict) -> str:
@@ -2179,21 +2170,14 @@ def telegram_webhook():
                         else:
                             order_num = order['name']  # Smoothr: use full order number (TD, 500, etc.)
                         
-                        # Format message based on vendor type
-                        if should_use_address_format(order, vendor):
-                            street = get_street_address(order)
-                            if street and order_num:
-                                msg = f"Can you prepare 🗺️ {street} (🔖 {order_num}) ⚡ Asap?"
-                            elif order_num:
-                                msg = f"Can you prepare 🔖 {order_num} ⚡ Asap?"
-                            else:
-                                msg = f"Can you prepare *{street}* ⚡ Asap?"
+                        # Format message with street address and order number
+                        street = get_street_address(order)
+                        if street and order_num:
+                            msg = f"Can you prepare 🗺️ {street} (# {order_num}) ⚡ Asap?"
+                        elif order_num:
+                            msg = f"Can you prepare (# {order_num}) ⚡ Asap?"
                         else:
-                            if order_num:
-                                msg = f"Can you prepare 🔖 {order_num} ⚡ Asap?"
-                            else:
-                                addr = order['customer']['address'].split(',')[0]
-                                msg = f"Can you prepare *{addr}* ⚡ Asap?"
+                            msg = f"Can you prepare *{street}* ⚡ Asap?"
                         
                         # Send with restaurant response buttons
                         rg_time_msg = await safe_send_message(
@@ -2374,24 +2358,19 @@ def telegram_webhook():
                     else:
                         # Multi-vendor - send to specific vendor
                         if vendor_chat:
-                            # Format message based on vendor type
-                            if should_use_address_format(order, vendor):
-                                street = get_street_address(order)
-                                if order["order_type"] == "shopify":
-                                    order_num = order['name'][-2:]
-                                else:
-                                    order_num = order.get("name", "Unknown")
-                                
-                                if street and order_num:
-                                    msg = f"Can you prepare 🗺️ {street} (🔖 {order_num}) at {selected_time}?"
-                                else:
-                                    msg = f"Can you prepare 🔖 {order_num} at {selected_time}?"
+                            # Format message with street address and order number
+                            street = get_street_address(order)
+                            if order["order_type"] == "shopify":
+                                order_num = order['name'][-2:]
                             else:
-                                if order["order_type"] == "shopify":
-                                    msg = f"Can you prepare 🔖 {order['name'][-2:]} at {selected_time}?"
-                                else:
-                                    order_num = order.get("name", "Unknown")
-                                    msg = f"Can you prepare 🔖 {order_num} at {selected_time}?"
+                                order_num = order.get("name", "Unknown")
+                            
+                            if street and order_num:
+                                msg = f"Can you prepare 🗺️ {street} (# {order_num}) at 🕒 {selected_time}?"
+                            elif order_num:
+                                msg = f"Can you prepare (# {order_num}) at 🕒 {selected_time}?"
+                            else:
+                                msg = f"Can you prepare *{street}* at 🕒 {selected_time}?"
                             
                             rg_time_msg = await safe_send_message(
                                 vendor_chat,
@@ -2465,21 +2444,14 @@ def telegram_webhook():
                             else:
                                 order_num = order['name']  # Smoothr: use full order number (TD, 500, etc.)
                             
-                            # Format message based on vendor type
-                            if should_use_address_format(order, vendor):
-                                street = get_street_address(order)
-                                if street and order_num:
-                                    msg = f"Can you prepare 🗺️ {street} (🔖 {order_num}) ⚡ Asap?"
-                                elif order_num:
-                                    msg = f"Can you prepare 🔖 {order_num} ⚡ Asap?"
-                                else:
-                                    msg = f"Can you prepare *{street}* ⚡ Asap?"
+                            # Format message with street address and order number
+                            street = get_street_address(order)
+                            if street and order_num:
+                                msg = f"Can you prepare 🗺️ {street} (# {order_num}) ⚡ Asap?"
+                            elif order_num:
+                                msg = f"Can you prepare (# {order_num}) ⚡ Asap?"
                             else:
-                                if order_num:
-                                    msg = f"Can you prepare 🔖 {order_num} ⚡ Asap?"
-                                else:
-                                    addr = order['customer']['address'].split(',')[0]
-                                    msg = f"Can you prepare *{addr}* ⚡ Asap?"
+                                msg = f"Can you prepare *{street}* ⚡ Asap?"
                             
                             # ASAP request buttons
                             rg_time_msg = await safe_send_message(
@@ -2648,24 +2620,19 @@ def telegram_webhook():
                         # Multi-vendor: send to specific vendor only
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
-                            # Format message based on vendor type
-                            if should_use_address_format(order, vendor):
-                                street = get_street_address(order)
-                                if order["order_type"] == "shopify":
-                                    order_num = order['name'][-2:]
-                                else:
-                                    order_num = order.get("name", "Unknown")
-                                
-                                if street and order_num:
-                                    msg = f"Can you prepare 🗺️ {street} (🔖 {order_num}) at {requested_time}?"
-                                else:
-                                    msg = f"Can you prepare 🔖 {order_num} at {requested_time}?"
+                            # Format message with street address and order number
+                            street = get_street_address(order)
+                            if order["order_type"] == "shopify":
+                                order_num = order['name'][-2:]
                             else:
-                                if order["order_type"] == "shopify":
-                                    msg = f"Can you prepare 🔖 {order['name'][-2:]} at {requested_time}?"
-                                else:
-                                    order_num = order.get("name", "Unknown")
-                                    msg = f"Can you prepare 🔖 {order_num} at {requested_time}?"
+                                order_num = order.get("name", "Unknown")
+                            
+                            if street and order_num:
+                                msg = f"Can you prepare 🗺️ {street} (# {order_num}) at 🕒 {requested_time}?"
+                            elif order_num:
+                                msg = f"Can you prepare (# {order_num}) at 🕒 {requested_time}?"
+                            else:
+                                msg = f"Can you prepare *{street}* at 🕒 {requested_time}?"
                             
                             rg_time_msg = await safe_send_message(
                                 vendor_chat,
@@ -2683,24 +2650,19 @@ def telegram_webhook():
                         for vendor in order["vendors"]:
                             vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                             if vendor_chat:
-                                # Format message based on vendor type
-                                if should_use_address_format(order, vendor):
-                                    street = get_street_address(order)
-                                    if order["order_type"] == "shopify":
-                                        order_num = order['name'][-2:]
-                                    else:
-                                        order_num = order.get("name", "Unknown")
-                                    
-                                    if street and order_num:
-                                        msg = f"Can you prepare 🗺️ {street} (🔖 {order_num}) at {requested_time}?"
-                                    else:
-                                        msg = f"Can you prepare 🔖 {order_num} at {requested_time}?"
+                                # Format message with street address and order number
+                                street = get_street_address(order)
+                                if order["order_type"] == "shopify":
+                                    order_num = order['name'][-2:]
                                 else:
-                                    if order["order_type"] == "shopify":
-                                        msg = f"Can you prepare 🔖 {order['name'][-2:]} at {requested_time}?"
-                                    else:
-                                        order_num = order.get("name", "Unknown")
-                                        msg = f"Can you prepare 🔖 {order_num} at {requested_time}?"
+                                    order_num = order.get("name", "Unknown")
+                                
+                                if street and order_num:
+                                    msg = f"Can you prepare 🗺️ {street} (# {order_num}) at 🕒 {requested_time}?"
+                                elif order_num:
+                                    msg = f"Can you prepare (# {order_num}) at 🕒 {requested_time}?"
+                                else:
+                                    msg = f"Can you prepare *{street}* at 🕒 {requested_time}?"
                                 
                                 rg_time_msg = await safe_send_message(
                                     vendor_chat,
@@ -2827,17 +2789,16 @@ def telegram_webhook():
                     for vendor in vendors_to_notify:
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
-                            # Format message based on vendor type
-                            if should_use_address_format(order, vendor):
-                                current_street = get_street_address(order)
-                                ref_street = get_street_address(ref_order)
-                                
-                                if current_street and ref_street and order_num and ref_num:
-                                    msg = f"Can you also prepare 🗺️ {current_street} (🔖 {order_num}) at {ref_time} together with 🗺️ {ref_street} (🔖 {ref_num})?"
-                                else:
-                                    msg = f"Can you also prepare 🔖 {order_num} at {ref_time} together with 🔖 {ref_num}?"
+                            # Format message with street address and order number
+                            current_street = get_street_address(order)
+                            ref_street = get_street_address(ref_order)
+                            
+                            if current_street and ref_street and order_num and ref_num:
+                                msg = f"Can you also prepare 🗺️ {current_street} (# {order_num}) at 🕒 {ref_time} together with 🗺️ {ref_street} (# {ref_num})?"
+                            elif order_num and ref_num:
+                                msg = f"Can you also prepare (# {order_num}) at 🕒 {ref_time} together with (# {ref_num})?"
                             else:
-                                msg = f"Can you also prepare 🔖 {order_num} at {ref_time} together with 🔖 {ref_num}?"
+                                msg = f"Can you also prepare at 🕒 {ref_time}?"
                             
                             rg_time_msg = await safe_send_message(
                                 vendor_chat,
@@ -2912,15 +2873,14 @@ def telegram_webhook():
                     for vendor in vendors_to_notify:
                         vendor_chat = VENDOR_GROUP_MAP.get(vendor)
                         if vendor_chat:
-                            # Format message based on vendor type
-                            if should_use_address_format(order, vendor):
-                                street = get_street_address(order)
-                                if street and order_num:
-                                    msg = f"Can you prepare 🗺️ {street} (🔖 {order_num}) at {requested_time}?"
-                                else:
-                                    msg = f"Can you prepare 🔖 {order_num} at {requested_time}?"
+                            # Format message with street address and order number
+                            street = get_street_address(order)
+                            if street and order_num:
+                                msg = f"Can you prepare 🗺️ {street} (# {order_num}) at 🕒 {requested_time}?"
+                            elif order_num:
+                                msg = f"Can you prepare (# {order_num}) at 🕒 {requested_time}?"
                             else:
-                                msg = f"Can you prepare 🔖 {order_num} at {requested_time}?"
+                                msg = f"Can you prepare *{street}* at 🕒 {requested_time}?"
                             
                             rg_time_msg = await safe_send_message(
                                 vendor_chat,
