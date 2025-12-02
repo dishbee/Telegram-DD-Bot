@@ -139,15 +139,22 @@ def parse_pf_order(ocr_text: str) -> dict:
                      bestellung_match.start() if bestellung_match else len(text_after_order))
     customer_search_text = text_after_order[:search_end]
     
-    # Find first line with proper German name (capitalized, 2+ words)
-    # Handles: "Max Müller", "Anna-Maria Schmidt", "Jean-Claude König" (on same line only)
+    # Find first line with proper German name (2+ words, case-insensitive)
+    # Handles: "Max Müller", "david stowasser", "Anna-Maria Schmidt"
+    # EXCLUDE street patterns (word + number like "Innstraße 79a")
     customer_match = re.search(
-        r'\n\s*([A-ZÄÖÜ][a-zäöüß\-]+(?:[ \t]+[A-ZÄÖÜ][a-zäöüß\-]+)+)',
-        customer_search_text
+        r'\n\s*([A-ZÄÖÜa-zäöüß][a-zäöüß\-]+(?:[ \t]+[A-ZÄÖÜa-zäöüß][a-zäöüß\-]+)+)',
+        customer_search_text,
+        re.IGNORECASE
     )
-    # Fallback: Accept single word names (3+ chars, capitalized)
+    
+    # Filter out street patterns (contains digits after word)
+    if customer_match and re.search(r'\d', customer_match.group(1)):
+        customer_match = None
+    
+    # Fallback: Accept single word names (3+ chars, case-insensitive)
     if not customer_match:
-        customer_match = re.search(r'\n\s*([A-ZÄÖÜ][a-zäöüß]{2,})', customer_search_text)
+        customer_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][a-zäöüß]{2,})', customer_search_text, re.IGNORECASE)
     
     if not customer_match:
         raise ParseError("Customer name not found")
