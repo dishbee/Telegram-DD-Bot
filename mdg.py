@@ -286,10 +286,8 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             # Smoothr: use full display number (already formatted by parser)
             order_num = order.get('name', 'Order')
 
-        # Build title line (NO "dishbee" in order number line)
-        title = f"🔖 {order_num}"
-        
-        # Add scheduled delivery date/time for Smoothr orders (if not ASAP)
+        # Build scheduled delivery date/time line for Smoothr orders (if not ASAP)
+        datetime_line = ""
         is_asap = order.get("is_asap", True)
         requested_time = order.get("requested_time")
         if not is_asap and requested_time and order_type.startswith("smoothr_"):
@@ -311,14 +309,13 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 
                 if order_date != today:
                     # Future date order - show date AND time
-                    title += f"\n🗓️ {order_datetime.strftime('%d.%m.%Y')}"
-                    title += f"\n⏰ {requested_time}"
+                    datetime_line = f"🗓️ {order_datetime.strftime('%d.%m.%Y')} ⏰ {requested_time}\n"
                 else:
                     # Same day order - show time only
-                    title += f"\n⏰ {requested_time}"
+                    datetime_line = f"⏰ {requested_time}\n"
             else:
                 # Fallback: no datetime info, show time only
-                title += f"\n⏰ {requested_time}"
+                datetime_line = f"⏰ {requested_time}\n"
 
         # Build vendor line with product counts (works for both Shopify and Smoothr)
         vendor_items = order.get("vendor_items", {})
@@ -375,7 +372,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             else:
                 vendor_line = f"{chef_emoji} **{shortcuts[0]}** ({vendor_counts[0]})"
 
-        customer_line = f"👤 {order['customer']['name']}"
+        customer_line = f"👤 {order['customer']['name']}\n"
 
         full_address = order['customer']['address']
         zip_code = order['customer'].get('zip', '')
@@ -395,8 +392,19 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 display_address = full_address.strip()
 
         maps_link = f"https://www.google.com/maps?q={original_address.replace(' ', '+')}"
-        address_line = f"🗺️ [{display_address}]({maps_link})"
+        address_line = f"🗺️ [{display_address}]({maps_link})\n"
 
+        phone = order['customer']['phone']
+        phone_line = ""
+        if phone and phone != "N/A":
+            # Format for Android auto-detection (no spaces, ensure +49)
+            phone_line = f"📞 {format_phone_for_android(phone)}\n"
+        
+        # Total line (always shown in collapsed view)
+        total = order.get("total", "0.00€")
+        total_line = f"Total: {total}\n"
+        
+        # Optional lines (note, tip, cash) - shown after total in collapsed view
         note_line = ""
         note = order.get("note", "")
         if note:
@@ -410,71 +418,62 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         payment_line = ""
         if order_type == "shopify":
             payment = order.get("payment_method", "Paid")
-            total = order.get("total", "0.00€")
             if payment.lower() == "cash on delivery":
                 payment_line = f"❕ Cash: {total}\n"
 
-        phone = order['customer']['phone']
-        phone_line = ""
-        if phone and phone != "N/A":
-            # Format for Android auto-detection (no spaces, ensure +49)
-            phone_line = f"📞 {format_phone_for_android(phone)}"
-
-        # Determine source label
+        # Determine source label (for expanded view only)
         order_type = order.get("order_type", "shopify")
         if order_type == "shopify":
-            source_line = "🔗 dishbee"
+            source_line = "🔗 dishbee\n"
         elif order_type == "smoothr_dishbee":
-            source_line = "🔗 dishbee"
+            source_line = "🔗 dishbee\n"
         elif order_type == "smoothr_dnd":
-            source_line = "🔗 D&D App"
+            source_line = "🔗 D&D App\n"
         elif order_type == "smoothr_lieferando":
-            source_line = "🔗 Lieferando"
+            source_line = "🔗 Lieferando\n"
         else:
-            source_line = "🔗 dishbee"
+            source_line = "🔗 dishbee\n"
 
-        # Build base text with separator and proper spacing
-        text = "--------------------------------\n"
+        # Build collapsed view text
+        text = "────────────────\n"
         text += "\n"  # Blank line after separator
-        text += f"{title}\n"
-        text += "\n"  # Blank line after order number
+        
+        # Add datetime line if Smoothr with requested time
+        if datetime_line:
+            text += datetime_line
+            text += "\n"  # Blank line after datetime
+        
+        # Section order: address → vendor → phone → customer → total
+        text += address_line
+        text += "\n"  # Blank line after address
         text += f"{vendor_line}\n"
         text += "\n"  # Blank line after vendor
-        text += f"{address_line}\n"
-        text += "\n"  # Blank line after address
-        text += f"{customer_line}\n"
-        text += "\n"  # Blank line after customer
-        text += f"{phone_line}\n"
+        text += phone_line
         text += "\n"  # Blank line after phone
-        text += f"{source_line}"
-        # Add notes/tips/cash after source (if present)
+        text += customer_line
+        text += "\n"  # Blank line after customer
+        text += total_line
+        
+        # Add notes/tips/cash after total (if present)
         if note_line or tips_line or payment_line:
-            text += "\n\n"  # Blank line before notes section
+            text += "\n"  # Blank line before notes section
             text += note_line
-            if note_line:
-                text += "\n"  # Blank line after note
             text += tips_line
-            if tips_line:
-                text += "\n"  # Blank line after tip
             text += payment_line
-            if payment_line:
-                text = text.rstrip("\n")  # Remove trailing newline from payment
 
-        # Add product details if requested
+        # Add expanded details if requested
         if show_details:
             logger.info(f"DISTRICT DEBUG - Entering show_details block for order {order.get('name', 'Unknown')}")
             logger.info(f"DISTRICT DEBUG - original_address value: '{original_address}'")
             
             # Blank line before expanded details
-            text += "\n\n"
+            text += "\n"
             
-            # Add email if available (expanded view only, before district)
-            email = order['customer'].get('email')
-            if email:
-                text += f"✉️ {email}\n"
-                text += "\n"  # Blank line after email
+            # Add source line in expanded view
+            text += source_line
+            text += "\n"  # Blank line after source
             
-            # Add district line at the beginning of details section
+            # Add district line
             district = get_district_from_address(original_address)
             
             logger.info(f"District detection: address='{original_address}', district='{district}'")
@@ -487,6 +486,12 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 logger.info(f"Added district line: 🏙️ {district} ({zip_code})")
             else:
                 logger.info(f"No district found for address: {original_address}")
+            
+            # Add email if available (expanded view only)
+            email = order['customer'].get('email')
+            if email:
+                text += f"✉️ {email}\n"
+                text += "\n"  # Blank line after email
             
             # Build product list (works for both Shopify and Smoothr)
             if len(vendors) > 1:
@@ -526,21 +531,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
 
             # Only add product section if items exist
             if items_text and items_text.strip():
-                text += f"{items_text}\n"
-                text += "\n"  # Blank line after products
-                # Add total after products
-                total = order.get("total", "0.00€")
-                payment = order.get("payment_method", "Paid")
-                if not (order_type == "shopify" and payment.lower() == "cash on delivery"):
-                    text += f"Total: {total}"
-            else:
-                # No products - just add total
-                total = order.get("total", "0.00€")
-                text += f"Total: {total}"
-            
-        else:
-            # Collapsed view - no products shown
-            pass
+                text += f"{items_text}"
 
         # Prepend status lines at the top
         return status_text + text
