@@ -447,6 +447,24 @@ def build_assignment_message(order: dict) -> str:
         # Build status lines (prepend to message)
         status_text = build_status_lines(order, "upc", RESTAURANT_SHORTCUTS, COURIER_SHORTCUTS)
         
+        # Get order number for header
+        order_type = order.get("order_type", "shopify")
+        if order_type == "shopify":
+            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+        else:
+            order_num = order.get('name', 'Order')
+        
+        # Modify status_text to include order number in header
+        if order.get("status") == "delivered":
+            delivery_time = ""
+            for entry in reversed(order.get("status_history", [])):
+                if entry.get("type") == "delivered" and "time" in entry:
+                    delivery_time = entry["time"]
+                    break
+            status_text = f"✅ Delivered: {delivery_time}" if delivery_time else "✅ Delivered"
+        elif "👇 Assigned order" in status_text:
+            status_text = f"👇 Assigned order #{order_num}"
+        
         # Add separator line after status (with blank line after)
         separator = "────────────────\n\n"
         
@@ -533,50 +551,27 @@ def build_assignment_message(order: dict) -> str:
         # Phone number section (without "Call customer:" label)
         phone = order['customer']['phone']
         # Format for Android auto-detection (no spaces, ensure +49)
-        phone_section = f"☎️ {format_phone_for_android(phone)}\n\n"
+        phone_section = f"☎️ {format_phone_for_android(phone)}\n"
         
-        # Determine source for footer
-        if order_type == "shopify":
-            source_footer = "🔗 dishbee\n"
-        elif order_type == "smoothr_dishbee":
-            source_footer = "🔗 dishbee\n"
-        elif order_type == "smoothr_dnd":
-            source_footer = "🔗 D&D App\n"
-        elif order_type == "smoothr_lieferando":
-            source_footer = "🔗 Lieferando\n"
-        else:
-            source_footer = "🔗 dishbee\n"
-        
-        # Optional info (note, tips, cash on delivery) - after source
+        # Optional info (note, tips, cash on delivery) - only shown if NOT delivered
         optional_section = ""
         
-        note = order.get("note", "")
-        if note:
-            optional_section += f"\n\n❕ Note: {note}\n"
+        if order.get("status") != "delivered":
+            note = order.get("note", "")
+            if note:
+                optional_section += f"\n❕ Note: {note}\n"
+            
+            tips = order.get("tips", 0.0)
+            if tips and float(tips) > 0:
+                optional_section += f"❕ Tip: {float(tips):.2f}€\n"
+            
+            payment = order.get("payment_method", "Paid")
+            total = order.get("total", "0.00€")
+            if payment and payment.lower() == "cash on delivery":
+                optional_section += f"❕ Cash: {total}\n"
         
-        tips = order.get("tips", 0.0)
-        if tips and float(tips) > 0:
-            optional_section += f"\n❕ Tip: {float(tips):.2f}€\n"
-        
-        payment = order.get("payment_method", "Paid")
-        total = order.get("total", "0.00€")
-        if payment and payment.lower() == "cash on delivery":
-            optional_section += f"\n❕ Cash: {total}\n"
-        
-        # Order number footer: 🔖 01 - conditional newline based on optional_section
-        if order_type == "shopify":
-            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        else:
-            order_num = order.get('name', 'Order')
-        
-        # Add newline before order number only if NO optional info
-        if optional_section:
-            order_footer = f"🔖 {order_num}"
-        else:
-            order_footer = f"\n🔖 {order_num}"
-        
-        # Combine all sections: status → separator → group → vendors → address → customer → phone → source → optional → order number
-        message = status_text + separator + group_header + restaurant_section + address_section + customer_section + phone_section + source_footer + optional_section + order_footer
+        # Combine all sections: status → separator → group → vendors → address → customer → phone → optional
+        message = status_text + separator + group_header + restaurant_section + address_section + customer_section + phone_section + optional_section
         
         return message
 
@@ -593,42 +588,20 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
         buttons = []
         address = order['customer'].get('original_address', order['customer']['address'])
-        vendors = order.get("vendors", [])
 
-        # Row 1: Navigate (single button - phone numbers are in message text)
-        # Google Maps navigation with cycling mode
+        # Row 1: Navigate
         maps_url = f"https://www.google.com/maps/dir/?api=1&destination={address.replace(' ', '+')}&travelmode=bicycling"
         navigate = InlineKeyboardButton("🧭 Navigate", url=maps_url)
-        
         buttons.append([navigate])
 
-        # Row 2: Delay (single button per row)
-        delay = InlineKeyboardButton(
-            "⏳ Delay",
-            callback_data=f"delay_order|{order_id}"
+        # Row 2: Problem (opens submenu)
+        problem = InlineKeyboardButton(
+            "🚩 Problem",
+            callback_data=f"show_problem_menu|{order_id}"
         )
-        buttons.append([delay])
-        
-        # Row 3: Unassign (only show if not yet delivered)
-        if order.get("status") != "delivered":
-            unassign = InlineKeyboardButton(
-                "🚫 Unassign",
-                callback_data=f"unassign_order|{order_id}"
-            )
-            buttons.append([unassign])
+        buttons.append([problem])
 
-        # Row 4: Call Restaurant(s) - separate button for each vendor
-        chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
-        for idx, vendor in enumerate(vendors):
-            vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-            chef_emoji = chef_emojis[idx % len(chef_emojis)]
-            call_btn = InlineKeyboardButton(
-                f"{chef_emoji} Call {vendor_shortcut}",
-                callback_data=f"call_vendor|{order_id}|{vendor}"
-            )
-            buttons.append([call_btn])
-
-        # Row 5: Mark delivered
+        # Row 3: Mark delivered
         delivered = InlineKeyboardButton(
             "✅ Delivered",
             callback_data=f"confirm_delivered|{order_id}"
@@ -639,6 +612,47 @@ def assignment_cta_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
     except Exception as e:
         logger.error(f"Error building CTA keyboard: {e}")
+        return None
+
+def problem_options_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    """Build problem submenu keyboard with Delay, Unassign, Call Restaurant options"""
+    try:
+        order = STATE.get(order_id)
+        if not order:
+            return None
+        
+        buttons = []
+        vendors = order.get("vendors", [])
+        
+        # Row 1: Delay
+        delay = InlineKeyboardButton(
+            "⏳ Delay",
+            callback_data=f"delay_order|{order_id}"
+        )
+        buttons.append([delay])
+        
+        # Row 2: Unassign
+        unassign = InlineKeyboardButton(
+            "🚫 Unassign",
+            callback_data=f"unassign_order|{order_id}"
+        )
+        buttons.append([unassign])
+        
+        # Row 3+: Call Restaurant(s) - separate button for each vendor
+        chef_emojis = ["👩‍🍳", "👩🏻‍🍳", "👩🏼‍🍳", "👩🏾‍🍳", "🧑‍🍳", "🧑🏻‍🍳", "🧑🏼‍🍳", "🧑🏾‍🍳", "👨‍🍳", "👨🏻‍🍳", "👨🏼‍🍳", "👨🏾‍🍳"]
+        for idx, vendor in enumerate(vendors):
+            vendor_shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+            chef_emoji = chef_emojis[idx % len(chef_emojis)]
+            call_btn = InlineKeyboardButton(
+                f"{chef_emoji} Call {vendor_shortcut}",
+                callback_data=f"call_vendor|{order_id}|{vendor}"
+            )
+            buttons.append([call_btn])
+        
+        return InlineKeyboardMarkup(buttons)
+    
+    except Exception as e:
+        logger.error(f"Error building problem options keyboard: {e}")
         return None
 
 async def handle_delivery_completion(order_id: str, user_id: int):

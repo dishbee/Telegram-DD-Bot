@@ -165,7 +165,7 @@ def load_state():
             STATE.clear()
     except Exception as e:
         logger.error(f"Failed to load STATE from Redis: {e}")
-        STATE = {}  # Fallback to empty
+        STATE.clear()  # Fallback to empty (preserve object reference)
 
 # --- RESTAURANT COMMUNICATION TRACKING ---
 # Track forwarded messages from restaurants to MDG for reply functionality
@@ -4074,6 +4074,21 @@ def telegram_webhook():
                     logger.info(f"Updated UPC messages for group {group_id}")
                 
                 # UPC CTA ACTIONS
+                elif action == "show_problem_menu":
+                    """
+                    Courier clicks Problem button - show submenu with Delay/Unassign/Call options.
+                    """
+                    order_id = data[1]
+                    user_id = cq["from"]["id"]
+                    logger.info(f"User {user_id} opened problem menu for order {order_id}")
+                    
+                    # Send problem options submenu
+                    await safe_send_message(
+                        user_id,
+                        "Select option:",
+                        upc.problem_options_keyboard(order_id)
+                    )
+                
                 elif action == "delay_order":
                     """
                     Courier requests delay from private chat.
