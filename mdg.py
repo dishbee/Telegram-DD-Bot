@@ -295,10 +295,19 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         if not is_asap and requested_time and order_type.startswith("smoothr_"):
             # Check if order is for a different date than today
             order_datetime = order.get("created_at")  # Full datetime from parser
-            if order_datetime and hasattr(order_datetime, 'date'):
+            if order_datetime:
                 from datetime import datetime
-                order_date = order_datetime.date()
-                today = datetime.now().date()
+                # Handle both ISO string (Smoothr/Shopify) and datetime object
+                if isinstance(order_datetime, str):
+                    try:
+                        order_datetime = datetime.fromisoformat(order_datetime.replace('Z', '+00:00'))
+                    except:
+                        # Invalid format, skip date display
+                        order_datetime = None
+                
+                if order_datetime and hasattr(order_datetime, 'date'):
+                    order_date = order_datetime.date()
+                    today = datetime.now().date()
                 
                 if order_date != today:
                     # Future date order - show date AND time

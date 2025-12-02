@@ -1114,7 +1114,7 @@ def parse_smoothr_order(text: str) -> dict:
         },
         "is_asap": order_data["is_asap"],
         "requested_delivery_time": None if order_data["is_asap"] else order_data.get("requested_delivery_time"),
-        "order_datetime": order_data.get("order_datetime"),
+        "order_datetime": order_data.get("order_datetime").isoformat() if order_data.get("order_datetime") else None,
         "products": order_data.get("products", []),
         "note": order_data.get("note"),
         "tip": order_data.get("tip"),
