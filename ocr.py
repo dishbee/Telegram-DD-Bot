@@ -36,20 +36,19 @@ def extract_text_from_image(photo_path: str) -> str:
     try:
         # Call OCR.space API
         with open(photo_path, 'rb') as f:
-            response = requests.post(
-                'https://api.ocr.space/parse/image',
-                files={'file': f},
-                data={
-                    'apikey': api_key,
-                    'language': 'ger',  # German for Lieferando orders
-                    'isOverlayRequired': False,
-                    'detectOrientation': True,
-                    'scale': True
-                },
-                timeout=30
-            )
-        
-        # Check HTTP status first
+        response = requests.post(
+            'https://api.ocr.space/parse/image',
+            files={'file': f},
+            data={
+                'apikey': api_key,
+                'language': 'ger',  # German for Lieferando orders
+                'isOverlayRequired': False,
+                'detectOrientation': True,
+                'scale': True,
+                'isTable': False  # Optimize for document text layout
+            },
+            timeout=30
+        )        # Check HTTP status first
         if response.status_code != 200:
             logger.error(f"[OCR] API returned status {response.status_code}")
             logger.error(f"[OCR] Response text: {response.text[:500]}")
@@ -140,17 +139,28 @@ def parse_pf_order(ocr_text: str) -> dict:
     customer_search_text = text_after_order[:search_end]
     
     # Find first line with proper German name (2+ words, case-insensitive)
-    # Handles: "Max Müller", "david stowasser", "Anna-Maria Schmidt"
+    # Handles: "Max Müller", "david stowasser", "Anna-Maria Schmidt", "S G", "ANNA MUELLER"
+    # EXCLUDE: German articles and common words that are not names
+    # Examples: "Am Fernsehturm", "Im Stadtpark", "Der Kunde", "Die Straße"
+    EXCLUDE_ARTICLES = r'\b(am|im|der|die|das|zum|zur|von|beim|an|in|auf|mit|für|über|unter|hinter|vor|neben|zwischen)\b'
+    
+    # Find first line with proper German name (2+ words, case-insensitive)
+    # Allow 0+ lowercase chars to handle initials ("S G") and all-caps ("JOHN DOE")
     # EXCLUDE street patterns (word + number like "Innstraße 79a")
     customer_match = re.search(
-        r'\n\s*([A-ZÄÖÜa-zäöüß][a-zäöüß\-]+(?:[ \t]+[A-ZÄÖÜa-zäöüß][a-zäöüß\-]+)+)',
+        r'\n\s*([A-ZÄÖÜa-zäöüß][a-zäöüß\-]*(?:[ \t]+[A-ZÄÖÜa-zäöüß][a-zäöüß\-]*)+)',
         customer_search_text,
         re.IGNORECASE
     )
     
-    # Filter out street patterns (contains digits after word)
-    if customer_match and re.search(r'\d', customer_match.group(1)):
-        customer_match = None
+    # Filter out street patterns (contains digits) and German articles
+    if customer_match:
+        candidate_name = customer_match.group(1).strip()
+        # Check for digits or German articles
+        has_digits = bool(re.search(r'\d', candidate_name))
+        has_article = bool(re.search(EXCLUDE_ARTICLES, candidate_name, re.IGNORECASE))
+        if has_digits or has_article:
+            customer_match = None
     
     # Fallback: Accept single word names (3+ chars, case-insensitive)
     if not customer_match:
@@ -172,6 +182,11 @@ def parse_pf_order(ocr_text: str) -> dict:
     # Remove customer name if it leaked into address
     if result['customer'] in address:
         address = address.replace(result['customer'], '').strip()
+    
+    # FIX: Replace capital I with 1 when it appears as building number (OCR error)
+    # Pattern: "Straße I/" or "Straße I," or "Straße I " → "Straße 1/"
+    address = re.sub(r'(\s)I([/,\s])', r'\g<1>1\g<2>', address)
+    
     # Remove trailing comma
     address = address.rstrip(',').strip()
     result['address'] = address
@@ -234,7 +249,8 @@ def parse_pf_order(ocr_text: str) -> dict:
     result['total'] = float(total_str)
     
     # 8. Note (optional): Text in quotes (Lieferando customer note)
-    note_match = re.search(r'[""""]([^""""\n]{5,})[""""]', ocr_text)
+    # May have prefix like "A " before quote
+    note_match = re.search(r'[A-Z]?\s*["""""]([^"""""\n]{5,})["""""]', ocr_text)
     if note_match:
         result['note'] = note_match.group(1).strip()
     else:
