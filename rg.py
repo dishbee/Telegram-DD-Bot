@@ -47,6 +47,11 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         # Build status lines
         status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS, vendor=vendor)
         
+        # Remove one newline from status for proper separator spacing
+        if order_type == "shopify":
+            if status_text.endswith('\n\n'):
+                status_text = status_text[:-1]  # Remove one newline (keep 1)
+        
         # For DD/PF: status has 2 newlines, we want only 1 before order number
         if order_type in ["smoothr_dnd", "smoothr_lieferando"]:
             if status_text.endswith('\n\n'):
@@ -111,6 +116,11 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
         
         # Build status lines
         status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS, vendor=vendor)
+        
+        # Remove one newline from status for proper separator spacing
+        if order_type == "shopify":
+            if status_text.endswith('\n\n'):
+                status_text = status_text[:-1]  # Remove one newline (keep 1)
         
         # For DD/PF: status has 2 newlines, we want only 1 before order number
         if order_type in ["smoothr_dnd", "smoothr_lieferando"]:
