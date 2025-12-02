@@ -685,22 +685,30 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
     
     # === MDG STATUS LINES ===
     if message_type == "mdg":
+        # Extract order number for display in status line
+        order_type = order.get("order_type", "shopify")
+        if order_type == "shopify":
+            # Shopify: "dishbee #26" -> take last 2 digits
+            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+        else:
+            # Smoothr: use full display number
+            order_num = order.get('name', 'Order')
+        
         if status_type == "new":
-            # Source now shown in separate 🔗 line in message body
-            return "🚨 New order\n"
+            return f"🚨 New order #{order_num}\n"
         
         elif status_type == "asap_sent":
             # Show only LATEST asap_sent status (replace, don't accumulate)
             vendor = latest.get("vendor", "")
             shortcut = f"**{get_vendor_shortcut(vendor)}**"
-            return f"[⚡ Asap] → {shortcut}\n\n"
+            return f"⚡ Asap → {shortcut}\n"
         
         elif status_type == "time_sent":
             # Show only LATEST time_sent status (replace, don't accumulate)
             vendor = latest.get("vendor", "")
             time = latest.get("time", "")
             shortcut = f"**{get_vendor_shortcut(vendor)}**"
-            return f"[🕒 {time}] → {shortcut}\n\n"
+            return f"🕒 {time} → {shortcut}\n"
         
         elif status_type == "confirmed":
             # Show only LATEST confirmed status (replace, don't accumulate)
@@ -712,13 +720,13 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
         elif status_type == "assigned":
             courier = latest.get("courier", "Unknown")
             shortcut = get_courier_shortcut(courier)
-            return f"👉 {shortcut}\n\n"
+            return f"👉 {shortcut}\n"
         
         elif status_type == "delivered":
             courier = latest.get("courier", "Unknown")
             time = latest.get("time", "")
             shortcut = get_courier_shortcut(courier)
-            return f"✅ Delivered {time} ({shortcut})\n\n"
+            return f"✅ Delivered {time} ({shortcut})\n"
     
     # === RG STATUS LINES ===
     elif message_type == "rg":
