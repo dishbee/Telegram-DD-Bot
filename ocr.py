@@ -36,19 +36,19 @@ def extract_text_from_image(photo_path: str) -> str:
     try:
         # Call OCR.space API
         with open(photo_path, 'rb') as f:
-        response = requests.post(
-            'https://api.ocr.space/parse/image',
-            files={'file': f},
-            data={
-                'apikey': api_key,
-                'language': 'ger',  # German for Lieferando orders
-                'isOverlayRequired': False,
-                'detectOrientation': True,
-                'scale': True,
-                'isTable': False  # Optimize for document text layout
-            },
-            timeout=30
-        )        # Check HTTP status first
+            response = requests.post(
+                'https://api.ocr.space/parse/image',
+                files={'file': f},
+                data={
+                    'apikey': api_key,
+                    'language': 'ger',  # German for Lieferando orders
+                    'isOverlayRequired': False,
+                    'detectOrientation': True,
+                    'scale': True,
+                    'isTable': False  # Optimize for document text layout
+                },
+                timeout=30
+            )        # Check HTTP status first
         if response.status_code != 200:
             logger.error(f"[OCR] API returned status {response.status_code}")
             logger.error(f"[OCR] Response text: {response.text[:500]}")
