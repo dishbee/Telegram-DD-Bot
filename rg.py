@@ -52,16 +52,26 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
             if status_text.endswith('\n\n'):
                 status_text = status_text[:-1]  # Remove one newline (keep 1)
         
-        # Get order number display
-        # For Smoothr D&D App orders (3 digits): show all 3 digits
-        # For Shopify/Lieferando orders: show last 2 digits
-        if order_type == "smoothr_dnd":
-            order_number = order['name']  # Full 3 digits (e.g., "556")
+        # Build message body based on order type
+        if order_type == "shopify":
+            # NEW SHOPIFY FORMAT: separator + address + products
+            lines = ["────────────────", ""]  # Separator with blank line
+            
+            # Add street address (first part before comma)
+            address = order.get('customer', {}).get('address', 'No address')
+            address_parts = address.split(',')
+            street = address_parts[0].strip() if address_parts else address.strip()
+            lines.append(f"🗺️ {street}")
+            lines.append("")  # Blank line after address
+            
         else:
-            order_number = order['name'][-2:]  # Last 2 digits
-
-        # Build message with order number
-        if order_type in ["smoothr_dnd", "smoothr_lieferando"]:
+            # DD/PF: keep original format with order number and customer info
+            # Get order number display
+            if order_type == "smoothr_dnd":
+                order_number = order['name']  # Full 3 digits (e.g., "556")
+            else:
+                order_number = order['name'][-2:]  # Last 2 digits
+            
             # DD/PF: blank line after order number, then customer info
             lines = [f"🔖 {order_number}", ""]
             customer_name = order.get('customer', {}).get('name', 'Unknown')
@@ -69,9 +79,6 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
             lines.append(f"👤 {customer_name}")
             lines.append(f"🗺️ {address}")
             lines.append("")  # Blank line after customer info
-        else:
-            # Shopify: Blank line after order number
-            lines = [f"🔖 {order_number}", ""]
 
         # Get vendor items - ONLY show products if they exist
         vendor_items = order.get("vendor_items", {}).get(vendor, [])
@@ -97,44 +104,86 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
 def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
     """Build vendor full details (expanded state)."""
     try:
-        summary = build_vendor_summary_text(order, vendor)
-
-        customer_name = order['customer']['name']
-        phone = order['customer']['phone']
+        from utils import build_status_lines
         
-        # Handle both string (Shopify ISO format) and datetime (Smoothr) for created_at
-        created_at = order.get('created_at', now())
-        if isinstance(created_at, str):
-            # Shopify: Extract HH:MM from ISO string "YYYY-MM-DDTHH:MM:SS..."
-            order_time = created_at[11:16]
-        else:
-            # Smoothr: datetime object
-            order_time = created_at.strftime('%H:%M')
-        
-        # Format address: street + building (zip)
-        address = order['customer']['address']
-        address_parts = address.split(',')
-        if len(address_parts) >= 2:
-            street_part = address_parts[0].strip()
-            # Removed zip code display as requested
-            formatted_address = street_part
-        else:
-            formatted_address = address.strip()
-
-        details = f"{summary}\n"
-        
-        # For Shopify orders, add customer/address here (not in summary)
-        # For DD/PF orders, skip (already in summary to avoid duplication)
+        # Get order type first
         order_type = order.get("order_type", "shopify")
-        if order_type == "shopify":
-            details += f"👤 {customer_name}\n"
-            details += f"🗺️ {formatted_address}\n"
         
-        # Format for Android auto-detection (no spaces, ensure +49)
-        details += f"📞 {format_phone_for_android(phone)}\n"
-        details += f"⏰ Ordered at: {order_time}"
+        # Build status lines
+        status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS, vendor=vendor)
+        
+        # For DD/PF: status has 2 newlines, we want only 1 before order number
+        if order_type in ["smoothr_dnd", "smoothr_lieferando"]:
+            if status_text.endswith('\n\n'):
+                status_text = status_text[:-1]  # Remove one newline (keep 1)
+        
+        # Build message body based on order type
+        if order_type == "shopify":
+            # NEW SHOPIFY FORMAT: separator + address + products + customer/phone/time
+            lines = ["────────────────", ""]  # Separator with blank line
+            
+            # Add street address (just street part, no zip)
+            address = order.get('customer', {}).get('address', 'No address')
+            address_parts = address.split(',')
+            street = address_parts[0].strip() if address_parts else address.strip()
+            lines.append(f"🗺️ {street}")
+            lines.append("")  # Blank line after address
+            
+        else:
+            # DD/PF: keep original format with order number and customer info
+            # Get order number display
+            if order_type == "smoothr_dnd":
+                order_number = order['name']  # Full 3 digits (e.g., "556")
+            else:
+                order_number = order['name'][-2:]  # Last 2 digits
+            
+            # DD/PF: blank line after order number, then customer info
+            lines = [f"🔖 {order_number}", ""]
+            customer_name = order.get('customer', {}).get('name', 'Unknown')
+            address = order.get('customer', {}).get('address', 'No address')
+            lines.append(f"👤 {customer_name}")
+            lines.append(f"🗺️ {address}")
+            lines.append("")  # Blank line after customer info
 
-        return details
+        # Get vendor items
+        vendor_items = order.get("vendor_items", {}).get(vendor, [])
+        if vendor_items:
+            for item in vendor_items:
+                clean_item = item.lstrip('- ').strip()
+                lines.append(clean_item)
+            lines.append("")  # Blank line after products
+
+        # Add customer note if exists
+        note = order.get("note", "")
+        if note:
+            lines.append(f"❕ Note: {note}")
+            lines.append("")  # Blank line after note
+
+        # Add customer/phone/time - SHOPIFY ONLY (DD/PF already has customer info above)
+        if order_type == "shopify":
+            customer_name = order.get('customer', {}).get('name', 'Unknown')
+            lines.append(f"👤 {customer_name}")
+            
+            phone = order.get("phone", "No phone")
+            # Format for Android auto-detection
+            lines.append(f"📞 {format_phone_for_android(phone)}")
+            
+            # Add confirmed time if exists
+            confirmed_time = order.get("confirmed_time")
+            if confirmed_time:
+                lines.append(f"🕒 {confirmed_time}")
+            else:
+                # Fallback: show order time
+                created_at = order.get('created_at', now())
+                if isinstance(created_at, str):
+                    order_time = created_at[11:16]  # Extract HH:MM from ISO
+                else:
+                    order_time = created_at.strftime('%H:%M')
+                lines.append(f"⏰ Ordered at: {order_time}")
+
+        # Join lines and prepend status
+        text = "\n".join(lines)
+        return status_text + text
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Error building vendor details: %s", exc)
         return f"Error formatting details for {vendor}"
