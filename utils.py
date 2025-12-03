@@ -695,38 +695,38 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
             order_num = order.get('name', 'Order')
         
         if status_type == "new":
-            return f"🚨 New order #{order_num}\n"
+            return f"🚨 New order (# {order_num})\n"
         
         elif status_type == "asap_sent":
             # Show only LATEST asap_sent status (replace, don't accumulate)
             vendor = latest.get("vendor", "")
             shortcut = f"**{get_vendor_shortcut(vendor)}**"
-            return f"⚡ Asap → {shortcut}\n"
+            return f"⚡ Asap → {shortcut} (# {order_num})\n"
         
         elif status_type == "time_sent":
             # Show only LATEST time_sent status (replace, don't accumulate)
             vendor = latest.get("vendor", "")
             time = latest.get("time", "")
             shortcut = f"**{get_vendor_shortcut(vendor)}**"
-            return f"🕒 {time} → {shortcut}\n"
+            return f"🕒 {time} → {shortcut} (# {order_num})\n"
         
         elif status_type == "confirmed":
             # Show only LATEST confirmed status (replace, don't accumulate)
             vendor = latest.get("vendor", "")
             time = latest.get("time", "")
             shortcut = f"**{get_vendor_shortcut(vendor)}**"
-            return f"{shortcut} → 👍 {time}\n"
+            return f"{shortcut} → 👍 {time} (# {order_num})\n"
         
         elif status_type == "assigned":
             courier = latest.get("courier", "Unknown")
             shortcut = get_courier_shortcut(courier)
-            return f"👉 {shortcut}\n"
+            return f"👉 {shortcut} (# {order_num})\n"
         
         elif status_type == "delivered":
             courier = latest.get("courier", "Unknown")
             time = latest.get("time", "")
             shortcut = get_courier_shortcut(courier)
-            return f"✅ Delivered {time} ({shortcut})\n"
+            return f"✅ Delivered {time} (# {order_num})\n"
     
     # === RG STATUS LINES ===
     elif message_type == "rg":
