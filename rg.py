@@ -178,36 +178,25 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
             phone = order.get("phone", "No phone")
             lines.append(f"📞 {format_phone_for_android(phone)}")
             
-            confirmed_time = order.get("confirmed_time")
-            if confirmed_time:
-                lines.append(f"🕒 {confirmed_time}")
+            # Always show original order time (confirmed time is in status line)
+            created_at = order.get('created_at', now())
+            if isinstance(created_at, str):
+                order_time = created_at[11:16]
             else:
-                created_at = order.get('created_at', now())
-                if isinstance(created_at, str):
-                    order_time = created_at[11:16]
-                else:
-                    order_time = created_at.strftime('%H:%M')
-                lines.append(f"⏰ Ordered at: {order_time}")
+                order_time = created_at.strftime('%H:%M')
+            lines.append(f"⏰ Ordered at: {order_time}")
         else:
-            # DD/PF: add phone and confirmed time (customer already shown above)
+            # DD/PF: add phone and order time (customer already shown above)
             phone = order.get('customer', {}).get('phone', 'No phone')
             lines.append(f"📞 {format_phone_for_android(phone)}")
             
-            # Get confirmed time from confirmed_times dict
-            vendors = order.get('vendors', [])
-            if vendors:
-                vendor = vendors[0]  # DD/PF are single vendor
-                confirmed_times = order.get('confirmed_times', {})
-                confirmed_time = confirmed_times.get(vendor)
-                if confirmed_time:
-                    lines.append(f"🕒 {confirmed_time}")
-                else:
-                    created_at = order.get('created_at', now())
-                    if isinstance(created_at, str):
-                        order_time = created_at[11:16]
-                    else:
-                        order_time = created_at.strftime('%H:%M')
-                    lines.append(f"⏰ Ordered at: {order_time}")
+            # Always show original order time (confirmed time is in status line)
+            created_at = order.get('created_at', now())
+            if isinstance(created_at, str):
+                order_time = created_at[11:16]
+            else:
+                order_time = created_at.strftime('%H:%M')
+            lines.append(f"⏰ Ordered at: {order_time}")
 
         # Join lines and prepend status
         text = "\n".join(lines)
