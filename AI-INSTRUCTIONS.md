@@ -4,7 +4,7 @@
 
 **User is NOT a coder** and cannot fix anything. Paid for Claude Pro and expects **production-quality results**. 
 
-**DEPLOYMENT**: This is a **TEST ENVIRONMENT**. Breaking things is acceptable if it leads to proper fixes. Focus on **FIXING CORRECTLY** over reverting quickly.
+**DEPLOYMENT**: This is a **LIVE ENVIRONMENT**!!! Breaking things is absolutely not acceptable. Proceed only with **MAXIMUM CAUTION**. Take into account every possible dependence in the whole project / code of every single line you are changing.
 
 ---
 
@@ -31,6 +31,10 @@
 9. **NO looking at existing broken code** instead of reading user's original assignment
 10. **NO MAKING THINGS UP** - if you don't see it in the code or requirements, it doesn't exist
 11. **NO HALLUCINATING MESSAGE FORMATS** - always read the actual code to see what messages look like, never guess or assume based on comments or documentation
+12. **NO MOVING FUNCTIONS BETWEEN MODULES** - Module names indicate purpose (upc.py = User Private Chats, mdg.py = Main Dispatch Group, rg.py = Restaurant Groups). Functions belong to their channel. Moving `build_assignment_confirmation_message()` from main.py to upc.py broke MDG-CONF because upc.py is for private chats, not dispatch group messages. If you think a function needs to move, STOP and ask user first
+13. **NO TYPOS WHEN COPYING CODE** - Use exact character-by-character copy. `product_count += x` is NOT the same as `product_count = x`. One missing `+` broke multi-item orders. When moving/copying functions, verify with diff that logic is IDENTICAL
+14. **NO CHANGING FUNCTION SIGNATURES WITHOUT UPDATING CALLERS** - Adding `async` keyword? Search entire codebase for all call sites FIRST. Update callers in SAME commit. Test that async chain is complete (all callers are also async)
+15. **NO CLAIMING "NO BEHAVIOR CHANGES" WITHOUT TESTING** - If commit message says "no behavior changes", you MUST verify actual output with test data. Message formats, counts, logic - everything must produce identical results before and after
 
 ---
 
@@ -50,6 +54,13 @@ Historical issues that caused failures:
 11. ❌ **TOUCHING WORKING CODE WITHOUT UNDERSTANDING WHY IT WORKS** (If something works, NEVER change it without full trace of execution path)
 12. ❌ **ASSUMING IMPORTS ARE ISOLATED CHANGES** (Imports affect execution order, STATE access timing, and function behavior - must verify ALL dependencies)
 13. ❌ **HALLUCINATING MESSAGE FORMATS FROM DOCUMENTATION** (RG-SUM spacing failure - read examples in instructions instead of actual code in rg.py/utils.py, resulted in wrong blank line placement)
+14. ❌ **MOVING FUNCTIONS BETWEEN MODULES WITHOUT UNDERSTANDING MODULE PURPOSE** (Commits 11ab9b7, 019efac - Moved `build_assignment_confirmation_message()` from main.py to upc.py, breaking MDG-CONF format. Module names indicate purpose: upc.py is for User Private Chats, NOT Main Dispatch Group messages. This broke live production for 2 days)
+15. ❌ **TYPOS IN CRITICAL LOGIC DURING COPY/PASTE** (Commit 11ab9b7 - Changed `product_count += int(qty)` to `product_count = int(qty)`, breaking product counting. One character difference (`+=` vs `=`) caused multi-item orders to show wrong counts)
+16. ❌ **CHANGING FUNCTION SIGNATURES WITHOUT UPDATING ALL CALLERS** (Commit 019efac - Added `async` keyword without searching for and updating all call sites. Function became async but callers still used sync calls, breaking assignment workflow)
+17. ❌ **CLAIMING "NO BEHAVIOR CHANGES" WITHOUT VERIFICATION** (Commit 11ab9b7 message said "No behavior changes, pure structural fix" but actually broke product counting and message format. NEVER claim no changes without testing actual output)
+18. ❌ **BUNDLING MULTIPLE CHANGES IN ONE COMMIT** (Commit 11ab9b7 - Moved function AND changed counting logic. Should be separate commits to isolate failures. One change per commit rule MUST be followed)
+19. ❌ **ADDING DEFENSIVE CODE WITHOUT UNDERSTANDING DATA FORMAT** (Commit 4e02770 - Added `if len() >= 2 else` fallback when extracting order number without checking what `order['name']` actually contains. Result: `"dishbee #02"[-2:]` worked but fallback returned full string "dishbee #02". LESSON: READ THE ACTUAL DATA FORMAT before adding logic. If code says `# "dishbee #26" -> take last 2 digits`, verify the comment is accurate by reading where the data comes from)
+
 
 ---
 
@@ -173,6 +184,36 @@ Why needed: [one sentence]
 - Branches: `if len(vendors) > 1` → different keyboard
 - Called: After `build_mdg_dispatch_text()` in most handlers
 - Risk: If STATE corrupted or vendors list empty, wrong keyboard shown
+
+### 7️⃣ FUNCTION MOVE VERIFICATION (CRITICAL)
+
+**If moving a function between files, answer these:**
+
+1. **Why does this function exist in its current location?**
+   - What channel does it serve? (MDG/RG/UPC)
+   - Does the filename match the function's purpose?
+   - Example: `build_assignment_confirmation_message()` builds MDG-CONF message → belongs in main.py or mdg.py, NOT upc.py
+
+2. **What is the EXACT character-by-character code?**
+   - Show diff proving moved code is IDENTICAL to original
+   - Verify NO typos: `+=` vs `=`, `and` vs `or`, indentation, quotes
+   - One character difference can break critical logic
+
+3. **What calls this function and from where?**
+   - Search codebase: `grep -r "function_name" *.py`
+   - List ALL call sites with file and line number
+   - Will callers still work after the move?
+
+4. **Is moving absolutely necessary?**
+   - Can the original issue be fixed WITHOUT moving?
+   - Circular import? Fix the import, don't relocate the function
+   - Module organization? Propose to user first, don't assume
+
+**RED FLAGS that mean DON'T MOVE:**
+- ❌ Function name mentions a channel: `mdg_*`, `rg_*`, `upc_*` → belongs to that module
+- ❌ "Quick fix for circular import" → Fix the import chain instead
+- ❌ "Better organization" → This is refactoring working code, ask user first
+- ❌ Function has complex STATE dependencies → Moving risks breaking state access timing
 
 ---
 

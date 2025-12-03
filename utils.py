@@ -689,7 +689,7 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
         order_type = order.get("order_type", "shopify")
         if order_type == "shopify":
             # Shopify: "dishbee #26" -> take last 2 digits
-            order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+            order_num = order.get('name', 'XX')[-2:]
         else:
             # Smoothr: use full display number
             order_num = order.get('name', 'Order')
