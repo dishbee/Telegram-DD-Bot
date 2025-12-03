@@ -175,7 +175,7 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
             customer_name = order.get('customer', {}).get('name', 'Unknown')
             lines.append(f"👤 {customer_name}")
             
-            phone = order.get("phone", "No phone")
+            phone = order.get('customer', {}).get('phone', 'N/A')
             lines.append(f"📞 {format_phone_for_android(phone)}")
             
             # Always show original order time (confirmed time is in status line)
