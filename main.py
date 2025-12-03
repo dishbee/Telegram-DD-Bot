@@ -2337,15 +2337,15 @@ def telegram_webhook():
                                         order_num = order.get("name", "Unknown")
                                     
                                     if street and order_num:
-                                        msg = f"Can you prepare 🗺️ {street} (🔖 {order_num}) at {selected_time}?"
+                                        msg = f"Can you prepare 🗺️ {street} (# {order_num}) at {selected_time}?"
                                     else:
-                                        msg = f"Can you prepare 🔖 {order_num} at {selected_time}?"
+                                        msg = f"Can you prepare (# {order_num}) at {selected_time}?"
                                 else:
                                     if order["order_type"] == "shopify":
-                                        msg = f"Can you prepare 🔖 {order['name'][-2:]} at {selected_time}?"
+                                        msg = f"Can you prepare (# {order['name'][-2:]}) at {selected_time}?"
                                     else:
                                         order_num = order.get("name", "Unknown")
-                                        msg = f"Can you prepare 🔖 {order_num} at {selected_time}?"
+                                        msg = f"Can you prepare (# {order_num}) at {selected_time}?"
                                 
                                 rg_time_msg = await safe_send_message(
                                     vc,
@@ -3001,7 +3001,7 @@ def telegram_webhook():
                                     current_street = get_street_address(order)
                                     ref_street = get_street_address(reference_order)
                                     if current_street and ref_street:
-                                        msg = f"Can you prepare 🗺️ {current_street} (🔖 {order['name'][-2:]}) together with 🗺️ {ref_street} (🔖 {reference_order['name'][-2:]}) at the same time {reference_time}?"
+                                        msg = f"Can you prepare 🗺️ {current_street} (# {order['name'][-2:]}) together with 🗺️ {ref_street} (# {reference_order['name'][-2:]}) at the same time {reference_time}?"
                                     else:
                                         current_addr = order['customer']['address'].split(',')[0]
                                         ref_addr = reference_order['customer']['address'].split(',')[0]
@@ -3025,12 +3025,12 @@ def telegram_webhook():
                                         order_num = order.get("name", "Unknown")
                                     
                                     if street and order_num:
-                                        msg = f"Can you prepare 🗺️ {street} (🔖 {order_num}) at {reference_time}?"
+                                        msg = f"Can you prepare 🗺️ {street} (# {order_num}) at {reference_time}?"
                                     else:
-                                        msg = f"Can you prepare 🔖 {order_num} at {reference_time}?"
+                                        msg = f"Can you prepare (# {order_num}) at {reference_time}?"
                                 else:
                                     if order["order_type"] == "shopify":
-                                        msg = f"Can you prepare 🔖 {order['name'][-2:]} at {reference_time}?"
+                                        msg = f"Can you prepare (# {order['name'][-2:]}) at {reference_time}?"
                                     else:
                                         order_num = order.get("name", "Unknown")
                                         msg = f"Can you prepare 🔖 {order_num} at {reference_time}?"
