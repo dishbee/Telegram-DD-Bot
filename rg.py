@@ -169,27 +169,45 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
             lines.append(f"❕ Note: {note}")
             lines.append("")  # Blank line after note
 
-        # Add customer/phone/time - SHOPIFY ONLY (DD/PF already has customer info above)
+        # Add phone/time - for all order types in details view
         if order_type == "shopify":
+            # Shopify: add customer name, phone, confirmed time
             customer_name = order.get('customer', {}).get('name', 'Unknown')
             lines.append(f"👤 {customer_name}")
             
             phone = order.get("phone", "No phone")
-            # Format for Android auto-detection
             lines.append(f"📞 {format_phone_for_android(phone)}")
             
-            # Add confirmed time if exists
             confirmed_time = order.get("confirmed_time")
             if confirmed_time:
                 lines.append(f"🕒 {confirmed_time}")
             else:
-                # Fallback: show order time
                 created_at = order.get('created_at', now())
                 if isinstance(created_at, str):
-                    order_time = created_at[11:16]  # Extract HH:MM from ISO
+                    order_time = created_at[11:16]
                 else:
                     order_time = created_at.strftime('%H:%M')
                 lines.append(f"⏰ Ordered at: {order_time}")
+        else:
+            # DD/PF: add phone and confirmed time (customer already shown above)
+            phone = order.get('customer', {}).get('phone', 'No phone')
+            lines.append(f"📞 {format_phone_for_android(phone)}")
+            
+            # Get confirmed time from confirmed_times dict
+            vendors = order.get('vendors', [])
+            if vendors:
+                vendor = vendors[0]  # DD/PF are single vendor
+                confirmed_times = order.get('confirmed_times', {})
+                confirmed_time = confirmed_times.get(vendor)
+                if confirmed_time:
+                    lines.append(f"🕒 {confirmed_time}")
+                else:
+                    created_at = order.get('created_at', now())
+                    if isinstance(created_at, str):
+                        order_time = created_at[11:16]
+                    else:
+                        order_time = created_at.strftime('%H:%M')
+                    lines.append(f"⏰ Ordered at: {order_time}")
 
         # Join lines and prepend status
         text = "\n".join(lines)

@@ -691,11 +691,6 @@ async def handle_delivery_completion(order_id: str, user_id: int):
             "timestamp": now()
         })
         
-        # Send confirmation to MDG with courier name and delivery time
-        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
-        delivered_msg = f"Order 🔖 {order_num}: ✅ Delivered by 🐝 {courier_shortcut} at {delivery_time}"
-        await send_status_message(DISPATCH_MAIN_CHAT_ID, delivered_msg)
-        
         # Delete MDG-CONF and other temporary messages
         if "mdg_additional_messages" in order:
             for msg_id in order["mdg_additional_messages"]:
