@@ -35,6 +35,9 @@
 13. **NO TYPOS WHEN COPYING CODE** - Use exact character-by-character copy. `product_count += x` is NOT the same as `product_count = x`. One missing `+` broke multi-item orders. When moving/copying functions, verify with diff that logic is IDENTICAL
 14. **NO CHANGING FUNCTION SIGNATURES WITHOUT UPDATING CALLERS** - Adding `async` keyword? Search entire codebase for all call sites FIRST. Update callers in SAME commit. Test that async chain is complete (all callers are also async)
 15. **NO CLAIMING "NO BEHAVIOR CHANGES" WITHOUT TESTING** - If commit message says "no behavior changes", you MUST verify actual output with test data. Message formats, counts, logic - everything must produce identical results before and after
+16. **NO ADDING DEFENSIVE CODE WITHOUT READING ACTUAL DATA** - Don't add fallbacks/length checks without verifying what the data actually contains. Read where the data comes from, trace it through the code. Example: Adding `if len() >= 2 else fallback` when you haven't verified that `order['name']` is "26" vs "dishbee #26"
+17. **NO ASSUMING DATA FORMAT FROM COMMENTS** - Comments lie. Code is truth. If comment says `# "dishbee #26" -> take last 2 digits`, verify by reading where `order['name']` is SET, not just where it's used
+18. **NO SKIPPING MENTAL TESTING** - Before writing code, mentally trace: `"dishbee #02"[-2:]` = what? `"02"` or `"02"`? What does fallback return? Full string or number? Test logic in your head FIRST
 
 ---
 
