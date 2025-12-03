@@ -821,17 +821,20 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
     }
     
     # Select vendors
-    all_vendors = list(products_by_vendor.keys())
+    # Shopify vendors only (exclude Smoothr-only vendors: PF and DD)
+    shopify_vendors = ["Julis Spätzlerei", "Leckerolls", "i Sapori della Toscana", "Zweite Heimat", "Kahaani"]
+    all_vendors = list(products_by_vendor.keys())  # Keep for shortcut validation
+    
     if specific_vendor:
         # Specific vendor requested via shortcut
         selected_vendors = [specific_vendor]
     elif is_multi:
-        # Multi: 2-3 vendors
+        # Multi: 2-3 vendors (Shopify vendors only)
         num_vendors = random.randint(2, 3)
-        selected_vendors = random.sample(all_vendors, num_vendors)
+        selected_vendors = random.sample(shopify_vendors, num_vendors)
     else:
-        # Single: 1 random vendor
-        selected_vendors = [random.choice(all_vendors)]
+        # Single: 1 random vendor (Shopify vendors only)
+        selected_vendors = [random.choice(shopify_vendors)]
     
     # Build line items
     line_items = []
