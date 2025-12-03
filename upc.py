@@ -690,7 +690,12 @@ async def handle_delivery_completion(order_id: str, user_id: int):
             "time": delivery_time,
             "timestamp": now()
         })
-        
+
+        # Send confirmation to MDG (runs in background, doesn't block handler)
+        order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
+        delivered_msg = f"Order 🔖 {order_num}: ✅ Delivered by 🐝 {courier_shortcut} at {delivery_time}"
+        asyncio.create_task(send_status_message(DISPATCH_MAIN_CHAT_ID, delivered_msg))
+
         # Delete MDG-CONF and other temporary messages
         if "mdg_additional_messages" in order:
             for msg_id in order["mdg_additional_messages"]:
