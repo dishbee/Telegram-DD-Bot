@@ -70,19 +70,14 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
             lines.append("")  # Blank line after address
             
         else:
-            # DD/PF: keep original format with order number and customer info
-            # Get order number display
-            if order_type == "smoothr_dnd":
-                order_number = order['name']  # Full 3 digits (e.g., "556")
-            else:
-                order_number = order['name'][-2:]  # Last 2 digits
+            # DD/PF: separator + address first, then customer
+            lines = ["────────────────", ""]  # Separator with blank line
             
-            # DD/PF: blank line after order number, then customer info
-            lines = [f"🔖 {order_number}", ""]
-            customer_name = order.get('customer', {}).get('name', 'Unknown')
+            # Address FIRST, then customer name
             address = order.get('customer', {}).get('address', 'No address')
-            lines.append(f"👤 {customer_name}")
+            customer_name = order.get('customer', {}).get('name', 'Unknown')
             lines.append(f"🗺️ {address}")
+            lines.append(f"👤 {customer_name}")
             lines.append("")  # Blank line after customer info
 
         # Get vendor items - ONLY show products if they exist
@@ -140,19 +135,14 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
             lines.append("")  # Blank line after address
             
         else:
-            # DD/PF: keep original format with order number and customer info
-            # Get order number display
-            if order_type == "smoothr_dnd":
-                order_number = order['name']  # Full 3 digits (e.g., "556")
-            else:
-                order_number = order['name'][-2:]  # Last 2 digits
+            # DD/PF: separator + address first, then customer
+            lines = ["────────────────", ""]  # Separator with blank line
             
-            # DD/PF: blank line after order number, then customer info
-            lines = [f"🔖 {order_number}", ""]
-            customer_name = order.get('customer', {}).get('name', 'Unknown')
+            # Address FIRST, then customer name
             address = order.get('customer', {}).get('address', 'No address')
-            lines.append(f"👤 {customer_name}")
+            customer_name = order.get('customer', {}).get('name', 'Unknown')
             lines.append(f"🗺️ {address}")
+            lines.append(f"👤 {customer_name}")
             lines.append("")  # Blank line after customer info
 
         # Get vendor items
@@ -187,7 +177,7 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
             lines.append(f"⏰ Ordered at: {order_time}")
         else:
             # DD/PF: add phone and order time (customer already shown above)
-            phone = order.get('customer', {}).get('phone', 'No phone')
+            phone = order.get('customer', {}).get('phone', 'N/A')
             lines.append(f"📞 {format_phone_for_android(phone)}")
             
             # Always show original order time (confirmed time is in status line)

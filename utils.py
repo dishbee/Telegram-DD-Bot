@@ -752,21 +752,21 @@ def build_status_lines(order: dict, message_type: str, RESTAURANT_SHORTCUTS: dic
             status_type = latest.get("type")
         
         if status_type == "new":
-            return f"🚨 New order{order_num}\n\n"
+            return f"🚨 New order (# {order['name']})\n\n"
         
         elif status_type == "asap_sent":
-            return f"⚡ Asap?{order_num}\n\n"
+            return f"⚡ Asap? (# {order['name']})\n\n"
         
         elif status_type == "time_sent":
             time = latest.get("time", "")
-            return f"🕒 {time}?{order_num}\n\n"
+            return f"🕒 {time}? (# {order['name']})\n\n"
         
         elif status_type == "confirmed":
             time = latest.get("time", "")
-            return f"🔔 Prepare at {time}{order_num}\n\n"
+            return f"🔔 Prepare at {time} (# {order['name']})\n\n"
         
         elif status_type == "delivered":
-            return f"✅ Delivered{order_num}\n\n"
+            return f"✅ Delivered (# {order['name']})\n\n"
     
     # === UPC STATUS LINES ===
     elif message_type == "upc":
