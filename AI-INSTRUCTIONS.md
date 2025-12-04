@@ -28,16 +28,15 @@
 6. **NO breaking existing working functionality**
 7. **NO providing partial or incomplete code**
 8. **NO claiming you understand** without actually tracing code flow
-9. **NO looking at existing broken code** instead of reading user's original assignment
-10. **NO MAKING THINGS UP** - if you don't see it in the code or requirements, it doesn't exist
-11. **NO HALLUCINATING MESSAGE FORMATS** - always read the actual code to see what messages look like, never guess or assume based on comments or documentation
-12. **NO MOVING FUNCTIONS BETWEEN MODULES** - Module names indicate purpose (upc.py = User Private Chats, mdg.py = Main Dispatch Group, rg.py = Restaurant Groups). Functions belong to their channel. Moving `build_assignment_confirmation_message()` from main.py to upc.py broke MDG-CONF because upc.py is for private chats, not dispatch group messages. If you think a function needs to move, STOP and ask user first
-13. **NO TYPOS WHEN COPYING CODE** - Use exact character-by-character copy. `product_count += x` is NOT the same as `product_count = x`. One missing `+` broke multi-item orders. When moving/copying functions, verify with diff that logic is IDENTICAL
-14. **NO CHANGING FUNCTION SIGNATURES WITHOUT UPDATING CALLERS** - Adding `async` keyword? Search entire codebase for all call sites FIRST. Update callers in SAME commit. Test that async chain is complete (all callers are also async)
-15. **NO CLAIMING "NO BEHAVIOR CHANGES" WITHOUT TESTING** - If commit message says "no behavior changes", you MUST verify actual output with test data. Message formats, counts, logic - everything must produce identical results before and after
-16. **NO ADDING DEFENSIVE CODE WITHOUT READING ACTUAL DATA** - Don't add fallbacks/length checks without verifying what the data actually contains. Read where the data comes from, trace it through the code. Example: Adding `if len() >= 2 else fallback` when you haven't verified that `order['name']` is "26" vs "dishbee #26"
-17. **NO ASSUMING DATA FORMAT FROM COMMENTS** - Comments lie. Code is truth. If comment says `# "dishbee #26" -> take last 2 digits`, verify by reading where `order['name']` is SET, not just where it's used
-18. **NO SKIPPING MENTAL TESTING** - Before writing code, mentally trace: `"dishbee #02"[-2:]` = what? `"02"` or `"02"`? What does fallback return? Full string or number? Test logic in your head FIRST
+9. **NO MAKING THINGS UP** - if you don't see it in the code or requirements, it doesn't exist
+10. **NO HALLUCINATING MESSAGE FORMATS** - always read the actual code to see what messages look like, never guess or assume based on comments or documentation
+11. **NO MOVING FUNCTIONS BETWEEN MODULES** - Module names indicate purpose (upc.py = User Private Chats, mdg.py = Main Dispatch Group, rg.py = Restaurant Groups). Functions belong to their channel. Moving `build_assignment_confirmation_message()` from main.py to upc.py broke MDG-CONF because upc.py is for private chats, not dispatch group messages. If you think a function needs to move, STOP and ask user first
+12. **NO TYPOS WHEN COPYING CODE** - Use exact character-by-character copy. `product_count += x` is NOT the same as `product_count = x`. One missing `+` broke multi-item orders. When moving/copying functions, verify with diff that logic is IDENTICAL
+13. **NO CHANGING FUNCTION SIGNATURES WITHOUT UPDATING CALLERS** - Adding `async` keyword? Search entire codebase for all call sites FIRST. Update callers in SAME commit. Test that async chain is complete (all callers are also async)
+14. **NO CLAIMING "NO BEHAVIOR CHANGES" WITHOUT TESTING** - If commit message says "no behavior changes", you MUST verify actual output with test data. Message formats, counts, logic - everything must produce identical results before and after
+15. **NO ADDING DEFENSIVE CODE WITHOUT READING ACTUAL DATA** - Don't add fallbacks/length checks without verifying what the data actually contains. Read where the data comes from, trace it through the code. Example: Adding `if len() >= 2 else fallback` when you haven't verified that `order['name']` is "26" vs "dishbee #26"
+16. **NO ASSUMING DATA FORMAT FROM COMMENTS** - Comments lie. Code is truth. If comment says `# "dishbee #26" -> take last 2 digits`, verify by reading where `order['name']` is SET, not just where it's used
+17. **NO SKIPPING MENTAL TESTING** - Before writing code, mentally trace: `"dishbee #02"[-2:]` = what? `"02"` or `"02"`? What does fallback return? Full string or number? Test logic in your head FIRST
 
 ---
 
@@ -63,6 +62,7 @@ Historical issues that caused failures:
 17. ❌ **CLAIMING "NO BEHAVIOR CHANGES" WITHOUT VERIFICATION** (Commit 11ab9b7 message said "No behavior changes, pure structural fix" but actually broke product counting and message format. NEVER claim no changes without testing actual output)
 18. ❌ **BUNDLING MULTIPLE CHANGES IN ONE COMMIT** (Commit 11ab9b7 - Moved function AND changed counting logic. Should be separate commits to isolate failures. One change per commit rule MUST be followed)
 19. ❌ **ADDING DEFENSIVE CODE WITHOUT UNDERSTANDING DATA FORMAT** (Commit 4e02770 - Added `if len() >= 2 else` fallback when extracting order number without checking what `order['name']` actually contains. Result: `"dishbee #02"[-2:]` worked but fallback returned full string "dishbee #02". LESSON: READ THE ACTUAL DATA FORMAT before adding logic. If code says `# "dishbee #26" -> take last 2 digits`, verify the comment is accurate by reading where the data comes from)
+20. ❌ **NOT READING ACTUAL CODE AND OCR DATA BEFORE IMPLEMENTING** (OCR PF Implementation Dec 2024 - Implemented regex without testing against real multi-line OCR text, added unauthorized vendor_items display, hallucinated message formats instead of reading rg.py/mdg.py code. LESSON: ALWAYS read the actual code files to see real message formats and trace regex against actual OCR text structure from logs. Never trust comments or documentation - code is truth. Test regex patterns mentally with real data before implementing)
 
 
 ---

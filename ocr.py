@@ -126,42 +126,68 @@ def parse_pf_order(ocr_text: str) -> dict:
         raise ParseError(detect_collapse_error(ocr_text))
     result['zip'] = zip_match.group(1)
     
-    # 3. Address: Prioritize 2nd occurrence (below customer name), fallback to 1st
-    # Pattern: Street name/number before ZIP
-    # Strategy: 2nd occurrence is more reliable (not wrapped), 1st may be truncated at top
-    
-    # Try to find address AFTER order code area (more reliable)
-    # Look for pattern with street before ZIP
-    address_matches = list(re.finditer(r'([^\n]+?)\s*\n\s*940\d{2}', ocr_text))
-    
-    if len(address_matches) >= 2:
-        # Use 2nd occurrence (below customer name, not wrapped)
-        candidate_address = address_matches[1].group(1).strip()
-    elif len(address_matches) == 1:
-        # Fallback to 1st occurrence
-        candidate_address = address_matches[0].group(1).strip()
-    else:
-        raise ParseError(detect_collapse_error(ocr_text))
-    
-    # 4. Customer Name: Find name near order code
-    # Pattern: After order code, before address/zip area
-    # Example: "#VCJ 34V\n\nA. Hasan\n"
+    # 3. Customer Name: Find name AFTER order code, BEFORE address block
+    # Pattern: After order code, capital letter start, on its own line
+    # Example: "#VCJ 34V\n\nA. Hasan\n\n13 Dr.-Hans-Kapfin\nger-Straße"
     order_end = order_match.end()
-    text_after_order = ocr_text[order_end:order_end+200]  # Look in next 200 chars
+    text_after_order = ocr_text[order_end:order_end+300]  # Look in next 300 chars
     
-    # Find first meaningful line (not empty, not number-only)
+    # Find first meaningful line (not empty, not number-only, not time)
+    # Skip lines that are just times (HH:MM format) or status text
     name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][^\n]{1,40}?)\s*\n', text_after_order)
     if not name_match:
         raise ParseError(detect_collapse_error(ocr_text))
     
     candidate_name = name_match.group(1).strip()
+    # Skip if it looks like a time or status
+    if re.match(r'^\d{1,2}:\d{2}$', candidate_name) or candidate_name.lower() in ['geplant', 'bezahlt', 'unterwegs']:
+        # Try to find next line
+        remaining_text = text_after_order[name_match.end():]
+        name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][^\n]{1,40}?)\s*\n', remaining_text)
+        if name_match:
+            candidate_name = name_match.group(1).strip()
+    
     result['customer'] = candidate_name
     
-    # 5. Address validation: Not just a number
-    if re.match(r'^\d+$', candidate_address):
+    # 4. Address: Find FULL address (may span multiple lines due to word wrapping)
+    # Strategy: Extract all text between customer name and ZIP code, combine wrapped lines
+    # Example: "13 Dr.-Hans-Kapfin\nger-Straße\n94032" → "13 Dr.-Hans-Kapfinger-Straße"
+    
+    # Find ZIP position
+    zip_match_obj = re.search(r'\b(940\d{2})\b', ocr_text)
+    if not zip_match_obj:
         raise ParseError(detect_collapse_error(ocr_text))
     
-    address = candidate_address
+    zip_position = zip_match_obj.start()
+    customer_end_position = order_end + text_after_order.find(candidate_name) + len(candidate_name)
+    
+    # Extract text between customer name and ZIP
+    address_block = ocr_text[customer_end_position:zip_position].strip()
+    
+    # Combine wrapped lines: remove newlines but keep spaces
+    # Pattern: word-\nword should become word-word (hyphenated street names)
+    # Pattern: word\nword should become word word (normal wrapping)
+    address_lines = [line.strip() for line in address_block.split('\n') if line.strip()]
+    
+    if not address_lines:
+        raise ParseError(detect_collapse_error(ocr_text))
+    
+    # Combine lines intelligently
+    address = ''
+    for i, line in enumerate(address_lines):
+        if i == 0:
+            address = line
+        else:
+            # If previous line ends with hyphen, concatenate directly
+            if address.endswith('-'):
+                address += line
+            else:
+                # Add space between lines
+                address += ' ' + line
+    
+    # Validation: Address should not be empty or just numbers
+    if not address or re.match(r'^\d+$', address):
+        raise ParseError(detect_collapse_error(ocr_text))
     
     # FIX: Replace capital I with 1 when it appears as building number (OCR error)
     # Pattern: "Straße I/" or "Straße I," or "Straße I " → "Straße 1/"
