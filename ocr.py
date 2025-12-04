@@ -146,13 +146,14 @@ def parse_pf_order(ocr_text: str) -> dict:
     # EXCLUDE: German articles, common words, and Lieferando UI text
     # Examples: "Am Fernsehturm", "Im Stadtpark", "Der Kunde", "Die Straße", "Special Deals"
     EXCLUDE_ARTICLES = r'\b(am|im|der|die|das|zum|zur|von|beim|an|in|auf|mit|für|über|unter|hinter|vor|neben|zwischen)\b'
-    EXCLUDE_UI_TEXT = r'\b(special\s+deals|dinner\s+for)\b'
+    EXCLUDE_UI_TEXT = r'\b(special|deals|dinner)\b'
     
     # Find first line with proper German name (2+ words, case-insensitive)
-    # Allow 0+ lowercase chars to handle initials ("S G") and all-caps ("JOHN DOE")
-    # Also match "A. Bauer" format (initial with period + surname)
+    # Allow any mix of upper/lowercase letters: "A. Bauer", "Max Müller", "david stowasser", "ANNA MARIA"
+    # Pattern 1: Initial with period + surname: "A. Bauer", "M. Schmidt"
+    # Pattern 2: Two+ word names with any case: "Max Müller", "Anna Maria", "JOHN DOE"
     customer_match = re.search(
-        r'\n\s*([A-ZÄÖÜa-zäöüß]\.?\s+[A-ZÄÖÜa-zäöüß][a-zäöüß\-]+|[A-ZÄÖÜa-zäöüß][a-zäöüß\-]*(?:[ \t]+[A-ZÄÖÜa-zäöüß][a-zäöüß\-]*)+)',
+        r'\n\s*([A-ZÄÖÜ]\.?\s+[A-ZÄÖÜa-zäöüß\-]+|[A-ZÄÖÜa-zäöüß]+(?:[ \t]+[A-ZÄÖÜa-zäöüß]+)+)',
         customer_search_text,
         re.IGNORECASE
     )
