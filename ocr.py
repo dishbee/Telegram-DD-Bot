@@ -108,12 +108,14 @@ def parse_pf_order(ocr_text: str) -> dict:
     """
     result = {}
     
-    # 1. Order # (required): #XXXXXX or # XXXXXX (6 alphanumeric chars)
-    # OCR may misread # as * or other symbols
-    order_match = re.search(r'[#*]\s*([A-Z0-9]{6})', ocr_text, re.IGNORECASE)
+    # 1. Order # (required): #ABC XYZ format (3 letters, space, 3 chars)
+    # Extract last 3 chars (XYZ) as order code, display last 2
+    # Example: "#VXD G3B" → order_num="G3B", display="3B"
+    # OCR may misread # as * or missing space
+    order_match = re.search(r'[#*]\s*([A-Z]{3})\s+([A-Z0-9]{3})', ocr_text, re.IGNORECASE)
     if not order_match:
         raise ParseError("Order number not found")
-    result['order_num'] = order_match.group(1).upper()
+    result['order_num'] = order_match.group(2).upper()  # Last 3 chars (G3B)
     
     # 2. ZIP (required): 5 digits (Passau = 940XX)
     zip_match = re.search(r'\b(940\d{2})\b', ocr_text)
@@ -191,8 +193,8 @@ def parse_pf_order(ocr_text: str) -> dict:
     address = address.rstrip(',').strip()
     result['address'] = address
     
-    # 5. Phone (required): After "Tel" (may or may not have space)
-    phone_match = re.search(r'Tel\s*(\+?[\d\s]{7,20})', ocr_text, re.IGNORECASE)
+    # 5. Phone (required): After 📞 emoji
+    phone_match = re.search(r'📞\s*(\+?[\d\s]{7,20})', ocr_text)
     if not phone_match:
         raise ParseError("Phone number not found")
     phone = phone_match.group(1).replace(' ', '').replace('\n', '')
@@ -200,48 +202,12 @@ def parse_pf_order(ocr_text: str) -> dict:
         raise ParseError(f"Invalid phone number length: {len(phone)}")
     result['phone'] = phone
     
-    # 6. Time (required): Either "ASAP" or actual time near "Lieferzeit"
-    asap_match = re.search(r'\bASAP\b', ocr_text, re.IGNORECASE)
-    # For pre-orders: "Der Kunde erwartet, dass die Bestellung geliefert wird um: HH:MM"
-    time_match = re.search(r'Der Kunde erwartet.*?(\d{1,2}):(\d{2})', ocr_text, re.IGNORECASE | re.DOTALL)
+    # 6. Time: Default to ASAP (scheduled orders will be handled later)
+    result['time'] = 'asap'
     
-    if asap_match:
-        result['time'] = 'asap'
-    elif time_match:
-        hour = int(time_match.group(1))
-        minute = int(time_match.group(2))
-        if hour > 23 or minute > 59:
-            raise ParseError(f"Invalid time: {hour}:{minute}")
-        result['time'] = f"{hour:02d}:{minute:02d}"
-    else:
-        raise ParseError("Delivery time not found (neither ASAP nor Lieferzeit)")
-    
-    # 7. Total (required): Line with "Total" followed by amount
-    # Currency symbol may be misread (€ as c, e, etc.) or missing
-    # CRITICAL: Must match "Total" keyword to avoid matching Stempelkarte or other amounts
-    # Use word boundary to exclude "Subtotal"
-    
-    # Pattern 1: "Total" followed by spaces/tabs and amount on same line
-    total_match = re.search(r'\bTotal\s*[\s\t]*(\d+[,\.]\d{2})', ocr_text, re.IGNORECASE)
-    
-    # Fallback 1: "Total" on one line, amount on next line
-    if not total_match:
-        total_match = re.search(r'\bTotal\s*\n\s*(\d+[,\.]\d{2})', ocr_text, re.IGNORECASE)
-    
-    # Fallback 2: "Total" with currency symbol explicitly
-    if not total_match:
-        total_match = re.search(r'\bTotal[^\d]*(\d+[,\.]\d{2})\s*[€ecC]', ocr_text, re.IGNORECASE)
-    
-    # Fallback 3: Find all amounts after "Total" keyword and take the first one
-    if not total_match:
-        # Find "Total" position first
-        total_pos = re.search(r'\bTotal\b', ocr_text, re.IGNORECASE)
-        if total_pos:
-            # Look for amount within 100 chars after "Total"
-            text_after_total = ocr_text[total_pos.end():total_pos.end()+100]
-            amount_match = re.search(r'(\d+[,\.]\d{2})', text_after_total)
-            if amount_match:
-                total_match = amount_match
+    # 7. Total (required): Format "XX,XX € Y Artikel"
+    # Example: "52,00 € 3 Artikel"
+    total_match = re.search(r'(\d+,\d{2})\s*€\s*\d+\s*Artikel', ocr_text, re.IGNORECASE)
     
     if not total_match:
         raise ParseError("Total price not found")
