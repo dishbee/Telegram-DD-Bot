@@ -362,15 +362,9 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 vendor_parts.append(f"**{shortcut}** ({count})")
             vendor_line = f"{chef_emojis[0]} " + " + ".join(vendor_parts)
         else:
-            # Single vendor
+            # Single vendor - show count for all orders (PF now has product count)
             chef_emoji = chef_emojis[0]
-            # Don't show count for PF Lieferando orders (no products parsed)
-            order_type = order.get("order_type", "")
-            if order_type == "smoothr_lieferando" and vendors[0] == "Pommes Freunde":
-                # PF OCR order - no product count
-                vendor_line = f"{chef_emoji} **{shortcuts[0]}**"
-            else:
-                vendor_line = f"{chef_emoji} **{shortcuts[0]}** ({vendor_counts[0]})"
+            vendor_line = f"{chef_emoji} **{shortcuts[0]}** ({vendor_counts[0]})"
 
         customer_line = f"👤 {order['customer']['name']}\n"
 

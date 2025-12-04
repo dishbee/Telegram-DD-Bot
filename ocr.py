@@ -108,80 +108,58 @@ def parse_pf_order(ocr_text: str) -> dict:
     """
     result = {}
     
-    # 1. Order # (required): #ABC XYZ format (3 alphanumeric, space, 3 alphanumeric)
-    # Extract last 3 chars (XYZ) as order code, display last 2
-    # Example: "#VXD G3B" → order_num="G3B", display="3B"
-    # Example: "#4T6 M46" → order_num="M46", display="46"
+    # 1. Order # (required): #ABC XYZ format
+    # Extract last 2 chars from XYZ group for display
+    # Example: "#VCJ 34V" → order_num="4V"
+    # Example: "#4T6 M46" → order_num="46"
     # OCR may misread # as * or missing space
     order_match = re.search(r'[#*]\s*([A-Z0-9]{3})\s+([A-Z0-9]{3})', ocr_text, re.IGNORECASE)
     if not order_match:
-        raise ParseError("Order number not found")
-    result['order_num'] = order_match.group(2).upper()  # Last 3 chars (M46, G3B, etc.)
+        raise ParseError(detect_collapse_error(ocr_text))
+    
+    full_code = order_match.group(2).upper()  # e.g., "34V"
+    result['order_num'] = full_code[-2:]  # Last 2 chars: "4V"
     
     # 2. ZIP (required): 5 digits (Passau = 940XX)
     zip_match = re.search(r'\b(940\d{2})\b', ocr_text)
     if not zip_match:
-        raise ParseError("ZIP code not found")
+        raise ParseError(detect_collapse_error(ocr_text))
     result['zip'] = zip_match.group(1)
     
-    # 3. Customer & Address (required): Two possible formats
-    # Format A: "Name\nAddress, ZIP, City" (detailed order view)
-    # Format B: Address appears before order #, name appears after order # alone
+    # 3. Address: Prioritize 2nd occurrence (below customer name), fallback to 1st
+    # Pattern: Street name/number before ZIP
+    # Strategy: 2nd occurrence is more reliable (not wrapped), 1st may be truncated at top
     
-    # Try Format A first: Name followed by street with comma, then ZIP
-    # Example: "L. Walch\n76 Innstraße, 94032, Passau"
-    customer_address_match = re.search(
-        r'\n\s*([^\n]+)\s*\n\s*([^\n]+?)\s*,\s*940\d{2}',
-        ocr_text
-    )
+    # Try to find address AFTER order code area (more reliable)
+    # Look for pattern with street before ZIP
+    address_matches = list(re.finditer(r'([^\n]+?)\s*\n\s*940\d{2}', ocr_text))
     
-    if customer_address_match:
-        # Format A found
-        candidate_name = customer_address_match.group(1).strip()
-        candidate_address = customer_address_match.group(2).strip()
+    if len(address_matches) >= 2:
+        # Use 2nd occurrence (below customer name, not wrapped)
+        candidate_address = address_matches[1].group(1).strip()
+    elif len(address_matches) == 1:
+        # Fallback to 1st occurrence
+        candidate_address = address_matches[0].group(1).strip()
     else:
-        # Format B: Find address before order #, customer after order #
-        # Address pattern: Street name/number before ZIP (matches "5 Pfaffengasse")
-        address_match = re.search(r'([^\n]+)\s*\n\s*\d+\s*\n\s*940\d{2}', ocr_text)
-        if not address_match:
-            raise ParseError("Address not found in either format")
-        candidate_address = address_match.group(1).strip()
-        
-        # Customer name: First line after order number that's not a price or product
-        order_end = order_match.end()
-        text_after_order = ocr_text[order_end:]
-        # Find first non-empty line that's not a price (XX,XX €) and not a product category
-        name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][^\n]{1,30}?)\s*(?:\n|$)', text_after_order)
-        if not name_match:
-            raise ParseError("Customer name not found after order number")
-        candidate_name = name_match.group(1).strip()
+        raise ParseError(detect_collapse_error(ocr_text))
     
-    # Validate customer name: must not contain only digits, must be 2+ chars
-    # Exclude: "52", "76 Innstraße" (address leaked), "Burger", "Special Deals", prices
-    EXCLUDE_ARTICLES = r'\b(am|im|der|die|das|zum|zur|von|beim|an|in|auf|mit|für|über|unter|hinter|vor|neben|zwischen)\b'
-    EXCLUDE_UI_TEXT = r'\b(special|deals|dinner|burger|smash|bacon|cheese|freunde|patty)\b'
+    # 4. Customer Name: Find name near order code
+    # Pattern: After order code, before address/zip area
+    # Example: "#VCJ 34V\n\nA. Hasan\n"
+    order_end = order_match.end()
+    text_after_order = ocr_text[order_end:order_end+200]  # Look in next 200 chars
     
-    # Check if candidate is valid name (not pure digits, not UI text, not street, not price)
-    is_only_digits = bool(re.match(r'^\d+$', candidate_name))
-    has_article = bool(re.search(EXCLUDE_ARTICLES, candidate_name, re.IGNORECASE))
-    has_ui_text = bool(re.search(EXCLUDE_UI_TEXT, candidate_name, re.IGNORECASE))
-    is_street = bool(re.search(r'\d', candidate_name))  # Street names have numbers
-    is_price = bool(re.search(r'\d+[,.]\d+\s*€', candidate_name))  # Matches "28,40 €"
+    # Find first meaningful line (not empty, not number-only)
+    name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][^\n]{1,40}?)\s*\n', text_after_order)
+    if not name_match:
+        raise ParseError(detect_collapse_error(ocr_text))
     
-    if is_only_digits or has_article or has_ui_text or is_street or is_price:
-        raise ParseError(f"Invalid customer name extracted: '{candidate_name}'")
-    
+    candidate_name = name_match.group(1).strip()
     result['customer'] = candidate_name
     
-    # 4. Address validation: Not just a number
-    # Validate it's not just a number
+    # 5. Address validation: Not just a number
     if re.match(r'^\d+$', candidate_address):
-        raise ParseError(f"Invalid address extracted: '{candidate_address}' (only digits)")
-    
-    address = candidate_address
-    # 4. Address validation: Not just a number
-    if re.match(r'^\d+$', candidate_address):
-        raise ParseError(f"Invalid address extracted: '{candidate_address}' (only digits)")
+        raise ParseError(detect_collapse_error(ocr_text))
     
     address = candidate_address
     
@@ -202,7 +180,7 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     result['address'] = address
     
-    # 5. Phone (required): After 📞 emoji (if present) or standalone phone number line
+    # 6. Phone (required): After 📞 emoji (if present) or standalone phone number line
     # OCR may not capture emoji, so try multiple patterns
     # Pattern 1: With optional emoji + continuous digits (minimum 10 to avoid ZIP codes)
     phone_match = re.search(r'📞?\s*(\+?\d{10,20})', ocr_text)
@@ -211,34 +189,97 @@ def parse_pf_order(ocr_text: str) -> dict:
         phone_match = re.search(r'📞?\s*(\+?[\d\s]{10,25})', ocr_text)
     
     if not phone_match:
-        raise ParseError("Phone number not found")
+        raise ParseError(detect_collapse_error(ocr_text))
     
     phone = phone_match.group(1).replace(' ', '').replace('\n', '').replace('\t', '')
     if len(phone) < 7 or len(phone) > 20:
         raise ParseError(f"Invalid phone number length: {len(phone)}")
     result['phone'] = phone
     
-    # 6. Time: Default to ASAP (scheduled orders will be handled later)
-    result['time'] = 'asap'
+    # 7. Product count (required): Extract from "X Artikel"
+    # Example: "6 Artikel" → 6
+    # OCR may misread as "Artike" or "Artikei"
+    artikel_match = re.search(r'(\d+)\s*Artike?l?', ocr_text, re.IGNORECASE)
+    if not artikel_match:
+        raise ParseError(detect_collapse_error(ocr_text))
+    result['product_count'] = int(artikel_match.group(1))
     
-    # 7. Total (required): Format "XX,XX €" (may have "Y Artikel" on same or different line)
-    # Pattern 1: "XX,XX € Y Artikel" on same line
-    total_match = re.search(r'(\d+,\d{2})\s*€\s*\d+\s*Artikel', ocr_text, re.IGNORECASE)
-    # Pattern 2: Just "XX,XX €" (Artikel count elsewhere)
-    if not total_match:
-        total_match = re.search(r'(\d+,\d{2})\s*€', ocr_text)
+    # 8. Time: Check for "Geplant" indicator (scheduled order)
+    # New PF Lieferando UI shows scheduled time with "Geplant" below it
+    # Example: "17:40\nGeplant" → extract "17:40" as scheduled time
+    # If no "Geplant" found → ASAP order (default)
+    geplant_match = re.search(r'(\d{1,2}):(\d{2})\s*\n\s*Geplant', ocr_text, re.IGNORECASE)
+    
+    if geplant_match:
+        hour = int(geplant_match.group(1))
+        minute = int(geplant_match.group(2))
+        if hour > 23 or minute > 59:
+            raise ParseError(detect_collapse_error(ocr_text))
+        result['time'] = f"{hour:02d}:{minute:02d}"
+    else:
+        # No "Geplant" indicator → ASAP order
+        result['time'] = 'asap'
+    
+    # 9. Total (required): Format "XX,XX €"
+    # May appear with Artikel count on same line or separate
+    total_match = re.search(r'(\d+,\d{2})\s*€', ocr_text)
     
     if not total_match:
-        raise ParseError("Total price not found")
+        raise ParseError(detect_collapse_error(ocr_text))
     total_str = total_match.group(1).replace(',', '.')
     result['total'] = float(total_str)
     
-    # 8. Note (optional): Text in quotes (Lieferando customer note)
-    # May have prefix like "A " before quote
-    note_match = re.search(r'[A-Z]?\s*["""""]([^"""""\n]{5,})["""""]', ocr_text)
-    if note_match:
-        result['note'] = note_match.group(1).strip()
+    # 10. Note (optional): Check if note exists and is expanded
+    # Note indicated by bicycle emoji 🚚 or delivery icon 🚴
+    has_note_indicator = bool(re.search(r'[🚚🚴]', ocr_text))
+    
+    if has_note_indicator:
+        # Check if note is collapsed (arrow down symbol ▼ or ▽ present)
+        is_collapsed = bool(re.search(r'[▼▽]', ocr_text))
+        if is_collapsed:
+            raise ParseError(detect_collapse_note(ocr_text))
+        
+        # Note is expanded - extract it
+        note_match = re.search(r'["""""']([^"""""'\n]{5,})["""""']', ocr_text)
+        result['note'] = note_match.group(1).strip() if note_match else None
     else:
         result['note'] = None
     
     return result
+
+
+def detect_collapse_error(ocr_text: str) -> str:
+    """
+    Detect specific collapse errors and return appropriate error code.
+    
+    Returns:
+        Error code string: DETAILS_COLLAPSED, NOTE_COLLAPSED, 
+        DETAILS_AND_NOTE_COLLAPSED, or OCR_FAILED
+    """
+    # Check if phone number is missing (details collapsed)
+    has_phone = bool(re.search(r'📞?\s*\+?\d{10,20}', ocr_text))
+    
+    # Check if note indicator present with arrow (collapsed)
+    has_note_indicator = bool(re.search(r'[🚚🚴]', ocr_text))
+    has_collapsed_arrow = bool(re.search(r'[▼▽]', ocr_text))
+    has_collapsed_note = has_note_indicator and has_collapsed_arrow
+    
+    # Determine error type
+    if not has_phone and has_collapsed_note:
+        return "DETAILS_AND_NOTE_COLLAPSED"
+    elif not has_phone:
+        return "DETAILS_COLLAPSED"
+    elif has_collapsed_note:
+        return "NOTE_COLLAPSED"
+    else:
+        return "OCR_FAILED"
+
+
+def detect_collapse_note(ocr_text: str) -> str:
+    """Check if details are also collapsed along with note."""
+    has_phone = bool(re.search(r'📞?\s*\+?\d{10,20}', ocr_text))
+    
+    if not has_phone:
+        return "DETAILS_AND_NOTE_COLLAPSED"
+    else:
+        return "NOTE_COLLAPSED"

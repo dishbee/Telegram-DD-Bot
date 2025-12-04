@@ -1564,7 +1564,9 @@ async def handle_pf_photo(message: dict):
             "name": display_num,  # e.g., "PJ" for 6-char codes
             "order_type": order_type,  # "smoothr_lieferando" for 6-char codes
             "vendors": [vendor],
-            "vendor_items": {vendor: []},  # No products
+            "vendor_items": {
+                vendor: [f"{parsed_data['product_count']} x Items"]
+            },
             "customer": {
                 "name": parsed_data['customer'],
                 "phone": parsed_data['phone'],
@@ -1608,15 +1610,26 @@ async def handle_pf_photo(message: dict):
         
     except ocr.ParseError as e:
         logger.error(f"OCR parse error: {e}")
-        # TODO: Implement retry logic (Phase 4)
-        error_msg = (
-            "⚠️ The photo is not readable. Please send it again. Make sure that:\n\n"
-            "- All text is visible\n"
-            "- Details are opened\n"
-            "- No light reflection is covering the content\n"
-            "- Phone camera is clean\n\n"
-            "This is automatic message. If two more attempts fail - we will contact you."
-        )
+        
+        # Determine specific error message based on error type
+        error_type = str(e)
+        
+        if error_type == "DETAILS_COLLAPSED":
+            error_msg = "⚠️ Please send the photo with the Details opened. The arrow symbol on the right from the name. Otherwise system can't read it."
+        elif error_type == "NOTE_COLLAPSED":
+            error_msg = "⚠️ Please send the photo with the Note opened. The arrow symbol on the right. Otherwise system can't read it."
+        elif error_type == "DETAILS_AND_NOTE_COLLAPSED":
+            error_msg = "⚠️ Please send the photo with the Note and Details opened. The arrow symbol on the right. Otherwise system can't read it."
+        else:
+            # Generic OCR failure
+            error_msg = (
+                "⚠️ The photo is not readable. Please send it again. Make sure that:\n\n"
+                "- All text is visible\n"
+                "- No light reflection is covering the content\n"
+                "- Phone camera is clean\n\n"
+                "This is automatic message. If two more attempts fail - we will contact you."
+            )
+        
         await safe_send_message(chat_id, error_msg)
     
     except Exception as e:
