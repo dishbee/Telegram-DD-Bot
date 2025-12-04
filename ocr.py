@@ -126,7 +126,8 @@ def parse_pf_order(ocr_text: str) -> dict:
     # 3. Customer (required): Line after order # line
     # Skip UI text like "x", "Drucken", "Details ausblenden"
     # Pattern: Find first proper name (at least 2 words starting with capitals)
-    order_line_end = re.search(r'#\s*[A-Z0-9]{6}\s+[^\n]*', ocr_text, re.IGNORECASE)
+    # New format: #ABC XYZ (e.g., #VXD G3B)
+    order_line_end = re.search(r'#\s*([A-Z]{3})\s+([A-Z0-9]{3})\s*[^\n]*', ocr_text, re.IGNORECASE)
     if not order_line_end:
         raise ParseError("Order line not found for customer extraction")
     
@@ -193,8 +194,9 @@ def parse_pf_order(ocr_text: str) -> dict:
     address = address.rstrip(',').strip()
     result['address'] = address
     
-    # 5. Phone (required): After 📞 emoji
-    phone_match = re.search(r'📞\s*(\+?[\d\s]{7,20})', ocr_text)
+    # 5. Phone (required): After 📞 emoji (if present) or standalone digits
+    # OCR may not capture emoji, so make it optional
+    phone_match = re.search(r'📞?\s*(\+?[\d\s]{7,20})', ocr_text)
     if not phone_match:
         raise ParseError("Phone number not found")
     phone = phone_match.group(1).replace(' ', '').replace('\n', '')
