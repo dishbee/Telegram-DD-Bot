@@ -240,7 +240,7 @@ def parse_pf_order(ocr_text: str) -> dict:
             raise ParseError(detect_collapse_note(ocr_text))
         
         # Note is expanded - extract it
-        note_match = re.search(r'["""""']([^"""""'\n]{5,})["""""']', ocr_text)
+        note_match = re.search(r'[""\'\u201c\u201d]([^""\'\u201c\u201d\n]{5,})[""\'\u201c\u201d]', ocr_text)
         result['note'] = note_match.group(1).strip() if note_match else None
     else:
         result['note'] = None
