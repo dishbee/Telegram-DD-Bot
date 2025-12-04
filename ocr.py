@@ -142,27 +142,29 @@ def parse_pf_order(ocr_text: str) -> dict:
     customer_search_text = text_after_order[:search_end]
     
     # Find first line with proper German name (2+ words, case-insensitive)
-    # Handles: "Max Müller", "david stowasser", "Anna-Maria Schmidt", "S G", "ANNA MUELLER"
-    # EXCLUDE: German articles and common words that are not names
-    # Examples: "Am Fernsehturm", "Im Stadtpark", "Der Kunde", "Die Straße"
+    # Handles: "Max Müller", "david stowasser", "Anna-Maria Schmidt", "S G", "ANNA MUELLER", "A. Bauer"
+    # EXCLUDE: German articles, common words, and Lieferando UI text
+    # Examples: "Am Fernsehturm", "Im Stadtpark", "Der Kunde", "Die Straße", "Special Deals"
     EXCLUDE_ARTICLES = r'\b(am|im|der|die|das|zum|zur|von|beim|an|in|auf|mit|für|über|unter|hinter|vor|neben|zwischen)\b'
+    EXCLUDE_UI_TEXT = r'\b(special\s+deals|dinner\s+for)\b'
     
     # Find first line with proper German name (2+ words, case-insensitive)
     # Allow 0+ lowercase chars to handle initials ("S G") and all-caps ("JOHN DOE")
-    # EXCLUDE street patterns (word + number like "Innstraße 79a")
+    # Also match "A. Bauer" format (initial with period + surname)
     customer_match = re.search(
-        r'\n\s*([A-ZÄÖÜa-zäöüß][a-zäöüß\-]*(?:[ \t]+[A-ZÄÖÜa-zäöüß][a-zäöüß\-]*)+)',
+        r'\n\s*([A-ZÄÖÜa-zäöüß]\.?\s+[A-ZÄÖÜa-zäöüß][a-zäöüß\-]+|[A-ZÄÖÜa-zäöüß][a-zäöüß\-]*(?:[ \t]+[A-ZÄÖÜa-zäöüß][a-zäöüß\-]*)+)',
         customer_search_text,
         re.IGNORECASE
     )
     
-    # Filter out street patterns (contains digits) and German articles
+    # Filter out street patterns (contains digits), German articles, and UI text
     if customer_match:
         candidate_name = customer_match.group(1).strip()
-        # Check for digits or German articles
+        # Check for digits, German articles, or UI text
         has_digits = bool(re.search(r'\d', candidate_name))
         has_article = bool(re.search(EXCLUDE_ARTICLES, candidate_name, re.IGNORECASE))
-        if has_digits or has_article:
+        has_ui_text = bool(re.search(EXCLUDE_UI_TEXT, candidate_name, re.IGNORECASE))
+        if has_digits or has_article or has_ui_text:
             customer_match = None
     
     # Fallback: Accept single word names (3+ chars, case-insensitive)
