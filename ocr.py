@@ -222,9 +222,12 @@ def parse_pf_order(ocr_text: str) -> dict:
     # 6. Time: Default to ASAP (scheduled orders will be handled later)
     result['time'] = 'asap'
     
-    # 7. Total (required): Format "XX,XX € Y Artikel"
-    # Example: "52,00 € 3 Artikel"
+    # 7. Total (required): Format "XX,XX €" (may have "Y Artikel" on same or different line)
+    # Pattern 1: "XX,XX € Y Artikel" on same line
     total_match = re.search(r'(\d+,\d{2})\s*€\s*\d+\s*Artikel', ocr_text, re.IGNORECASE)
+    # Pattern 2: Just "XX,XX €" (Artikel count elsewhere)
+    if not total_match:
+        total_match = re.search(r'(\d+,\d{2})\s*€', ocr_text)
     
     if not total_match:
         raise ParseError("Total price not found")
