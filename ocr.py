@@ -192,14 +192,29 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     # Remove trailing comma
     address = address.rstrip(',').strip()
+    
+    # Reformat address: "50 Lederergasse" → "Lederergasse 50"
+    # Pattern: "Number Street" at start of address
+    address_reformat = re.match(r'^(\d+[a-z]?)\s+(.+)$', address, re.IGNORECASE)
+    if address_reformat:
+        number = address_reformat.group(1)
+        street = address_reformat.group(2)
+        address = f"{street} {number}"
+    
     result['address'] = address
     
-    # 5. Phone (required): After 📞 emoji (if present) or standalone digits
-    # OCR may not capture emoji, so make it optional
-    phone_match = re.search(r'📞?\s*(\+?[\d\s]{7,20})', ocr_text)
+    # 5. Phone (required): After 📞 emoji (if present) or standalone phone number line
+    # OCR may not capture emoji, so try multiple patterns
+    # Pattern 1: With optional emoji + continuous digits (minimum 10 to avoid ZIP codes)
+    phone_match = re.search(r'📞?\s*(\+?\d{10,20})', ocr_text)
+    # Pattern 2: If not found, try with spaces between digits
+    if not phone_match:
+        phone_match = re.search(r'📞?\s*(\+?[\d\s]{10,25})', ocr_text)
+    
     if not phone_match:
         raise ParseError("Phone number not found")
-    phone = phone_match.group(1).replace(' ', '').replace('\n', '')
+    
+    phone = phone_match.group(1).replace(' ', '').replace('\n', '').replace('\t', '')
     if len(phone) < 7 or len(phone) > 20:
         raise ParseError(f"Invalid phone number length: {len(phone)}")
     result['phone'] = phone
