@@ -123,71 +123,48 @@ def parse_pf_order(ocr_text: str) -> dict:
         raise ParseError("ZIP code not found")
     result['zip'] = zip_match.group(1)
     
-    # 3. Customer (required): Line after order # line
-    # Skip UI text like "x", "Drucken", "Details ausblenden"
-    # Pattern: Find first proper name (at least 2 words starting with capitals)
-    # New format: #ABC XYZ (e.g., #VXD G3B)
-    order_line_end = re.search(r'#\s*([A-Z]{3})\s+([A-Z0-9]{3})\s*[^\n]*', ocr_text, re.IGNORECASE)
-    if not order_line_end:
-        raise ParseError("Order line not found for customer extraction")
-    
-    # Search text after order line but BEFORE "Tel" or "Bestellinf" for customer name
-    # This prevents matching product names like "Ix Hot Cheese"
-    text_after_order = ocr_text[order_line_end.end():]
-    # Limit search to text before "Tel" or "Bestellinf"
-    tel_match = re.search(r'\bTel\b', text_after_order, re.IGNORECASE)
-    bestellung_match = re.search(r'\bBestellinf', text_after_order, re.IGNORECASE)
-    search_end = min(tel_match.start() if tel_match else len(text_after_order),
-                     bestellung_match.start() if bestellung_match else len(text_after_order))
-    customer_search_text = text_after_order[:search_end]
-    
-    # Find first line with proper German name (2+ words, case-insensitive)
-    # Handles: "Max Müller", "david stowasser", "Anna-Maria Schmidt", "S G", "ANNA MUELLER", "A. Bauer"
-    # EXCLUDE: German articles, common words, and Lieferando UI text
-    # Examples: "Am Fernsehturm", "Im Stadtpark", "Der Kunde", "Die Straße", "Special Deals"
-    EXCLUDE_ARTICLES = r'\b(am|im|der|die|das|zum|zur|von|beim|an|in|auf|mit|für|über|unter|hinter|vor|neben|zwischen)\b'
-    EXCLUDE_UI_TEXT = r'\b(special|deals|dinner)\b'
-    
-    # Find first line with proper German name (2+ words, case-insensitive)
-    # Allow any mix of upper/lowercase letters: "A. Bauer", "Max Müller", "david stowasser", "ANNA MARIA"
-    # Pattern 1: Initial with period + surname: "A. Bauer", "M. Schmidt"
-    # Pattern 2: Two+ word names with any case: "Max Müller", "Anna Maria", "JOHN DOE"
-    customer_match = re.search(
-        r'\n\s*([A-ZÄÖÜ]\.?\s+[A-ZÄÖÜa-zäöüß\-]+|[A-ZÄÖÜa-zäöüß]+(?:[ \t]+[A-ZÄÖÜa-zäöüß]+)+)',
-        customer_search_text,
-        re.IGNORECASE
-    )
-    
-    # Filter out street patterns (contains digits), German articles, and UI text
-    if customer_match:
-        candidate_name = customer_match.group(1).strip()
-        # Check for digits, German articles, or UI text
-        has_digits = bool(re.search(r'\d', candidate_name))
-        has_article = bool(re.search(EXCLUDE_ARTICLES, candidate_name, re.IGNORECASE))
-        has_ui_text = bool(re.search(EXCLUDE_UI_TEXT, candidate_name, re.IGNORECASE))
-        if has_digits or has_article or has_ui_text:
-            customer_match = None
-    
-    # Fallback: Accept single word names (3+ chars, case-insensitive)
-    if not customer_match:
-        customer_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][a-zäöüß]{2,})', customer_search_text, re.IGNORECASE)
-    
-    if not customer_match:
-        raise ParseError("Customer name not found")
-    result['customer'] = customer_match.group(1).strip()
-    
-    # 4. Address (required): Line with street name/number before ZIP
-    # Pattern: "Street Name Number, \n ZIP City"
-    address_match = re.search(
-        r'([^\n]+)\s*,?\s*\n\s*940\d{2}',
+    # 3. Customer (required): Extract from formatted line "Name\nStreet, ZIP, City"
+    # This line appears AFTER the order # in the detailed section
+    # Pattern: Name followed by street with comma, then ZIP
+    # Example: "L. Walch\n76 Innstraße, 94032, Passau"
+    customer_address_match = re.search(
+        r'\n\s*([^\n]+)\s*\n\s*([^\n]+?)\s*,\s*940\d{2}',
         ocr_text
     )
-    if not address_match:
-        raise ParseError("Address not found")
-    address = address_match.group(1).strip()
-    # Remove customer name if it leaked into address
-    if result['customer'] in address:
-        address = address.replace(result['customer'], '').strip()
+    if not customer_address_match:
+        raise ParseError("Customer name and address block not found")
+    
+    candidate_name = customer_address_match.group(1).strip()
+    candidate_address = customer_address_match.group(2).strip()
+    
+    # Validate customer name: must not contain only digits, must be 2+ chars
+    # Exclude: "52", "76 Innstraße" (address leaked), "Burger", "Special Deals"
+    EXCLUDE_ARTICLES = r'\b(am|im|der|die|das|zum|zur|von|beim|an|in|auf|mit|für|über|unter|hinter|vor|neben|zwischen)\b'
+    EXCLUDE_UI_TEXT = r'\b(special|deals|dinner|burger|smash|bacon|cheese|freunde|patty|bacon)\b'
+    
+    # Check if candidate is valid name (not pure digits, not UI text, not street)
+    is_only_digits = bool(re.match(r'^\d+$', candidate_name))
+    has_article = bool(re.search(EXCLUDE_ARTICLES, candidate_name, re.IGNORECASE))
+    has_ui_text = bool(re.search(EXCLUDE_UI_TEXT, candidate_name, re.IGNORECASE))
+    is_street = bool(re.search(r'\d', candidate_name))  # Street names have numbers
+    
+    if is_only_digits or has_article or has_ui_text or is_street:
+        raise ParseError(f"Invalid customer name extracted: '{candidate_name}'")
+    
+    result['customer'] = candidate_name
+    
+    # 4. Address (required): Already extracted from customer block
+    # Validate it's not just a number
+    if re.match(r'^\d+$', candidate_address):
+        raise ParseError(f"Invalid address extracted: '{candidate_address}' (only digits)")
+    
+    address = candidate_address
+    # 4. Address (required): Already extracted from customer block
+    # Validate it's not just a number
+    if re.match(r'^\d+$', candidate_address):
+        raise ParseError(f"Invalid address extracted: '{candidate_address}' (only digits)")
+    
+    address = candidate_address
     
     # FIX: Replace capital I with 1 when it appears as building number (OCR error)
     # Pattern: "Straße I/" or "Straße I," or "Straße I " → "Straße 1/"
