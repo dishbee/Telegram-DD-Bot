@@ -108,14 +108,15 @@ def parse_pf_order(ocr_text: str) -> dict:
     """
     result = {}
     
-    # 1. Order # (required): #ABC XYZ format (3 letters, space, 3 chars)
+    # 1. Order # (required): #ABC XYZ format (3 alphanumeric, space, 3 alphanumeric)
     # Extract last 3 chars (XYZ) as order code, display last 2
     # Example: "#VXD G3B" → order_num="G3B", display="3B"
+    # Example: "#4T6 M46" → order_num="M46", display="46"
     # OCR may misread # as * or missing space
-    order_match = re.search(r'[#*]\s*([A-Z]{3})\s+([A-Z0-9]{3})', ocr_text, re.IGNORECASE)
+    order_match = re.search(r'[#*]\s*([A-Z0-9]{3})\s+([A-Z0-9]{3})', ocr_text, re.IGNORECASE)
     if not order_match:
         raise ParseError("Order number not found")
-    result['order_num'] = order_match.group(2).upper()  # Last 3 chars (G3B)
+    result['order_num'] = order_match.group(2).upper()  # Last 3 chars (M46, G3B, etc.)
     
     # 2. ZIP (required): 5 digits (Passau = 940XX)
     zip_match = re.search(r'\b(940\d{2})\b', ocr_text)
@@ -123,44 +124,62 @@ def parse_pf_order(ocr_text: str) -> dict:
         raise ParseError("ZIP code not found")
     result['zip'] = zip_match.group(1)
     
-    # 3. Customer (required): Extract from formatted line "Name\nStreet, ZIP, City"
-    # This line appears AFTER the order # in the detailed section
-    # Pattern: Name followed by street with comma, then ZIP
+    # 3. Customer & Address (required): Two possible formats
+    # Format A: "Name\nAddress, ZIP, City" (detailed order view)
+    # Format B: Address appears before order #, name appears after order # alone
+    
+    # Try Format A first: Name followed by street with comma, then ZIP
     # Example: "L. Walch\n76 Innstraße, 94032, Passau"
     customer_address_match = re.search(
         r'\n\s*([^\n]+)\s*\n\s*([^\n]+?)\s*,\s*940\d{2}',
         ocr_text
     )
-    if not customer_address_match:
-        raise ParseError("Customer name and address block not found")
     
-    candidate_name = customer_address_match.group(1).strip()
-    candidate_address = customer_address_match.group(2).strip()
+    if customer_address_match:
+        # Format A found
+        candidate_name = customer_address_match.group(1).strip()
+        candidate_address = customer_address_match.group(2).strip()
+    else:
+        # Format B: Find address before order #, customer after order #
+        # Address pattern: Street name/number before ZIP (matches "5 Pfaffengasse")
+        address_match = re.search(r'([^\n]+)\s*\n\s*\d+\s*\n\s*940\d{2}', ocr_text)
+        if not address_match:
+            raise ParseError("Address not found in either format")
+        candidate_address = address_match.group(1).strip()
+        
+        # Customer name: First line after order number that's not a price or product
+        order_end = order_match.end()
+        text_after_order = ocr_text[order_end:]
+        # Find first non-empty line that's not a price (XX,XX €) and not a product category
+        name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][^\n]{1,30}?)\s*(?:\n|$)', text_after_order)
+        if not name_match:
+            raise ParseError("Customer name not found after order number")
+        candidate_name = name_match.group(1).strip()
     
     # Validate customer name: must not contain only digits, must be 2+ chars
-    # Exclude: "52", "76 Innstraße" (address leaked), "Burger", "Special Deals"
+    # Exclude: "52", "76 Innstraße" (address leaked), "Burger", "Special Deals", prices
     EXCLUDE_ARTICLES = r'\b(am|im|der|die|das|zum|zur|von|beim|an|in|auf|mit|für|über|unter|hinter|vor|neben|zwischen)\b'
-    EXCLUDE_UI_TEXT = r'\b(special|deals|dinner|burger|smash|bacon|cheese|freunde|patty|bacon)\b'
+    EXCLUDE_UI_TEXT = r'\b(special|deals|dinner|burger|smash|bacon|cheese|freunde|patty)\b'
     
-    # Check if candidate is valid name (not pure digits, not UI text, not street)
+    # Check if candidate is valid name (not pure digits, not UI text, not street, not price)
     is_only_digits = bool(re.match(r'^\d+$', candidate_name))
     has_article = bool(re.search(EXCLUDE_ARTICLES, candidate_name, re.IGNORECASE))
     has_ui_text = bool(re.search(EXCLUDE_UI_TEXT, candidate_name, re.IGNORECASE))
     is_street = bool(re.search(r'\d', candidate_name))  # Street names have numbers
+    is_price = bool(re.search(r'\d+[,.]\d+\s*€', candidate_name))  # Matches "28,40 €"
     
-    if is_only_digits or has_article or has_ui_text or is_street:
+    if is_only_digits or has_article or has_ui_text or is_street or is_price:
         raise ParseError(f"Invalid customer name extracted: '{candidate_name}'")
     
     result['customer'] = candidate_name
     
-    # 4. Address (required): Already extracted from customer block
+    # 4. Address validation: Not just a number
     # Validate it's not just a number
     if re.match(r'^\d+$', candidate_address):
         raise ParseError(f"Invalid address extracted: '{candidate_address}' (only digits)")
     
     address = candidate_address
-    # 4. Address (required): Already extracted from customer block
-    # Validate it's not just a number
+    # 4. Address validation: Not just a number
     if re.match(r'^\d+$', candidate_address):
         raise ParseError(f"Invalid address extracted: '{candidate_address}' (only digits)")
     
