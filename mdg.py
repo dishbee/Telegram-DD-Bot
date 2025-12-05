@@ -320,6 +320,13 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
             shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
             shortcuts.append(f"**{shortcut}**")
             
+            # For PF Lieferando orders, use stored product_count instead of counting empty vendor_items
+            if order_type == "smoothr_lieferando" and "product_count" in order:
+                total_qty = order["product_count"]
+                logger.info(f"DEBUG Product Count - {vendor}: using stored product_count={total_qty}")
+                vendor_counts.append(str(total_qty))
+                continue
+            
             # Count TOTAL QUANTITY for this vendor (not just line items)
             items = vendor_items.get(vendor, [])
             total_qty = 0
@@ -381,14 +388,20 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         address_line = f"🗺️ [{display_address}]({maps_link})\n"
 
         phone = order['customer']['phone']
+        logger.info(f"DEBUG PHONE - raw phone from STATE: '{phone}', type: {type(phone)}")
         phone_line = ""
         if phone and phone != "N/A":
             # Format for Android auto-detection (no spaces, ensure +49)
             phone_line = f"📞 {format_phone_for_android(phone)}\n"
+            logger.info(f"DEBUG PHONE - formatted phone_line: '{phone_line}'")
+        
+        logger.info(f"DEBUG CUSTOMER - customer_line will be: '👤 {order['customer']['name']}\\n'")
         
         # Total line (always shown in collapsed view)
         total = order.get("total", "0.00€")
+        logger.info(f"DEBUG TOTAL - raw total from STATE: '{total}', type: {type(total)}")
         total_line = f"Total: {total}\n"
+        logger.info(f"DEBUG TOTAL - formatted total_line: '{total_line}'")
         
         # Optional lines (note, tip, cash) - shown after total in collapsed view
         note_line = ""

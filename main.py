@@ -1574,6 +1574,7 @@ async def handle_pf_photo(message: dict):
                 "zip": parsed_data['zip']
             },
             "total": parsed_data['total'],
+            "product_count": parsed_data.get('product_count', 0),
             "note": parsed_data.get('note'),
             "is_asap": parsed_data['time'] == 'asap',
             "requested_time": None if parsed_data['time'] == 'asap' else parsed_data['time'],

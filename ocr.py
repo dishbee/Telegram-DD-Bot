@@ -202,38 +202,45 @@ def parse_pf_order(ocr_text: str) -> dict:
     address_parts = full_address_raw.split()
     
     if len(address_parts) >= 2:
-        # Check if first part starts with number (building number, may include apartment like "1/ app Nr 316")
-        first_part = address_parts[0].rstrip(',')
-        if re.match(r'^\d+', first_part):
-            # Find full building number (may span multiple words if customer added apartment info)
-            # Pattern: "1/ app Nr 316 Leonhard-Paminger-Straße" → number="1/ app Nr 316", street="Leonhard-Paminger-Straße"
-            number_parts = [first_part]
-            street_start_idx = 1
-            
-            # Continue collecting until we hit a word that looks like street name (contains "-" or ends with "straße"/"Straße")
-            for idx in range(1, len(address_parts)):
-                part = address_parts[idx]
+        # OCR shows address in order: building number FIRST, street name AFTER
+        # Example: "2 Traminer Straße" or "1/ app Nr 316 Leonhard-Paminger-Straße"
+        # Need to identify where street name starts, collect everything before as building number
+        
+        building_number_parts = []
+        street_name_parts = []
+        found_street = False
+        
+        for part in address_parts:
+            if not found_street:
+                # Check if this looks like start of street name (contains hyphen or ends with straße/strasse)
                 if '-' in part or part.lower().endswith('straße') or part.lower().endswith('strasse'):
-                    # Found street name, stop here
-                    street_start_idx = idx
-                    break
-                # Still part of building number (e.g., "app", "Nr", "316")
-                number_parts.append(part)
-                street_start_idx = idx + 1
-            
-            number = ' '.join(number_parts)
-            street = ' '.join(address_parts[street_start_idx:])
-            
-            if street:
-                result['address'] = f"{street} {number}"
+                    # This is the street name
+                    found_street = True
+                    street_name_parts.append(part)
+                else:
+                    # Still part of building number
+                    building_number_parts.append(part)
             else:
-                # No street found, use raw address
-                result['address'] = full_address_raw
+                # Already found street, rest is part of street name
+                street_name_parts.append(part)
+        
+        if street_name_parts and building_number_parts:
+            # Format: "Street Name Building Number" (e.g., "Traminer Straße 2")
+            street = ' '.join(street_name_parts)
+            number = ' '.join(building_number_parts)
+            result['address'] = f"{street} {number}"
+            logger.info(f"OCR Address parsed: street='{street}', number='{number}'")
+        elif street_name_parts:
+            # Only street name found, no building number
+            result['address'] = ' '.join(street_name_parts)
+            logger.info(f"OCR Address parsed: only street='{result['address']}'")
         else:
-            # Address doesn't start with number, use as-is
+            # No street name pattern found, use raw address
             result['address'] = full_address_raw
+            logger.info(f"OCR Address parsed: no pattern match, using raw='{result['address']}'")
     else:
         result['address'] = full_address_raw
+        logger.info(f"OCR Address parsed: single word, using raw='{result['address']}'")
     
     # 5. Phone (required): Extract from expanded details section (after customer name, before total)
     # Phone appears with emoji: 📞 +4917647373945 or 📞 015739645573
