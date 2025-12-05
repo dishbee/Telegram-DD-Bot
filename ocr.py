@@ -101,7 +101,7 @@ def parse_pf_order(ocr_text: str) -> dict:
         ocr_text: Raw OCR output from extract_text_from_image()
         
     Returns:
-        dict with keys: order_num, customer, phone, address, zip, time, total, note
+        dict with keys: order_num, customer, phone, address, zip, time, total, note, product_count
         
     Raises:
         ParseError: If any required field is missing
@@ -109,16 +109,15 @@ def parse_pf_order(ocr_text: str) -> dict:
     result = {}
     
     # 1. Order # (required): #ABC XYZ format
-    # Extract last 2 chars from XYZ group for display
+    # Extract last 2 chars from 2nd group for display
     # Example: "#VCJ 34V" → order_num="4V"
-    # Example: "#4T6 M46" → order_num="46"
-    # OCR may misread # as * or missing space
+    # Example: "#SM9 8H3" → order_num="H3"
     order_match = re.search(r'[#*]\s*([A-Z0-9]{3})\s+([A-Z0-9]{3})', ocr_text, re.IGNORECASE)
     if not order_match:
         raise ParseError(detect_collapse_error(ocr_text))
     
-    full_code = order_match.group(2).upper()  # e.g., "34V"
-    result['order_num'] = full_code[-2:]  # Last 2 chars: "4V"
+    full_code = order_match.group(2).upper()
+    result['order_num'] = full_code[-2:]  # Last 2 chars
     
     # 2. ZIP (required): 5 digits (Passau = 940XX)
     zip_match = re.search(r'\b(940\d{2})\b', ocr_text)
@@ -126,114 +125,123 @@ def parse_pf_order(ocr_text: str) -> dict:
         raise ParseError(detect_collapse_error(ocr_text))
     result['zip'] = zip_match.group(1)
     
-    # 3. Customer Name: Find name AFTER order code, BEFORE address block
-    # Pattern: After order code, capital letter start, on its own line
-    # Example: "#VCJ 34V\n\nA. Hasan\n\n13 Dr.-Hans-Kapfin\nger-Straße"
+    # 3. Customer Name (required): After order code, before full address
+    # Pattern: Standalone line with name, may have prefix ("A. Hasan", "L. Hoffmann")
+    # Must NOT be from note section (check for note indicators first)
     order_end = order_match.end()
-    text_after_order = ocr_text[order_end:order_end+300]  # Look in next 300 chars
     
-    # Find first meaningful line (not empty, not number-only, not time)
-    # Skip lines that are just times (HH:MM format) or status text
-    name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][^\n]{1,40}?)\s*\n', text_after_order)
+    # Find text between order code and phone number
+    phone_pattern = r'📞?\s*\+?\d{10,}'
+    phone_pos = re.search(phone_pattern, ocr_text[order_end:])
+    
+    if phone_pos:
+        # Search for name in section BEFORE phone
+        search_area = ocr_text[order_end:order_end + phone_pos.start()]
+    else:
+        # Fallback: search in next 300 chars after order code
+        search_area = ocr_text[order_end:order_end + 300]
+    
+    # Find name line: starts with letter, not a street name pattern, not in quotes
+    # Exclude lines with: numbers at start, quotes, bicycle emoji, "Geplant"
+    name_match = re.search(r'\n\s*([A-ZÄÖÜ][a-zäöüß]*\.?\s+[A-ZÄÖÜa-zäöüß][^\n]{1,30})\s*\n', search_area)
+    
     if not name_match:
         raise ParseError(detect_collapse_error(ocr_text))
     
-    candidate_name = name_match.group(1).strip()
-    # Skip if it looks like a time or status
-    if re.match(r'^\d{1,2}:\d{2}$', candidate_name) or candidate_name.lower() in ['geplant', 'bezahlt', 'unterwegs']:
-        # Try to find next line
-        remaining_text = text_after_order[name_match.end():]
-        name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][^\n]{1,40}?)\s*\n', remaining_text)
-        if name_match:
-            candidate_name = name_match.group(1).strip()
+    result['customer'] = name_match.group(1).strip()
     
-    result['customer'] = candidate_name
+    # 4. Address (required): Full address from customer details section
+    # Located AFTER customer name, BEFORE phone
+    # Extract complete address including apartment/floor info
+    # Pattern: Street + number, may span multiple lines with apartment info
     
-    # 4. Address: Find FULL address (may span multiple lines due to word wrapping)
-    # Strategy: Extract all text between customer name and ZIP code, combine wrapped lines
-    # Example: "13 Dr.-Hans-Kapfin\nger-Straße\n94032" → "13 Dr.-Hans-Kapfinger-Straße"
+    # Find full address block: everything between customer name and phone
+    name_end = order_end + name_match.end()
     
-    # Find ZIP position
-    zip_match_obj = re.search(r'\b(940\d{2})\b', ocr_text)
-    if not zip_match_obj:
-        raise ParseError(detect_collapse_error(ocr_text))
+    if phone_pos:
+        address_block = ocr_text[name_end:order_end + phone_pos.start()].strip()
+    else:
+        # Fallback: look for address pattern before ZIP
+        address_block = ocr_text[name_end:name_end + 200].strip()
     
-    zip_position = zip_match_obj.start()
-    customer_end_position = order_end + text_after_order.find(candidate_name) + len(candidate_name)
-    
-    # Extract text between customer name and ZIP
-    address_block = ocr_text[customer_end_position:zip_position].strip()
-    
-    # Combine wrapped lines: remove newlines but keep spaces
-    # Pattern: word-\nword should become word-word (hyphenated street names)
-    # Pattern: word\nword should become word word (normal wrapping)
-    address_lines = [line.strip() for line in address_block.split('\n') if line.strip()]
+    # Extract address lines (before ZIP, may be multi-line)
+    # Pattern: Street name/number, followed by ZIP on same or next line
+    address_lines = []
+    for line in address_block.split('\n'):
+        line = line.strip()
+        # Stop at ZIP code line
+        if re.match(r'^940\d{2}', line):
+            break
+        # Stop at "Bezahlt" or empty lines
+        if not line or line == 'Bezahlt' or line == 'Passau':
+            continue
+        # Skip lines that are just ZIP
+        if re.match(r'^\d{5}$', line):
+            continue
+        address_lines.append(line)
     
     if not address_lines:
         raise ParseError(detect_collapse_error(ocr_text))
     
-    # Combine lines intelligently
-    address = ''
-    for i, line in enumerate(address_lines):
-        if i == 0:
-            address = line
-        else:
-            # If previous line ends with hyphen, concatenate directly
-            if address.endswith('-'):
-                address += line
+    # Join address lines and clean up
+    full_address_raw = ' '.join(address_lines)
+    
+    # Remove ZIP and city if they appear in address
+    full_address_raw = re.sub(r',?\s*940\d{2}\s*,?', '', full_address_raw)
+    full_address_raw = re.sub(r',?\s*Passau\s*', '', full_address_raw)
+    full_address_raw = full_address_raw.strip().rstrip(',')
+    
+    # Reformat address: "Number Street" → "Street Number"
+    # Handle patterns like "13 Dr.-Hans-Kapfinger-Straße" or "1/ app Nr 316 Leonhard-Paminger-Straße"
+    address_parts = full_address_raw.split()
+    
+    if len(address_parts) >= 2:
+        # Check if first part is a number (building number)
+        first_part = address_parts[0].rstrip(',')
+        if re.match(r'^\d+[a-z]?/?$', first_part, re.IGNORECASE):
+            # Starts with number - move to end
+            # Example: "13 Dr.-Hans-Kapfinger-Straße" → "Dr.-Hans-Kapfinger-Straße 13"
+            number = first_part
+            street_parts = address_parts[1:]
+            
+            # Find where street name ends (before next number or special keyword)
+            street_end = len(street_parts)
+            for idx, part in enumerate(street_parts):
+                if re.match(r'^\d+', part) and idx > 0:  # Another number (not first word after original number)
+                    # Keep this as part of address (apartment info)
+                    break
+            
+            street = ' '.join(street_parts[:street_end])
+            extra = ' '.join(street_parts[street_end:]) if street_end < len(street_parts) else ''
+            
+            if extra:
+                result['address'] = f"{street} {number} {extra}".strip()
             else:
-                # Add space between lines
-                address += ' ' + line
+                result['address'] = f"{street} {number}"
+        else:
+            # Address doesn't start with number, use as-is
+            result['address'] = full_address_raw
+    else:
+        result['address'] = full_address_raw
     
-    # Validation: Address should not be empty or just numbers
-    if not address or re.match(r'^\d+$', address):
-        raise ParseError(detect_collapse_error(ocr_text))
-    
-    # FIX: Replace capital I with 1 when it appears as building number (OCR error)
-    # Pattern: "Straße I/" or "Straße I," or "Straße I " → "Straße 1/"
-    address = re.sub(r'(\s)I([/,\s])', r'\g<1>1\g<2>', address)
-    
-    # Remove trailing comma
-    address = address.rstrip(',').strip()
-    
-    # Reformat address: "50 Lederergasse" → "Lederergasse 50"
-    # Pattern: "Number Street" at start of address
-    address_reformat = re.match(r'^(\d+[a-z]?)\s+(.+)$', address, re.IGNORECASE)
-    if address_reformat:
-        number = address_reformat.group(1)
-        street = address_reformat.group(2)
-        address = f"{street} {number}"
-    
-    result['address'] = address
-    
-    # 6. Phone (required): After 📞 emoji (if present) or standalone phone number line
-    # OCR may not capture emoji, so try multiple patterns
-    # Pattern 1: With optional emoji + continuous digits (minimum 10 to avoid ZIP codes)
-    phone_match = re.search(r'📞?\s*(\+?\d{10,20})', ocr_text)
-    # Pattern 2: If not found, try with spaces between digits
-    if not phone_match:
-        phone_match = re.search(r'📞?\s*(\+?[\d\s]{10,25})', ocr_text)
-    
+    # 5. Phone (required): After address, before total
+    phone_match = re.search(r'📞?\s*(\+?\d[\d\s]{9,20})', ocr_text)
     if not phone_match:
         raise ParseError(detect_collapse_error(ocr_text))
     
-    phone = phone_match.group(1).replace(' ', '').replace('\n', '').replace('\t', '')
-    if len(phone) < 7 or len(phone) > 20:
-        raise ParseError(f"Invalid phone number length: {len(phone)}")
+    phone = phone_match.group(1).replace(' ', '').replace('\n', '')
+    if len(phone) < 7:
+        raise ParseError(detect_collapse_error(ocr_text))
     result['phone'] = phone
     
-    # 7. Product count (required): Extract from "X Artikel"
-    # Example: "6 Artikel" → 6
-    # OCR may misread as "Artike" or "Artikei"
+    # 6. Product count (required): Extract from "X Artikel"
     artikel_match = re.search(r'(\d+)\s*Artike?l?', ocr_text, re.IGNORECASE)
     if not artikel_match:
         raise ParseError(detect_collapse_error(ocr_text))
     result['product_count'] = int(artikel_match.group(1))
     
-    # 8. Time: Check for "Geplant" indicator (scheduled order)
-    # New PF Lieferando UI shows scheduled time with "Geplant" below it
-    # Example: "17:40\nGeplant" → extract "17:40" as scheduled time
-    # If no "Geplant" found → ASAP order (default)
+    # 7. Scheduled Time: Check for "Geplant" indicator
+    # Pattern: "17:40\nGeplant" → extract "17:40"
     geplant_match = re.search(r'(\d{1,2}):(\d{2})\s*\n\s*Geplant', ocr_text, re.IGNORECASE)
     
     if geplant_match:
@@ -243,29 +251,24 @@ def parse_pf_order(ocr_text: str) -> dict:
             raise ParseError(detect_collapse_error(ocr_text))
         result['time'] = f"{hour:02d}:{minute:02d}"
     else:
-        # No "Geplant" indicator → ASAP order
         result['time'] = 'asap'
     
-    # 9. Total (required): Format "XX,XX €"
-    # May appear with Artikel count on same line or separate
+    # 8. Total (required): Format "XX,XX €"
     total_match = re.search(r'(\d+,\d{2})\s*€', ocr_text)
-    
     if not total_match:
         raise ParseError(detect_collapse_error(ocr_text))
-    total_str = total_match.group(1).replace(',', '.')
-    result['total'] = float(total_str)
+    result['total'] = float(total_match.group(1).replace(',', '.'))
     
-    # 10. Note (optional): Check if note exists and is expanded
-    # Note indicated by bicycle emoji 🚚 or delivery icon 🚴
+    # 9. Note (optional): Extract if bicycle emoji present and expanded
     has_note_indicator = bool(re.search(r'[🚚🚴]', ocr_text))
     
     if has_note_indicator:
-        # Check if note is collapsed (arrow down symbol ▼ or ▽ present)
-        is_collapsed = bool(re.search(r'[▼▽]', ocr_text))
+        # Check if collapsed (arrow symbol present)
+        is_collapsed = bool(re.search(r'[▸▼▽]', ocr_text))
         if is_collapsed:
             raise ParseError(detect_collapse_note(ocr_text))
         
-        # Note is expanded - extract it
+        # Extract note from quotes
         note_match = re.search(r'[""\'\u201c\u201d]([^""\'\u201c\u201d\n]{5,})[""\'\u201c\u201d]', ocr_text)
         result['note'] = note_match.group(1).strip() if note_match else None
     else:
