@@ -499,7 +499,8 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
                 items_text_parts: List[str] = []
                 
                 # Get products from vendor_items (populated for both order types)
-                if vendor_items and vendors:
+                # SKIP for PF Lieferando orders (use product count only, not item details)
+                if vendor_items and vendors and order_type != "smoothr_lieferando":
                     vendor = vendors[0]  # Single vendor
                     vendor_products = vendor_items.get(vendor, [])
                     for item in vendor_products:

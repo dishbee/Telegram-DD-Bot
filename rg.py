@@ -80,9 +80,10 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
             lines.append(f"👤 {customer_name}")
             lines.append("")  # Blank line after customer info
 
-        # Get vendor items - ONLY show products if they exist
+        # Get vendor items - ONLY show products if they exist AND not PF Lieferando
+        # PF Lieferando uses product count only, not item details
         vendor_items = order.get("vendor_items", {}).get(vendor, [])
-        if vendor_items:
+        if vendor_items and order_type != "smoothr_lieferando":
             for item in vendor_items:
                 clean_item = item.lstrip('- ').strip()
                 lines.append(clean_item)

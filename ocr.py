@@ -188,9 +188,9 @@ def parse_pf_order(ocr_text: str) -> dict:
     if not address_lines:
         raise ParseError(detect_collapse_error(ocr_text))
     
-    # Join address lines WITHOUT spaces (handles word wrapping in OCR)
-    # Example: "Dr.-Hans-Kapfin\nger-Straße" → "Dr.-Hans-Kapfinger-Straße"
-    full_address_raw = ''.join(address_lines)
+    # Join address lines WITH spaces (preserve multi-word patterns like "1/ app Nr 316")
+    # Note: Word wrapping in street names (e.g., "Dr.-Hans-Kapfin\nger-Straße") is rare in address line
+    full_address_raw = ' '.join(address_lines)
     
     # Remove ZIP and city if they appear in address
     full_address_raw = re.sub(r',?\s*940\d{2}\s*,?', '', full_address_raw)
@@ -202,41 +202,51 @@ def parse_pf_order(ocr_text: str) -> dict:
     address_parts = full_address_raw.split()
     
     if len(address_parts) >= 2:
-        # Check if first part is a number (building number)
+        # Check if first part starts with number (building number, may include apartment like "1/ app Nr 316")
         first_part = address_parts[0].rstrip(',')
-        if re.match(r'^\d+[a-z]?/?$', first_part, re.IGNORECASE):
-            # Starts with number - move to end
-            # Example: "13 Dr.-Hans-Kapfinger-Straße" → "Dr.-Hans-Kapfinger-Straße 13"
-            number = first_part
-            street_parts = address_parts[1:]
+        if re.match(r'^\d+', first_part):
+            # Find full building number (may span multiple words if customer added apartment info)
+            # Pattern: "1/ app Nr 316 Leonhard-Paminger-Straße" → number="1/ app Nr 316", street="Leonhard-Paminger-Straße"
+            number_parts = [first_part]
+            street_start_idx = 1
             
-            # Find where street name ends (before next number or special keyword)
-            street_end = len(street_parts)
-            for idx, part in enumerate(street_parts):
-                if re.match(r'^\d+', part) and idx > 0:  # Another number (not first word after original number)
-                    # Keep this as part of address (apartment info)
+            # Continue collecting until we hit a word that looks like street name (contains "-" or ends with "straße"/"Straße")
+            for idx in range(1, len(address_parts)):
+                part = address_parts[idx]
+                if '-' in part or part.lower().endswith('straße') or part.lower().endswith('strasse'):
+                    # Found street name, stop here
+                    street_start_idx = idx
                     break
+                # Still part of building number (e.g., "app", "Nr", "316")
+                number_parts.append(part)
+                street_start_idx = idx + 1
             
-            street = ' '.join(street_parts[:street_end])
-            extra = ' '.join(street_parts[street_end:]) if street_end < len(street_parts) else ''
+            number = ' '.join(number_parts)
+            street = ' '.join(address_parts[street_start_idx:])
             
-            if extra:
-                result['address'] = f"{street} {number} {extra}".strip()
-            else:
+            if street:
                 result['address'] = f"{street} {number}"
+            else:
+                # No street found, use raw address
+                result['address'] = full_address_raw
         else:
             # Address doesn't start with number, use as-is
             result['address'] = full_address_raw
     else:
         result['address'] = full_address_raw
     
-    # 5. Phone (required): After address, stop at newline to prevent capturing next line
-    # Normalize: add +49 if missing, remove leading 0
-    phone_match = re.search(r'📞?\s*(\+?\d[\d\s-]{9,20})(?=\s*\n|$)', ocr_text)
+    # 5. Phone (required): Extract from expanded details section (after customer name, before total)
+    # Phone appears with emoji: 📞 +4917647373945 or 📞 015739645573
+    # Search in section AFTER customer name to avoid capturing ZIP or other numbers
+    phone_search_area = ocr_text[name_end:name_end + 300]  # Search in next 300 chars after name
+    phone_match = re.search(r'📞?\s*([O0+]?\d[\d\s-]{8,20})', phone_search_area)
+    
     if not phone_match:
         raise ParseError(detect_collapse_error(ocr_text))
     
     phone = phone_match.group(1).replace(' ', '').replace('-', '').strip()
+    # Fix OCR errors: O → 0
+    phone = phone.replace('O', '0')
     
     # Normalize phone: add +49 if missing, remove leading 0
     if not phone.startswith('+'):
@@ -245,7 +255,7 @@ def parse_pf_order(ocr_text: str) -> dict:
         else:
             phone = '+49' + phone  # Add +49
     
-    if len(phone) < 7:
+    if len(phone) < 10:  # Minimum valid phone length with country code
         raise ParseError(detect_collapse_error(ocr_text))
     result['phone'] = phone
     
