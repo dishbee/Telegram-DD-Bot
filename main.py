@@ -1565,7 +1565,7 @@ async def handle_pf_photo(message: dict):
             "order_type": order_type,  # "smoothr_lieferando" for 6-char codes
             "vendors": [vendor],
             "vendor_items": {
-                vendor: []
+                vendor: ["1 x Item"] * parsed_data['product_count']
             },
             "customer": {
                 "name": parsed_data['customer'],

@@ -141,9 +141,9 @@ def parse_pf_order(ocr_text: str) -> dict:
         # Fallback: search in next 300 chars after order code
         search_area = ocr_text[order_end:order_end + 300]
     
-    # Find name line: starts with letter, not a street name pattern, not in quotes
+    # Find name line: starts with letter (upper or lower case), not a street name pattern, not in quotes
     # Exclude lines with: numbers at start, quotes, bicycle emoji, "Geplant"
-    name_match = re.search(r'\n\s*([A-ZÄÖÜ][a-zäöüß]*\.?\s+[A-ZÄÖÜa-zäöüß][^\n]{1,30})\s*\n', search_area)
+    name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][a-zäöüß]*\.?\s+[A-ZÄÖÜa-zäöüß][^\n]{1,30})\s*\n', search_area)
     
     if not name_match:
         raise ParseError(detect_collapse_error(ocr_text))
@@ -164,8 +164,8 @@ def parse_pf_order(ocr_text: str) -> dict:
         # Fallback: look for address pattern before ZIP
         address_block = ocr_text[name_end:name_end + 200].strip()
     
-    # Extract address lines (before ZIP, may be multi-line)
-    # Pattern: Street name/number, followed by ZIP on same or next line
+    # Extract ONLY first line before comma (street + number only)
+    # Ignore everything after comma (Etage, apartment, floor info)
     address_lines = []
     for line in address_block.split('\n'):
         line = line.strip()
@@ -179,12 +179,18 @@ def parse_pf_order(ocr_text: str) -> dict:
         if re.match(r'^\d{5}$', line):
             continue
         address_lines.append(line)
+        # Stop after first valid address line (before comma/Etage)
+        if ',' in line:
+            # Take only part before comma
+            address_lines = [line.split(',')[0].strip()]
+            break
     
     if not address_lines:
         raise ParseError(detect_collapse_error(ocr_text))
     
-    # Join address lines and clean up
-    full_address_raw = ' '.join(address_lines)
+    # Join address lines WITHOUT spaces (handles word wrapping in OCR)
+    # Example: "Dr.-Hans-Kapfin\nger-Straße" → "Dr.-Hans-Kapfinger-Straße"
+    full_address_raw = ''.join(address_lines)
     
     # Remove ZIP and city if they appear in address
     full_address_raw = re.sub(r',?\s*940\d{2}\s*,?', '', full_address_raw)
@@ -224,12 +230,21 @@ def parse_pf_order(ocr_text: str) -> dict:
     else:
         result['address'] = full_address_raw
     
-    # 5. Phone (required): After address, before total
-    phone_match = re.search(r'📞?\s*(\+?\d[\d\s]{9,20})', ocr_text)
+    # 5. Phone (required): After address, stop at newline to prevent capturing next line
+    # Normalize: add +49 if missing, remove leading 0
+    phone_match = re.search(r'📞?\s*(\+?\d[\d\s-]{9,20})(?=\s*\n|$)', ocr_text)
     if not phone_match:
         raise ParseError(detect_collapse_error(ocr_text))
     
-    phone = phone_match.group(1).replace(' ', '').replace('\n', '')
+    phone = phone_match.group(1).replace(' ', '').replace('-', '').strip()
+    
+    # Normalize phone: add +49 if missing, remove leading 0
+    if not phone.startswith('+'):
+        if phone.startswith('0'):
+            phone = '+49' + phone[1:]  # Remove 0, add +49
+        else:
+            phone = '+49' + phone  # Add +49
+    
     if len(phone) < 7:
         raise ParseError(detect_collapse_error(ocr_text))
     result['phone'] = phone
