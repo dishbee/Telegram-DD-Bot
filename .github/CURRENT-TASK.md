@@ -1,0 +1,107 @@
+# 📝 Current Active Task
+
+**Status**: Active
+**Started**: 2024-12-06
+**Last Updated**: 2024-12-06
+
+---
+
+## Original User Request
+
+```
+We need to add a new restaurant to Shopify orders: "Hello Burrito"
+
+I already created a group and added it to the evnironment on Render and deployed:
+
+{"Pommes Freunde": -4955033989, "Zweite Heimat": -4850816432, "Julis Spätzlerei": -4870635901, "i Sapori della Toscana": -4833204954, "Kahaani": -5072102362, "Leckerolls": -4839028336, "dean & david": -4901870176, "Safi": -4994651457, "Hello Burrito": -5050234553}
+
+In Shopify payload the "Hello Buritto" comes exactly with this name.
+
+Also add /testhb to our test orders system, I will update it in the list on BotFather. 
+---
+
+## My Understanding of the Task
+
+Add "Hello Burrito" restaurant to the bot system:
+1. Add "HB" shortcut to RESTAURANT_SHORTCUTS in utils.py and rg.py
+2. Add /testhb test command to main.py (similar to existing /testjs, /testzh, etc.)
+3. Update AI-INSTRUCTIONS.md VENDOR_GROUP_MAP with new restaurant list
+4. Verify environment variable already updated on Render (user confirmed)
+
+**Note**: User already added "Hello Burrito": -5050234553 to VENDOR_GROUP_MAP on Render.
+**Note**: Shopify payload uses "Hello Buritto" (exact spelling from user).
+
+---
+
+## Task Checklist
+
+- [ ] Add "Hello Burrito": "HB" to RESTAURANT_SHORTCUTS in utils.py
+- [ ] Add "Hello Burrito": "HB" to RESTAURANT_SHORTCUTS in rg.py  
+- [ ] Add /testhb command in main.py
+- [ ] Update VENDOR_GROUP_MAP in AI-INSTRUCTIONS.md documentation
+- [ ] Update VENDOR_GROUP_MAP in .github/copilot-instructions.md
+- [ ] Commit and deploy changes
+
+---
+
+## Conversation Log
+
+**[2024-12-06] User:**
+```
+We need to add a new restaurant to Shopify orders: "Hello Burrito"
+
+I already created a group and added it to the evnironment on Render and deployed:
+
+{"Pommes Freunde": -4955033989, "Zweite Heimat": -4850816432, "Julis Spätzlerei": -4870635901, "i Sapori della Toscana": -4833204954, "Kahaani": -5072102362, "Leckerolls": -4839028336, "dean & david": -4901870176, "Safi": -4994651457, "Hello Burrito": -5050234553}
+
+In Shopify payload the "Hello Buritto" comes exactly with this name.
+
+Also add /testhb to our test orders system, I will update it in the list on BotFather.
+```
+
+**[2024-12-06] AI Response Summary:**
+Reading CURRENT-TASK.md and FAILURES.md. Analyzing code to find where RESTAURANT_SHORTCUTS and test commands are defined. Found locations in utils.py, rg.py, and main.py. Preparing to propose changes.
+
+---
+
+**[2024-12-06] User:**
+```
+Proceed.
+```
+
+**[2024-12-06] AI Response Summary:**
+Implemented all changes:
+- Added "Hello Burrito": "HB" to RESTAURANT_SHORTCUTS in utils.py
+- Added "Hello Burrito": "HB" to RESTAURANT_SHORTCUTS in rg.py
+- Added /testhb command handler in main.py
+- Updated VENDOR_GROUP_MAP in AI-INSTRUCTIONS.md
+- Updated VENDOR_GROUP_MAP and RESTAURANT_SHORTCUTS in .github/copilot-instructions.md
+
+**[2024-12-06] User:**
+```
+You said you will add shortcut "HB" but in reality you added "HE". Fix that.
+```
+
+**[2024-12-06] AI Response Summary:**
+Found the bug! main.py line 75 only imports `clean_product_name` from utils, not `RESTAURANT_SHORTCUTS`. Line 1199 in `handle_test_vendor_command` tries to use `RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())` but since it's not imported, it falls back to `vendor[:2].upper()` which gives "HE" for "Hello Burrito". Fixing by adding RESTAURANT_SHORTCUTS to the import statement.
+
+---
+
+## Important Notes/Context
+
+[Any critical information discovered during the task]
+
+---
+
+## Completion
+
+**When task is COMPLETE:**
+
+1. Mark completion time below
+2. SAVE this file to `.github/task-history/YYYY-MM-DD_task-name.md`
+3. Clear this file for next task
+
+**Task completed**: [Date/Time]
+**Outcome**: [Brief summary]
+**Files changed**: [List]
+**Saved to**: `.github/task-history/YYYY-MM-DD_task-name.md`

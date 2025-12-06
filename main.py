@@ -72,7 +72,7 @@ from rg import (
 )
 import upc
 from upc import check_all_vendors_confirmed, mdg_assignment_keyboard, courier_selection_keyboard
-from utils import clean_product_name
+from utils import clean_product_name, RESTAURANT_SHORTCUTS
 
 # Configure logging
 logging.basicConfig(
