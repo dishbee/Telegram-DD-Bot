@@ -115,11 +115,11 @@ Render deployed the new code correctly (service restarted at 12:58:22). The impo
 
 **[2024-12-06] User:**
 ```
-[Logs from 13:05:14 showing service live, then /testhb at 13:06:28 showing "Vendor: **HE**" again - but NO debug logs from configure_mdg() appearing]
+[Debug logs showing: RESTAURANT_SHORTCUTS dict = {...} with NO "Hello Burrito", 'Hello Burrito' in dict = False, Got shortcut = 'HE']
 ```
 
 **[2024-12-06] AI Response Summary:**
-Debug logs I added are NOT appearing in the output. The startup logs (with configure_mdg debug output) are missing from what user sent. Need to see the FULL startup sequence from "Starting Complete Assignment Implementation" through "Your service is live" to see what RESTAURANT_SHORTCUTS contains when passed to configure_mdg().
+**FOUND THE BUG!** main.py has DUPLICATE RESTAURANT_SHORTCUTS definition on line 103 that OVERWRITES the import from utils.py! Execution order: Line 76 imports from utils (has "HB"), then line 103 redefines it locally (missing "HB"), then line 176 passes the incomplete local dict to configure_mdg(). FIX: Add "Hello Burrito": "HB" to main.py line 105 (between "ZH" and "KA").
 
 ---
 
