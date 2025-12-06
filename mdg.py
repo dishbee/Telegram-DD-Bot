@@ -320,7 +320,11 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         logger.info(f"DEBUG Product Count - vendor_items structure: {vendor_items}")
         
         for vendor in vendors:
+            logger.info(f"🔍 BUILD_MDG: Looking up shortcut for vendor='{vendor}'")
+            logger.info(f"🔍 BUILD_MDG: RESTAURANT_SHORTCUTS dict = {RESTAURANT_SHORTCUTS}")
+            logger.info(f"🔍 BUILD_MDG: '{vendor}' in dict = {vendor in RESTAURANT_SHORTCUTS}")
             shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
+            logger.info(f"🔍 BUILD_MDG: Got shortcut = '{shortcut}'")
             shortcuts.append(f"**{shortcut}**")
             
             # For PF Lieferando orders, use stored product_count instead of counting empty vendor_items

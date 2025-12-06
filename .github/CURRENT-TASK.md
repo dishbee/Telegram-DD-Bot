@@ -113,6 +113,14 @@ Total: 18.50
 **[2024-12-06] AI Response Summary:**
 Render deployed the new code correctly (service restarted at 12:58:22). The import is present on main.py line 76. But "HE" still appears. Adding debug logging to trace EXACTLY what value RESTAURANT_SHORTCUTS has when configure_mdg() is called, and what mdg.py receives in its configure() function. This will reveal if the dict is missing "Hello Burrito" or if something else is wrong.
 
+**[2024-12-06] User:**
+```
+[Logs from 13:05:14 showing service live, then /testhb at 13:06:28 showing "Vendor: **HE**" again - but NO debug logs from configure_mdg() appearing]
+```
+
+**[2024-12-06] AI Response Summary:**
+Debug logs I added are NOT appearing in the output. The startup logs (with configure_mdg debug output) are missing from what user sent. Need to see the FULL startup sequence from "Starting Complete Assignment Implementation" through "Your service is live" to see what RESTAURANT_SHORTCUTS contains when passed to configure_mdg().
+
 ---
 
 ## Important Notes/Context
