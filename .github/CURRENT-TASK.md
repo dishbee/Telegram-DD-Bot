@@ -9,6 +9,68 @@
 ## Original User Request
 
 ```
+There was a lot of various debug logic added throught the developing and it makes the render logs very verbose, anaylze all the debug logic add to the code. Maike a list and evaluate which ones is worth keeping for future developments and which ones can be added later if needed.
+```
+
+---
+
+## Task Understanding
+
+Analyze all debug logging throughout the codebase and categorize into:
+1. **Essential** - Keep for production (error tracking, critical state changes)
+2. **Development** - Remove (one-time debugging, verbose traces)
+3. **Conditional** - Consider removing if not actively used
+
+Goal: Clean up verbose Render logs while preserving useful operational logging.
+
+---
+
+## Task Checklist
+
+- [ ] Search all files for debug logging statements
+- [ ] Categorize each debug log by purpose and usefulness
+- [ ] Create comprehensive list with recommendations
+- [ ] Get user approval on what to remove
+- [ ] Remove approved debug logs
+- [ ] Test to ensure no critical logging lost
+
+---
+
+## Conversation Log
+
+**[2024-12-06] User:**
+```
+There was a lot of various debug logic added throught the developing and it makes the render logs very verbose, anaylze all the debug logic add to the code. Maike a list and evaluate which ones is worth keeping for future developments and which ones can be added later if needed.
+```
+
+**[2024-12-06] Agent:**
+Completed comprehensive debug log analysis. Found 40+ debug logs across 6 files. Categorized all logs and presented recommendations.
+
+**[2024-12-06] User:**
+```
+✅ 4 logs from product name cleaning (main.py lines 1270, 1272, 4333, 4335)
+✅ 3 logs from product count debug (mdg.py lines 320, 333, 355)
+✅ 3 logs from courier selection detail (upc.py lines 154, 176, 232)
+✅ 6 logs from vendor confirmation detail (upc.py lines 58-59, 64, 67, 69)
+✅ 7 OCR parser logs in utils.py (but change to logger.debug() level)
+✅ 2 UPC warnings in upc.py lines 48, 53 (already WARNING level, keep as-is)
+
+Keep all these, remove all others.
+```
+
+**[2024-12-06] Agent:**
+Proceeding to remove all debug logs except the ones user specified to keep. Will remove:
+- 9 logs from Hello Burrito bug investigation (main.py, mdg.py)
+- 8 logs from phone/total formatting (rg.py, mdg.py)
+- 1 log from scheduled orders (mdg_menu_commands.py)
+
+Total: 18 logs to remove
+
+---
+
+## Original User Request
+
+```
 We need to add a new restaurant to Shopify orders: "Hello Burrito"
 
 I already created a group and added it to the evnironment on Render and deployed:

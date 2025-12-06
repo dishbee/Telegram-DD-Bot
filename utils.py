@@ -467,9 +467,9 @@ def clean_product_name(name: str) -> str:
             burger_name = match.group(1)
             if other_parts:
                 # Recursively clean the other parts
-                logger.info(f"DEBUG Rule 3: Burger='{burger_name}' | Cleaning side: '{other_parts}'")
+                logger.debug(f"DEBUG Rule 3: Burger='{burger_name}' | Cleaning side: '{other_parts}'")
                 cleaned_other = clean_product_name(other_parts)
-                logger.info(f"DEBUG Rule 3: Side cleaned to: '{cleaned_other}'")
+                logger.debug(f"DEBUG Rule 3: Side cleaned to: '{cleaned_other}'")
                 result = f"{burger_name} - {cleaned_other}"
                 return result
             else:
@@ -486,9 +486,9 @@ def clean_product_name(name: str) -> str:
             
             if remaining_text:
                 # There's a side dish after the burger name
-                logger.info(f"DEBUG Rule 3 (no separator): Burger='{burger_name}' | Side: '{remaining_text}'")
+                logger.debug(f"DEBUG Rule 3 (no separator): Burger='{burger_name}' | Side: '{remaining_text}'")
                 cleaned_side = clean_product_name(remaining_text)
-                logger.info(f"DEBUG Rule 3 (no separator): Side cleaned to: '{cleaned_side}'")
+                logger.debug(f"DEBUG Rule 3 (no separator): Side cleaned to: '{cleaned_side}'")
                 result = f"{burger_name} - {cleaned_side}"
                 return result
             else:
@@ -962,7 +962,7 @@ def parse_smoothr_order(text: str) -> dict:
     order_data = {}
     
     # DEBUG: Log all parsed lines
-    logger.info(f"DEBUG PARSER - Total lines found: {len(lines)}")
+    logger.debug(f"DEBUG PARSER - Total lines found: {len(lines)}")
     for i, line in enumerate(lines):
         logger.info(f"  Line {i}: '{line}'")
     # Parse line by line
@@ -1043,13 +1043,13 @@ def parse_smoothr_order(text: str) -> dict:
                 logger.error(f"Failed to parse delivery fee '{line}': {e}")
         
         elif line.startswith("- Total Payment:"):
-            logger.info(f"DEBUG PARSER - Found Total Payment line: '{line}'")
+            logger.debug(f"DEBUG PARSER - Found Total Payment line: '{line}'")
             try:
                 total_text = line.split(":", 1)[1].strip()
                 # Extract numeric value (e.g., "5.00 €" -> "5.00")
                 total_amount = total_text.split()[0]
                 order_data["total"] = f"{total_amount}€"
-                logger.info(f"DEBUG PARSER - Extracted total: {order_data['total']}")
+                logger.debug(f"DEBUG PARSER - Extracted total: {order_data['total']}")
             except Exception as e:
                 logger.error(f"Failed to parse total payment '{line}': {e}")
         

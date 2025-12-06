@@ -180,12 +180,9 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
         else:
             # DD/PF: add phone and order time (customer already shown above)
             phone = order.get('customer', {}).get('phone', 'N/A')
-            logger.info(f"RG DEBUG PHONE - raw phone: '{phone}', type: {type(phone)}")
             lines.append(f"📞 {format_phone_for_android(phone)}")
-            logger.info(f"RG DEBUG PHONE - added to lines: '{lines[-1]}'")
             
             total = order.get('total', 'N/A')
-            logger.info(f"RG DEBUG TOTAL - raw total: '{total}', type: {type(total)}")
             # Always show original order time (confirmed time is in status line)
             created_at = order.get('created_at', now())
             if isinstance(created_at, str):

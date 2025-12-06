@@ -42,9 +42,6 @@ def configure(state_ref: Dict[str, Dict[str, Any]], restaurant_shortcuts: Dict[s
     global STATE, RESTAURANT_SHORTCUTS
     STATE = state_ref
     RESTAURANT_SHORTCUTS = restaurant_shortcuts
-    logger.info(f"🔍 MDG CONFIGURE CALLED: received {len(restaurant_shortcuts)} shortcuts")
-    logger.info(f"🔍 MDG CONFIGURE: Hello Burrito = {restaurant_shortcuts.get('Hello Burrito', 'NOT FOUND')}")
-    logger.info(f"🔍 MDG CONFIGURE: RESTAURANT_SHORTCUTS after assignment = {RESTAURANT_SHORTCUTS}")
 
 
 def shortcut_to_vendor(shortcut: str) -> Optional[str]:
@@ -320,11 +317,7 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         logger.info(f"DEBUG Product Count - vendor_items structure: {vendor_items}")
         
         for vendor in vendors:
-            logger.info(f"🔍 BUILD_MDG: Looking up shortcut for vendor='{vendor}'")
-            logger.info(f"🔍 BUILD_MDG: RESTAURANT_SHORTCUTS dict = {RESTAURANT_SHORTCUTS}")
-            logger.info(f"🔍 BUILD_MDG: '{vendor}' in dict = {vendor in RESTAURANT_SHORTCUTS}")
             shortcut = RESTAURANT_SHORTCUTS.get(vendor, vendor[:2].upper())
-            logger.info(f"🔍 BUILD_MDG: Got shortcut = '{shortcut}'")
             shortcuts.append(f"**{shortcut}**")
             
             # For PF Lieferando orders, use stored product_count instead of counting empty vendor_items
@@ -400,15 +393,10 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         if phone and phone != "N/A":
             # Format for Android auto-detection (no spaces, ensure +49)
             phone_line = f"📞 {format_phone_for_android(phone)}\n"
-            logger.info(f"DEBUG PHONE - formatted phone_line: '{phone_line}'")
-        
-        logger.info(f"DEBUG CUSTOMER - customer_line will be: '👤 {order['customer']['name']}\\n'")
         
         # Total line (always shown in collapsed view)
         total = order.get("total", "0.00€")
-        logger.info(f"DEBUG TOTAL - raw total from STATE: '{total}', type: {type(total)}")
         total_line = f"Total: {total}\n"
-        logger.info(f"DEBUG TOTAL - formatted total_line: '{total_line}'")
         
         # Optional lines (note, tip, cash) - shown after total in collapsed view
         note_line = ""
@@ -565,7 +553,6 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
     try:
         order_id = order["order_id"]
         vendors = order.get("vendors", [])
-        logger.info(f"🔍 MDG_INITIAL_KEYBOARD DEBUG - order_id: {order_id}, vendors: {vendors}, len: {len(vendors)}")
         order.setdefault("mdg_expanded", False)  # Track expansion state
         
         is_expanded = order.get("mdg_expanded", False)

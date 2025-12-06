@@ -36,7 +36,6 @@ def build_scheduled_list_message(state_dict: dict, now_func) -> str:
         
         confirmed_times = order.get("confirmed_times", {})
         if not confirmed_times:
-            logger.info(f"SCHED DEBUG: Order {order_name} skipped - no confirmed_times")
             continue
         # Skip only delivered orders, not assigned ones
         if order.get("status") == "delivered":
