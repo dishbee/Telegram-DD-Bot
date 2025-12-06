@@ -95,6 +95,24 @@ You fix didnt work, testhb still comes with "HE" in mdg-ord instead of "HB".
 **[2024-12-06] AI Response Summary:**
 The fix to main.py was correct, but the issue is in a DIFFERENT location. The MDG message (which shows "HE") is built by `build_mdg_dispatch_text()` in mdg.py line 320, which uses its OWN `RESTAURANT_SHORTCUTS` dict. This dict is populated by `configure_mdg(STATE, RESTAURANT_SHORTCUTS)` on main.py line 175. The code is correct in both files - mdg.py gets configured with the correct dict from utils.py which has "HB". **ROOT CAUSE**: Render hasn't fully restarted with new code OR there's a caching issue. The deployed code should work once Render properly restarts.
 
+**[2024-12-06] User:**
+```
+Tested again (testhb) - mdg-ord still comes with "HE" instead of "HB":
+
+🚨 New order (# 01)
+────────────────
+🗺️ Ludwigstraße 15 (94032)
+👩‍🍳 HE (2)
+📞 +491625113168
+👤 Peter Weber
+Total: 18.50
+
+[Logs showing deployment at 12:58:22, service live at 12:58:22, test command at 12:58:34, still shows "Vendor: **HE**"]
+```
+
+**[2024-12-06] AI Response Summary:**
+Render deployed the new code correctly (service restarted at 12:58:22). The import is present on main.py line 76. But "HE" still appears. Adding debug logging to trace EXACTLY what value RESTAURANT_SHORTCUTS has when configure_mdg() is called, and what mdg.py receives in its configure() function. This will reveal if the dict is missing "Hello Burrito" or if something else is wrong.
+
 ---
 
 ## Important Notes/Context

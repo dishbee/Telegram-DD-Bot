@@ -173,6 +173,8 @@ def load_state():
 # Format: {mdg_message_id: {"vendor": "Restaurant Name", "rg_chat_id": -1234567890}}
 RESTAURANT_FORWARDED_MESSAGES: Dict[int, Dict[str, Any]] = {}
 
+logger.info(f"🔍 RESTAURANT_SHORTCUTS at configure time: {RESTAURANT_SHORTCUTS}")
+logger.info(f"🔍 Hello Burrito in RESTAURANT_SHORTCUTS: {'Hello Burrito' in RESTAURANT_SHORTCUTS}")
 configure_mdg(STATE, RESTAURANT_SHORTCUTS)
 upc.configure(STATE, bot)  # Configure UPC module with STATE and bot reference
 

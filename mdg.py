@@ -42,6 +42,9 @@ def configure(state_ref: Dict[str, Dict[str, Any]], restaurant_shortcuts: Dict[s
     global STATE, RESTAURANT_SHORTCUTS
     STATE = state_ref
     RESTAURANT_SHORTCUTS = restaurant_shortcuts
+    logger.info(f"🔍 MDG CONFIGURE CALLED: received {len(restaurant_shortcuts)} shortcuts")
+    logger.info(f"🔍 MDG CONFIGURE: Hello Burrito = {restaurant_shortcuts.get('Hello Burrito', 'NOT FOUND')}")
+    logger.info(f"🔍 MDG CONFIGURE: RESTAURANT_SHORTCUTS after assignment = {RESTAURANT_SHORTCUTS}")
 
 
 def shortcut_to_vendor(shortcut: str) -> Optional[str]:
