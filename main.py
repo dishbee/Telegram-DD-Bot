@@ -2027,6 +2027,11 @@ def telegram_webhook():
                 run_async(handle_test_vendor_command(chat_id, "Safi", msg.get('message_id')))
                 return "OK"
 
+            if text.startswith("/testhb"):
+                logger.info("=== TEST HB COMMAND DETECTED ===")
+                run_async(handle_test_vendor_command(chat_id, "Hello Burrito", msg.get('message_id')))
+                return "OK"
+
             # =================================================================
             # SMOOTHR ORDER DETECTION
             # =================================================================

@@ -1,5 +1,23 @@
 # Telegram Dispatch Bot – AI Agent Instructions
 
+## 🔥 MANDATORY FIRST STEP - BEFORE EVERY RESPONSE
+
+**BEFORE responding to ANY message:**
+
+1. ✅ Read `.github/CURRENT-TASK.md` - See what task is active and all previous context
+2. ✅ Read `.github/FAILURES.md` - Check documented failure patterns
+3. ✅ Update `CURRENT-TASK.md` - Append user's EXACT message (full copy-paste) + your response summary
+4. ✅ If NEW task - Save old CURRENT-TASK.md to `.github/task-history/YYYY-MM-DD_task-name.md` first
+5. ✅ If task COMPLETE - Save to task-history before clearing
+6. ✅ Reference previous messages - Show you remember what user said earlier
+7. ✅ Quote relevant failure patterns - Prove you checked FAILURES.md
+
+**CRITICAL**: Copy user's EXACT words, not summaries. This creates permanent searchable history.
+
+**If you skip ANY step, user will reject response immediately.**
+
+---
+
 ## ⚠️ CRITICAL: Working with Non-Technical User
 
 **User Context**: User is NOT a coder and cannot fix anything. Paid for professional AI assistance and expects production-quality results.
@@ -257,7 +275,7 @@ else:
 BOT_TOKEN                 # Telegram bot token: 7064983715:AAH6xz2p1QxP5h2EZMIp1Uw9pq57zUX3ikM
 SHOPIFY_WEBHOOK_SECRET    # HMAC validation: 0cd9ef469300a40e7a9c03646e4336a19c592bb60cae680f86b41074250e9666
 DISPATCH_MAIN_CHAT_ID     # MDG chat ID: -4955033990
-VENDOR_GROUP_MAP          # JSON: {"Pommes Freunde": -4955033989, "Zweite Heimat": -4850816432, "Julis Spätzlerei": -4870635901, "i Sapori della Toscana": -4833204954, "Kahaani": -4665514846, "Leckerolls": -4839028336, "dean & david": -4901870176}
+VENDOR_GROUP_MAP          # JSON: {"Pommes Freunde": -4955033989, "Zweite Heimat": -4850816432, "Julis Spätzlerei": -4870635901, "i Sapori della Toscana": -4833204954, "Kahaani": -5072102362, "Leckerolls": -4839028336, "dean & david": -4901870176, "Safi": -4994651457, "Hello Burrito": -5050234553}
 DRIVERS                   # JSON: {"Bee 1": 383910036, "Bee 2": 6389671774, "Bee 3": 8483568436}
 COURIER_MAP               # Same as DRIVERS (newer convention)
 PORT                      # Default: 10000
@@ -305,9 +323,9 @@ ngrok http 10000
 ### Restaurant Shortcuts
 ```python
 RESTAURANT_SHORTCUTS = {
-    "Julis Spätzlerei": "JS", "Zweite Heimat": "ZH", "Kahaani": "KA",
+    "Julis Spätzlerei": "JS", "Zweite Heimat": "ZH", "Hello Burrito": "HB", "Kahaani": "KA",
     "i Sapori della Toscana": "SA", "Leckerolls": "LR", "dean & david": "DD",
-    "Pommes Freunde": "PF", "Wittelsbacher Apotheke": "AP"
+    "Pommes Freunde": "PF", "Wittelsbacher Apotheke": "AP", "Safi": "SF"
 }
 ```
 Keep synced across `main.py`, `mdg.py`, and environment variables.

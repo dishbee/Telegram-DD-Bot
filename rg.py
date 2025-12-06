@@ -23,6 +23,7 @@ def now() -> datetime:
 RESTAURANT_SHORTCUTS = {
     "Julis Spätzlerei": "JS",
     "Zweite Heimat": "ZH",
+    "Hello Burrito": "HB",
     "Kahaani": "KA",
     "i Sapori della Toscana": "SA",
     "Leckerolls": "LR",

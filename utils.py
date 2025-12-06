@@ -35,6 +35,7 @@ COURIER_MAP: Dict[str, int] = json.loads(os.environ.get("COURIER_MAP", "{}"))  #
 RESTAURANT_SHORTCUTS = {
     "Julis Spätzlerei": "JS",
     "Zweite Heimat": "ZH",
+    "Hello Burrito": "HB",
     "Kahaani": "KA",
     "i Sapori della Toscana": "SA",
     "Leckerolls": "LR",

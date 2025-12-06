@@ -8,16 +8,55 @@
 
 ---
 
+## 🔥 MANDATORY FIRST STEP - BEFORE EVERY RESPONSE
+
+**BEFORE responding to ANY message, you MUST:**
+
+1. ✅ Read `.github/CURRENT-TASK.md` to see active task context
+2. ✅ Read `.github/FAILURES.md` in full
+3. ✅ If NEW task:
+   - SAVE current CURRENT-TASK.md to `.github/task-history/YYYY-MM-DD_task-name.md`
+   - Clear CURRENT-TASK.md and populate with user's EXACT request
+4. ✅ If CONTINUING task:
+   - Append user's EXACT message (full copy-paste, not summary) to CURRENT-TASK.md
+   - Add your response summary
+5. ✅ Quote relevant FAILURES.md pattern(s) in your response
+6. ✅ Reference what user said in previous messages (from CURRENT-TASK.md)
+7. ✅ When task COMPLETE: Save to task-history before clearing
+
+**CRITICAL**: Always copy user's EXACT words, never summarize. This creates permanent searchable history.
+
+**If you skip ANY step, the user will reject your response immediately.**
+
+**Example Format:**
+```
+## Relevant Failure Pattern
+
+Pattern #13: Hallucinating Message Formats From Documentation
+
+Lesson: "Documentation lies. Code is truth. ALWAYS read actual code."
+
+## How I'm Avoiding This
+
+I will read build_vendor_summary_text() in rg.py lines 45-89 
+to see actual format, not trust AI-INSTRUCTIONS.md examples.
+```
+
+---
+
 ## 🚨 MANDATORY COMMUNICATION RULES
 
 ### ✅ ALWAYS DO:
-1. **ASK FOR CONFIRMATION** before making ANY code changes
-2. **Make SURGICAL changes** - touch ONLY what needs fixing
-3. **Test each change individually** before moving to next
-4. **Check every line** against original requirements
-5. **Explain exactly** what will change and why
-6. **TRACE THE ACTUAL CODE FLOW** before implementing - don't assume
-7. **READ THE ACTUAL CODE FIRST** - never hallucinate message formats or behavior, always read the code to see what it actually does
+1. **READ `.github/CURRENT-TASK.md` FIRST** to maintain context within current task
+2. **READ `.github/FAILURES.md` BEFORE** proposing any code changes
+3. **UPDATE CURRENT-TASK.md** with every message exchange
+4. **ASK FOR CONFIRMATION** before making ANY code changes
+5. **Make SURGICAL changes** - touch ONLY what needs fixing
+6. **Test each change individually** before moving to next
+7. **Check every line** against original requirements
+8. **Explain exactly** what will change and why
+9. **TRACE THE ACTUAL CODE FLOW** before implementing - don't assume
+10. **READ THE ACTUAL CODE FIRST** - never hallucinate message formats or behavior, always read the code to see what it actually does
 
 ### ❌ NEVER DO:
 1. **NO assumptions** - verify everything against assignment
@@ -278,7 +317,7 @@ Before proceeding with ANY change, verify:
 BOT_TOKEN=7064983715:AAH6xz2p1QxP5h2EZMIp1Uw9pq57zUX3ikM
 SHOPIFY_WEBHOOK_SECRET=0cd9ef469300a40e7a9c03646e4336a19c592bb60cae680f86b41074250e9666
 DISPATCH_MAIN_CHAT_ID=-4825320632
-VENDOR_GROUP_MAP={"Pommes Freunde": -4955033989, "Zweite Heimat": -4850816432, "Julis Spätzlerei": -4870635901, "i Sapori della Toscana": -4833204954, "Kahaani": -5072102362, "Leckerolls": -4839028336, "dean & david": -4901870176}
+VENDOR_GROUP_MAP={"Pommes Freunde": -4955033989, "Zweite Heimat": -4850816432, "Julis Spätzlerei": -4870635901, "i Sapori della Toscana": -4833204954, "Kahaani": -5072102362, "Leckerolls": -4839028336, "dean & david": -4901870176, "Safi": -4994651457, "Hello Burrito": -5050234553}
 DRIVERS={"Bee 1": 383910036, "Bee 2": 6389671774, "Bee 3": 8483568436}
 ```
 
