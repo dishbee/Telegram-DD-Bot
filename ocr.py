@@ -142,10 +142,11 @@ def parse_pf_order(ocr_text: str) -> dict:
         search_area = ocr_text[order_end:order_end + 300]
     
     # Find name line: starts with letter (upper or lower case), not a street name pattern, not in quotes
-    # Exclude lines with: numbers at start, quotes, bicycle emoji, "Geplant"
-    # Allow patterns: "H. Buchner", "LT. Welke", "M. Steinleitner", "Welke", "h. Khatib"
+    # Exclude lines with: numbers at start, quotes, bicycle emoji, "Bezahlt"
+    # Allow patterns: "H. Buchner", "LT. Welke", "M. Steinleitner", "Welke", "h. Khatib", "F. Auriemma"
     # Pattern: One or more uppercase/lowercase letters, optional dot, optional space + more letters
-    name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][A-ZÄÖÜa-zäöüß]*\.?(?:\s+[A-ZÄÖÜa-zäöüß][^\n]{1,30})?)\s*\n', search_area)
+    # Filter out "Bezahlt" payment status word
+    name_match = re.search(r'\n\s*(?!Bezahlt\s*\n)([A-ZÄÖÜa-zäöüß][A-ZÄÖÜa-zäöüß]*\.?(?:[ \t]+[A-ZÄÖÜa-zäöüß][^\n]{1,30})?)\s*\n', search_area, re.IGNORECASE)
     
     if not name_match:
         raise ParseError(detect_collapse_error(ocr_text))
@@ -224,7 +225,7 @@ def parse_pf_order(ocr_text: str) -> dict:
         found_street = False
         
         # Define street patterns for comprehensive detection
-        street_suffixes = ('straße', 'strasse', 'str', 'gasse', 'platz', 'ring', 'weg', 'allee', 'hof', 'damm')
+        street_suffixes = ('straße', 'strasse', 'str', 'gasse', 'platz', 'ring', 'weg', 'allee', 'hof', 'damm', 'ort')
         street_prefixes = ('untere', 'obere', 'alte', 'neue', 'große', 'kleine', 'innere', 'äußere')
         
         for part in address_parts:
@@ -296,8 +297,9 @@ def parse_pf_order(ocr_text: str) -> dict:
     result['product_count'] = int(artikel_match.group(1))
     
     # 7. Scheduled Time: Check for "Geplant" indicator
-    # Pattern: "17:40\nGeplant" → extract "17:40"
-    geplant_match = re.search(r'(\d{1,2}):(\d{2})\s*\n\s*Geplant', ocr_text, re.IGNORECASE)
+    # Pattern: Find any time (HH:MM) that appears BEFORE "Geplant" in text
+    # Use .*? to match any characters (including newlines) between time and "Geplant"
+    geplant_match = re.search(r'(\d{1,2}):(\d{2}).*?Geplant', ocr_text, re.IGNORECASE | re.DOTALL)
     
     if geplant_match:
         hour = int(geplant_match.group(1))
