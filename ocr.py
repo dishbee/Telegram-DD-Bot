@@ -178,6 +178,16 @@ def parse_pf_order(ocr_text: str) -> dict:
         # Skip lines that are just ZIP
         if re.match(r'^\d{5}$', line):
             continue
+        # Stop at phone number line (digits only, 10+ chars)
+        if re.match(r'^\+?\d{10,}$', line):
+            break
+        # Stop at total/price line (e.g., "28,90 €" or "37,56 €")
+        if re.match(r'^\d+[,\.]\d{2}\s*€', line):
+            break
+        # Stop at lines with just numbers (like "28" or "37" from total parsing errors)
+        if re.match(r'^\d{1,3}$', line):
+            break
+        # Append valid address line
         address_lines.append(line)
         # Stop after first valid address line (before comma/Etage)
         if ',' in line:

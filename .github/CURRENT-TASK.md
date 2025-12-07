@@ -1123,4 +1123,80 @@ FOLLOW THE INSTRUCTIONS!!!!!!!!!!!!!!!!!!!!!!!!!!
 1. ✅ Read CURRENT-TASK.md
 2. ✅ Read FAILURES.md
 3. ✅ Documented user's exact feedback
-4. NOW FIXING: Blank line logic, mystery number trace, Note processing crash, product counter
+4. ✅ Fixed blank line logic (rg.py - keep ONE newline)
+5. ✅ Reverted Note detection (ocr.py - emoji-only, removed re.DOTALL)
+6. ✅ Removed customer name negative lookahead filter
+7. ✅ **FOUND MYSTERY NUMBER SOURCE**: Address extraction loop wasn't stopping at phone/total lines, so "37" from "37,56 €" was being included in address_lines array
+
+**Mystery Number Root Cause**:
+- OCR text layout: Name → Address → Phone (no emoji) → Total
+- Address extraction uses 200-char fallback when phone emoji missing
+- Loop processed each line but didn't stop at phone number or total
+- Result: "37,56 €" line got into address_lines, then "37" displayed as mystery number
+
+**Fix Applied**:
+Added two stop conditions to address extraction loop (ocr.py lines 176-181):
+```python
+# Stop at phone number line (digits only, 10+ chars)
+if re.match(r'^\+?\d{10,}$', line):
+    break
+# Stop at total/price line (e.g., "28,90 €" or "37,56 €")
+if re.match(r'^\d+[,\.]\d{2}\s*€', line):
+    break
+```
+
+---
+
+## 📨 User Testing Update - Mystery Number Found
+
+```
+I tested now these 4 images. Logs attached. Only one parsed with mystery number:
+
+rg-sum:
+
+🚨 New order (# BP)
+────────────────
+
+🗺️ Spitzbergstraße 4
+👤 S. Omelianchuk
+
+📞 +491719069996
+37
+⏰ Ordered at: 16:44
+
+mdg-ord:
+
+🚨 New order (# BP)
+────────────────
+
+🗺️ Spitzbergstraße 4 (94032)
+
+👩‍🍳 PF (1)
+
+📞 +491719069996
+37
+
+👤 S. Omelianchuk
+
+Total: 37.56
+```
+
+```
+So the issue is: phone_pos regex requires emoji 📞 but OCR text doesn't always have it! When emoji is missing, phone_pos becomes None, and the address_block extraction falls back to:
+
+// BUT IT DOES ALWAYS HAVE, WHAT THE FUCK DO I ATTACHE THE IMAGES HERE FOR? CANT YOU SEE IT???? But if regex is unable to recognize the emoji due to the low quality of the photo for example, then maybe we need to find another approach?
+```
+
+## Root Cause Analysis
+
+**Mystery "37" Source**: The OCR text DOES have the 📞 emoji in ALL screenshots, but the regex is failing to match it due to:
+1. OCR encoding issues (emoji might be recognized as different unicode sequences)
+2. Low photo quality affecting emoji recognition
+3. Regex pattern too strict for emoji variations
+
+When phone_pos regex fails to match the emoji, the fallback code on line ~165 grabs 200 characters which includes the total line "37,56 €". Then during address parsing loop on lines 170-195, the "37" from total gets added to address_lines because there's no stop condition for currency amounts.
+
+**THE FIX**: Make address parsing loop STOP when it hits:
+1. A line with € symbol (indicates total)
+2. A line that's just digits (phone without emoji)
+3. A line matching total pattern (number,number €)
