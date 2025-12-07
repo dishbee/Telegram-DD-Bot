@@ -2,11 +2,109 @@
 
 **Status**: Active
 **Started**: 2024-12-07
-**Last Updated**: 2024-12-07 17:00
+**Last Updated**: 2024-12-07 18:30
 
 ---
 
-## User Request (December 7, 2025)
+## User Request (December 7, 2025 - 18:30)
+
+```
+New task: We need to add a new Shopify restaurant "Kimbu". I already added it to the VENDOR_GROUP_MAP and redeployed, the Group id is: -5093377174
+
+The shortcut will be: "KI"
+
+Make sure to add it everyhwerhe related (last time you failed to add the short cum in mdg.py somwhere and it was falling back to a wrong shortcut).
+
+Also add the /testki for test orders (also with correct shortcut display). I will update BotFather's list of commands.
+```
+
+**Agent Response Summary**: 
+- NEW TASK: Add restaurant "Kimbu" with shortcut "KI"
+- User already added to VENDOR_GROUP_MAP (-5093377174) and redeployed
+- Need to add shortcut to ALL locations (user mentioned mdg.py was missed last time)
+- Add /testki test command with correct shortcut display
+- User will update BotFather commands separately
+
+**Analysis Plan**:
+1. Search codebase for RESTAURANT_SHORTCUTS usage
+2. Search for other test commands (/testjs, /testzh, etc.) to match pattern
+3. Add "Kimbu": "KI" to all RESTAURANT_SHORTCUTS dictionaries
+4. Add /testki command following existing test command pattern
+5. Verify no other locations need updates
+
+---
+
+## Agent Analysis (December 7, 2025 - 18:32)
+
+**Found RESTAURANT_SHORTCUTS in 3 locations:**
+1. ✅ `utils.py` line 35-46 - Main definition (imported by other modules)
+2. ✅ `rg.py` line 23-34 - Duplicate definition (used for RG-specific logic)
+3. ✅ `main.py` line 103-114 - Duplicate definition (overwrites import from utils)
+
+**Found test commands in main.py:**
+- `/testpf` (line 1994) - PF photo test
+- `/testjs` (line 2002) - Julis Spätzlerei
+- `/testzh` (line 2007) - Zweite Heimat
+- `/testka` (line 2012) - Kahaani
+- `/testsa` (line 2017) - i Sapori della Toscana
+- `/testlr` (line 2022) - Leckerolls
+- `/testsf` (line 2027) - Safi
+- `/testhb` (line 2032) - Hello Burrito
+
+**Pattern to follow**: Each test command has format:
+```python
+if text.startswith("/testXX"):
+    logger.info("=== TEST XX COMMAND DETECTED ===")
+    run_async(handle_test_vendor_command(chat_id, "Full Vendor Name", msg.get('message_id')))
+    return "OK"
+```
+
+## Relevant Failure Pattern
+
+**Pattern #1: Breaking Working Vendor Detection**
+
+"If vendor detection is working, NEVER touch it. No 'improvements', no refactoring, no optimization."
+
+**How I'm avoiding this**: Only ADDING new entries to existing dictionaries, not modifying any existing vendor detection logic or changing any working code paths.
+
+---
+
+## Pre-Change Proposal
+
+### Changes Needed (4 locations)
+
+**1. utils.py** (lines 35-46)
+- Current: 11 restaurants listed
+- Add: `"Kimbu": "KI"` after "Safi": "SF" (line 45)
+- Why: Main RESTAURANT_SHORTCUTS definition imported by other modules
+
+**2. rg.py** (lines 23-34)
+- Current: 11 restaurants listed
+- Add: `"Kimbu": "KI"` after "Safi": "SF" (line 33)
+- Why: RG module has its own RESTAURANT_SHORTCUTS dict for vendor-specific logic
+
+**3. main.py** (lines 103-114)
+- Current: 11 restaurants listed
+- Add: `"Kimbu": "KI"` after "Safi": "SF" (line 113)
+- Why: main.py has duplicate definition that overwrites utils.py import (per previous bug fix)
+
+**4. main.py** (after line 2035)
+- Current: 8 test commands (/testjs, /testzh, /testka, /testsa, /testlr, /testsf, /testhb)
+- Add: `/testki` command after `/testhb` block
+- Why: Test command for Kimbu orders
+
+### What Could This Break?
+
+1. **If "Kimbu" is misspelled in VENDOR_GROUP_MAP** - Orders won't route to restaurant group (but user said they already added it and redeployed)
+2. **If shortcut "KI" conflicts with existing** - Would cause wrong shortcut display (checked: "KI" not in use)
+3. **If test command routing fails** - /testki won't work (LOW risk, following exact pattern of working commands)
+
+**Checks**:
+- ✅ STATE imports: Not affected (only adding dict entries)
+- ✅ Circular dependencies: Not affected (no new imports)
+- ✅ Callback data: Not affected (no callback changes)
+- ✅ Multi-vendor logic: Not affected (only adding new vendor)
+- ✅ Existing working buttons/keyboards: Not affected (preserving all existing entries)
 
 ```
 We need to continue fixing OCR PF now, there still a lot of issues, we ended here:
@@ -1705,3 +1803,36 @@ else:
 - MDG-ORD shows: `⏰ 20:00` (correct scheduled time)
 
 ✅ Deploying commit...
+
+✅ Deployed commit 7c85a93: "Fix OCR PF: search for scheduled time in last 200 chars before 'Geplant' to skip clock time at top"
+
+**Status**: Awaiting user test with scheduled order image to verify it now shows `⏰ 20:00` instead of `⏰ 06:33`.
+
+---
+
+## User Message (December 7, 2025 - 18:27)
+
+```
+You can finish this task for now, make sure to save it to the task-history properly.
+```
+
+**Agent Response**: Task marked complete. Saving to task-history.
+
+---
+
+## Summary of Completed Fixes (December 7, 2025)
+
+**Fixed Issues**:
+1. ✅ Mystery number after phone (28, 45, 71) - commit 1823ca1
+2. ✅ Customer name capturing "Bezahlt" - commit bf1f7b3
+3. ✅ Street "10 Ort" parsing backwards - commit bf1f7b3
+4. ✅ Street "Am Seidenhof" prefix issue - commit 064bb74
+5. ✅ Scheduled time capturing clock time "6:33" instead of "20:00" - commit 7c85a93
+
+**Remaining Issues** (from original task):
+1. ❌ Products counter shows 0 (vendor_items not populated)
+2. ❌ 2 orders still fail with OCR_FAILED
+3. ❌ Building number complex patterns ("1/ app Nr 316")
+4. ❌ Product lines not hidden for PF orders in MDG/RG
+
+**Status**: Paused - User will test fixes and report back on remaining issues.

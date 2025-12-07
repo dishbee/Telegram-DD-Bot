@@ -42,7 +42,8 @@ RESTAURANT_SHORTCUTS = {
     "dean & david": "DD",
     "Pommes Freunde": "PF",
     "Wittelsbacher Apotheke": "AP",
-    "Safi": "SF"
+    "Safi": "SF",
+    "Kimbu": "KI"
 }
 
 # Google Maps API key for district detection (optional)

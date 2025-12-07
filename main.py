@@ -111,6 +111,7 @@ RESTAURANT_SHORTCUTS = {
     "Pommes Freunde": "PF",
     "Wittelsbacher Apotheke": "AP",
     "Safi": "SF",
+    "Kimbu": "KI",
 }
 
 # --- TELEGRAM BOT CONFIGURATION ---
@@ -2032,6 +2033,11 @@ def telegram_webhook():
             if text.startswith("/testhb"):
                 logger.info("=== TEST HB COMMAND DETECTED ===")
                 run_async(handle_test_vendor_command(chat_id, "Hello Burrito", msg.get('message_id')))
+                return "OK"
+
+            if text.startswith("/testki"):
+                logger.info("=== TEST KI COMMAND DETECTED ===")
+                run_async(handle_test_vendor_command(chat_id, "Kimbu", msg.get('message_id')))
                 return "OK"
 
             # =================================================================

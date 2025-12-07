@@ -30,7 +30,8 @@ RESTAURANT_SHORTCUTS = {
     "dean & david": "DD",
     "Pommes Freunde": "PF",
     "Wittelsbacher Apotheke": "AP",
-    "Safi": "SF"
+    "Safi": "SF",
+    "Kimbu": "KI"
 }
 
 # Reverse mapping for decoding
