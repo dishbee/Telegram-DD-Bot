@@ -143,8 +143,9 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     # Find name line: starts with letter (upper or lower case), not a street name pattern, not in quotes
     # Exclude lines with: numbers at start, quotes, bicycle emoji, "Geplant"
-    # Allow patterns like: "H. Buchner", "LT. Welke", "M. Steinleitner"
-    name_match = re.search(r'\n\s*([A-ZÄÖÜ][A-ZÄÖÜa-zäöüß]*\.?\s+[A-ZÄÖÜa-zäöüß][^\n]{1,30})\s*\n', search_area)
+    # Allow patterns: "H. Buchner", "LT. Welke", "M. Steinleitner", "Welke", "h. Khatib"
+    # Pattern: One or more uppercase/lowercase letters, optional dot, optional space + more letters
+    name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][A-ZÄÖÜa-zäöüß]*\.?(?:\s+[A-ZÄÖÜa-zäöüß][^\n]{1,30})?)\s*\n', search_area)
     
     if not name_match:
         raise ParseError(detect_collapse_error(ocr_text))
