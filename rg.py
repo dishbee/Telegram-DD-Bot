@@ -48,12 +48,9 @@ def build_vendor_summary_text(order: Dict[str, Any], vendor: str) -> str:
         # Build status lines
         status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS, vendor=vendor)
         
-        # Status lines come with \n\n - we need to remove BOTH for proper formatting
-        # (separator should appear on next line with NO blank line)
+        # Status lines come with \n\n - remove ONE newline to keep proper spacing
         if status_text.endswith('\n\n'):
-            status_text = status_text[:-2]  # Remove both newlines
-        elif status_text.endswith('\n'):
-            status_text = status_text[:-1]  # Remove single newline if present
+            status_text = status_text[:-1]  # Remove ONE newline (keep 1)
         
         # Build message body based on order type
         if order_type == "shopify":
@@ -111,15 +108,9 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
         # Build status lines
         status_text = build_status_lines(order, "rg", RESTAURANT_SHORTCUTS, vendor=vendor)
         
-        # Remove one newline from status for proper separator spacing
-        if order_type == "shopify":
-            if status_text.endswith('\n\n'):
-                status_text = status_text[:-1]  # Remove one newline (keep 1)
-        
-        # For DD/PF: status has 2 newlines, we want only 1 before order number
-        if order_type in ["smoothr_dnd", "smoothr_lieferando"]:
-            if status_text.endswith('\n\n'):
-                status_text = status_text[:-1]  # Remove one newline (keep 1)
+        # Status lines come with \n\n - remove ONE newline to keep proper spacing
+        if status_text.endswith('\n\n'):
+            status_text = status_text[:-1]  # Remove ONE newline (keep 1)
         
         # Build message body based on order type
         if order_type == "shopify":

@@ -142,8 +142,8 @@ def parse_pf_order(ocr_text: str) -> dict:
         search_area = ocr_text[order_end:order_end + 300]
     
     # Find name line: starts with letter (upper or lower case), not a street name pattern, not in quotes
-    # Exclude lines with: numbers at start, quotes, bicycle emoji, "Geplant", OCR junk like "oo" or "n n"
-    name_match = re.search(r'\n\s*(?!oo|n n|nn)([A-ZÄÖÜa-zäöüß][a-zäöüß]*\.?\s+[A-ZÄÖÜa-zäöüß][^\n]{1,30})\s*\n', search_area)
+    # Exclude lines with: numbers at start, quotes, bicycle emoji, "Geplant"
+    name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][a-zäöüß]*\.?\s+[A-ZÄÖÜa-zäöüß][^\n]{1,30})\s*\n', search_area)
     
     if not name_match:
         raise ParseError(detect_collapse_error(ocr_text))
@@ -301,17 +301,17 @@ def parse_pf_order(ocr_text: str) -> dict:
     result['total'] = float(total_match.group(1).replace(',', '.'))
     
     # 9. Note (optional): Extract if note section present
-    # Look for: 1) Bicycle/truck emoji, 2) "Notiz" or "Note" text, 3) Quoted text after customer details
-    has_note_section = bool(re.search(r'[🚚🚴]|Notiz|Note', ocr_text, re.IGNORECASE))
+    # Look for bicycle/truck emoji indicators
+    has_note_indicator = bool(re.search(r'[🚚🚴]', ocr_text))
     
-    if has_note_section:
+    if has_note_indicator:
         # Check if collapsed (arrow symbol present)
         is_collapsed = bool(re.search(r'[▸▼▽]', ocr_text))
         if is_collapsed:
             raise ParseError(detect_collapse_note(ocr_text))
         
-        # Extract note from quotes (more robust pattern, allow multi-line)
-        note_match = re.search(r'[""\'\'\u201c\u201d]([^""\'\'\u201c\u201d]{5,})[""\'\'\u201c\u201d]', ocr_text, re.DOTALL)
+        # Extract note from quotes
+        note_match = re.search(r'[""\'\'\u201c\u201d]([^""\'\'\u201c\u201d\n]{5,})[""\'\'\u201c\u201d]', ocr_text)
         result['note'] = note_match.group(1).strip() if note_match else None
     else:
         result['note'] = None
