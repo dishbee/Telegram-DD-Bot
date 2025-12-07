@@ -143,7 +143,8 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     # Find name line: starts with letter (upper or lower case), not a street name pattern, not in quotes
     # Exclude lines with: numbers at start, quotes, bicycle emoji, "Geplant"
-    name_match = re.search(r'\n\s*([A-ZÄÖÜa-zäöüß][a-zäöüß]*\.?\s+[A-ZÄÖÜa-zäöüß][^\n]{1,30})\s*\n', search_area)
+    # Allow patterns like: "H. Buchner", "LT. Welke", "M. Steinleitner"
+    name_match = re.search(r'\n\s*([A-ZÄÖÜ][A-ZÄÖÜa-zäöüß]*\.?\s+[A-ZÄÖÜa-zäöüß][^\n]{1,30})\s*\n', search_area)
     
     if not name_match:
         raise ParseError(detect_collapse_error(ocr_text))
@@ -169,6 +170,7 @@ def parse_pf_order(ocr_text: str) -> dict:
     address_lines = []
     for line in address_block.split('\n'):
         line = line.strip()
+        logger.info(f"[OCR] Processing address line: '{line}' (len={len(line)})")
         # Stop at ZIP code line
         if re.match(r'^940\d{2}', line):
             break
