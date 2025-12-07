@@ -226,7 +226,7 @@ def parse_pf_order(ocr_text: str) -> dict:
         
         # Define street patterns for comprehensive detection
         street_suffixes = ('straße', 'strasse', 'str', 'gasse', 'platz', 'ring', 'weg', 'allee', 'hof', 'damm', 'ort')
-        street_prefixes = ('untere', 'obere', 'alte', 'neue', 'große', 'kleine', 'innere', 'äußere')
+        street_prefixes = ('untere', 'obere', 'alte', 'neue', 'große', 'kleine', 'innere', 'äußere', 'am')
         
         for part in address_parts:
             if not found_street:
