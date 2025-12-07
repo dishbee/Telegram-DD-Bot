@@ -268,12 +268,13 @@ def parse_pf_order(ocr_text: str) -> dict:
     # Phone appears with emoji: 📞 +4917647373945 or 📞 015739645573
     # Search in section AFTER customer name to avoid capturing ZIP or other numbers
     phone_search_area = ocr_text[name_end:name_end + 300]  # Search in next 300 chars after name
-    phone_match = re.search(r'📞?\s*([O0+]?\d[\d\s-]{8,20})', phone_search_area)
+    # CRITICAL: Use [^\S\n] instead of \s to match spaces/tabs but NOT newlines (prevents capturing mystery numbers)
+    phone_match = re.search(r'📞?[^\S\n]*([O0+]?\d[\d -)]{8,20})', phone_search_area)
     
     if not phone_match:
         raise ParseError(detect_collapse_error(ocr_text))
     
-    phone = phone_match.group(1).replace(' ', '').replace('-', '').strip()
+    phone = phone_match.group(1).replace(' ', '').replace('-', '').replace(')', '').strip()
     # Fix OCR errors: O → 0
     phone = phone.replace('O', '0')
     
