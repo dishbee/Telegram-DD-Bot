@@ -297,9 +297,16 @@ def parse_pf_order(ocr_text: str) -> dict:
     result['product_count'] = int(artikel_match.group(1))
     
     # 7. Scheduled Time: Check for "Geplant" indicator
-    # Pattern: Find any time (HH:MM) that appears BEFORE "Geplant" in text
-    # Use .*? to match any characters (including newlines) between time and "Geplant"
-    geplant_match = re.search(r'(\d{1,2}):(\d{2}).*?Geplant', ocr_text, re.IGNORECASE | re.DOTALL)
+    # Pattern: Find time (HH:MM) that appears RIGHT ABOVE "Geplant" word
+    # Search in last 200 chars before "Geplant" to skip clock time at top of screen
+    geplant_pos = ocr_text.lower().find('geplant')
+    if geplant_pos != -1:
+        # Search for time in section immediately before "Geplant"
+        search_start = max(0, geplant_pos - 200)
+        search_area = ocr_text[search_start:geplant_pos]
+        geplant_match = re.search(r'(\d{1,2}):(\d{2})', search_area)
+    else:
+        geplant_match = None
     
     if geplant_match:
         hour = int(geplant_match.group(1))
