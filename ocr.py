@@ -118,6 +118,7 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     full_code = order_match.group(2).upper()
     result['order_num'] = full_code[-2:]  # Last 2 chars
+    logger.info(f"[ORDER-{result['order_num']}] Parsed PF order from OCR")
     
     # 2. ZIP (required): 5 digits (Passau = 940XX)
     zip_match = re.search(r'\b(940\d{2})\b', ocr_text)

@@ -2001,42 +2001,42 @@ def telegram_webhook():
             # TEST VENDOR COMMANDS (anyone can trigger)
             # =================================================================
             if text.startswith("/testjs"):
-                logger.info("=== TEST JS COMMAND DETECTED ===")
+                logger.info("[ORDER-JS] === TEST JS COMMAND DETECTED ===")
                 run_async(handle_test_vendor_command(chat_id, "Julis Spätzlerei", msg.get('message_id')))
                 return "OK"
 
             if text.startswith("/testzh"):
-                logger.info("=== TEST ZH COMMAND DETECTED ===")
+                logger.info("[ORDER-ZH] === TEST ZH COMMAND DETECTED ===")
                 run_async(handle_test_vendor_command(chat_id, "Zweite Heimat", msg.get('message_id')))
                 return "OK"
 
             if text.startswith("/testka"):
-                logger.info("=== TEST KA COMMAND DETECTED ===")
+                logger.info("[ORDER-KA] === TEST KA COMMAND DETECTED ===")
                 run_async(handle_test_vendor_command(chat_id, "Kahaani", msg.get('message_id')))
                 return "OK"
 
             if text.startswith("/testsa"):
-                logger.info("=== TEST SA COMMAND DETECTED ===")
+                logger.info("[ORDER-SA] === TEST SA COMMAND DETECTED ===")
                 run_async(handle_test_vendor_command(chat_id, "i Sapori della Toscana", msg.get('message_id')))
                 return "OK"
 
             if text.startswith("/testlr"):
-                logger.info("=== TEST LR COMMAND DETECTED ===")
+                logger.info("[ORDER-LR] === TEST LR COMMAND DETECTED ===")
                 run_async(handle_test_vendor_command(chat_id, "Leckerolls", msg.get('message_id')))
                 return "OK"
 
             if text.startswith("/testsf"):
-                logger.info("=== TEST SF COMMAND DETECTED ===")
+                logger.info("[ORDER-SF] === TEST SF COMMAND DETECTED ===")
                 run_async(handle_test_vendor_command(chat_id, "Safi", msg.get('message_id')))
                 return "OK"
 
             if text.startswith("/testhb"):
-                logger.info("=== TEST HB COMMAND DETECTED ===")
+                logger.info("[ORDER-HB] === TEST HB COMMAND DETECTED ===")
                 run_async(handle_test_vendor_command(chat_id, "Hello Burrito", msg.get('message_id')))
                 return "OK"
 
             if text.startswith("/testki"):
-                logger.info("=== TEST KI COMMAND DETECTED ===")
+                logger.info("[ORDER-KI] === TEST KI COMMAND DETECTED ===")
                 run_async(handle_test_vendor_command(chat_id, "Kimbu", msg.get('message_id')))
                 return "OK"
 
@@ -2057,7 +2057,10 @@ def telegram_webhook():
                         # Parse order data
                         smoothr_data = parse_smoothr_order(text)
                         order_id = smoothr_data["order_id"]
-                        logger.info(f"Parsed Smoothr order: {order_id} ({smoothr_data['order_type']})")
+                        order_type = smoothr_data["order_type"]
+                        # Display: last 2 chars for Lieferando, all 3 digits for D&D
+                        display_num = order_id if order_type == "smoothr_dnd" else order_id[-2:]
+                        logger.info(f"[ORDER-{display_num}] Parsed Smoothr order: {order_id} ({order_type})")
                         
                         # Delete original Smoothr message (schedule as async task)
                         message_id_to_delete = msg.get('message_id')
@@ -3302,6 +3305,8 @@ def telegram_webhook():
                     order_id, vendor = data[1], data[2]
                     order = STATE.get(order_id)
                     if order:
+                        display_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order_id[-2:]
+                        logger.info(f"[ORDER-{display_num}] Vendor {vendor} confirmed time")
                         # Track confirmed time per vendor
                         confirmed_time = order.get("requested_time", "ASAP")
                         if "confirmed_times" not in order:
@@ -3859,7 +3864,9 @@ def telegram_webhook():
                     """
                     order_id = data[1]
                     user_id = cq["from"]["id"]
-                    logger.info(f"User {user_id} assigning order {order_id} to themselves")
+                    order = STATE.get(order_id)
+                    display_num = order.get('name', '')[-2:] if order and len(order.get('name', '')) >= 2 else order_id[-2:]
+                    logger.info(f"[ORDER-{display_num}] User {user_id} assigning order to themselves")
                     logger.info(f"DEBUG ASSIGN_MYSELF: main.STATE keys = {list(STATE.keys())}")
                     logger.info(f"DEBUG ASSIGN_MYSELF: order {order_id} in main.STATE? {order_id in STATE}")
                     logger.info(f"DEBUG ASSIGN_MYSELF: main.STATE id = {id(STATE)}")
@@ -4240,7 +4247,9 @@ def telegram_webhook():
                     """
                     order_id = data[1]
                     user_id = cq["from"]["id"]
-                    logger.info(f"User {user_id} confirming delivery for order {order_id}")
+                    order = STATE.get(order_id)
+                    display_num = order.get('name', '')[-2:] if order and len(order.get('name', '')) >= 2 else order_id[-2:]
+                    logger.info(f"[ORDER-{display_num}] User {user_id} confirming delivery")
                     
                     await upc.handle_delivery_completion(order_id, user_id)
                 
@@ -4286,10 +4295,10 @@ def shopify_webhook():
         payload = json.loads(raw.decode('utf-8'))
         order_id = str(payload.get("id"))
         
-        logger.info(f"Processing Shopify order: {order_id}")
-
         # Extract order data
         order_name = payload.get("name", "Unknown")
+        display_num = order_name[-2:] if len(order_name) >= 2 else order_name
+        logger.info(f"[ORDER-{display_num}] Processing Shopify order: {order_id}")
         
         # Extract customer data with enhanced phone extraction
         customer = payload.get("customer") or {}
