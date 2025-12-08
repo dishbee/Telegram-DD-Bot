@@ -78,6 +78,26 @@ Scaling
 - Example: `/cleanup 1` → keeps today + yesterday (Dec 7-8), deletes Dec 6 and earlier
 - Default: `/cleanup` → same as `/cleanup 1`
 - Works from any chat, shows status and results
+
+## 📋 User Message (December 8, 2025 - 21:00)
+
+```
+Doesn't work. This is the result after I ran the command:
+
+✅ Redis cleanup complete!
+
+📊 Deleted: 0 orders
+📅 Cutoff date: 2025-12-06
+📅 Kept: Orders from 2025-12-06 onwards
+
+Attached logs is full of errors (I cant even copy everytrhing because it's brutally long)
+```
+
+**Agent Response**: Found the bug! Timezone mismatch error: `can't compare offset-naive and offset-aware datetimes`
+
+**Problem**: redis_state.py line 260 uses `datetime.now()` (timezone-naive) but `order["created_at"]` is timezone-aware (Europe/Berlin)
+
+**Fix**: Change `datetime.now()` to `datetime.now(ZoneInfo("Europe/Berlin"))` to match stored datetime format
 - Runs cleanup immediately without needing Render shell
 
 **Files Modified**:

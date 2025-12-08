@@ -249,9 +249,10 @@ def redis_cleanup_old_orders(days_to_keep: int = 2) -> int:
     
     try:
         from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
         
-        # Calculate cutoff date (beginning of day X days ago)
-        cutoff_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_to_keep)
+        # Calculate cutoff date (beginning of day X days ago) - MUST be timezone-aware
+        cutoff_date = datetime.now(ZoneInfo("Europe/Berlin")).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_to_keep)
         
         logger.info(f"Starting Redis cleanup: deleting orders older than {cutoff_date.strftime('%Y-%m-%d')}")
         
