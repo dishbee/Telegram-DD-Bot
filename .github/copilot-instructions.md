@@ -38,7 +38,7 @@ This keeps documentation synchronized with code.
 
 **User Context**: User is NOT a coder and cannot fix anything. Paid for professional AI assistance and expects production-quality results.
 
-**DEPLOYMENT CONTEXT**: This is a TEST ENVIRONMENT. The bot is NOT live in production. It's purely for testing and development. There is NO customer-facing urgency. Breaking things is acceptable if it leads to proper fixes. Focus on FIXING CORRECTLY over reverting quickly.
+**DEPLOYMENT CONTEXT**: This is a **LIVE ENVIRONMENT**!!! Breaking things is absolutely not acceptable. Proceed only with **MAXIMUM CAUTION**. Take into account every possible dependence in the whole project / code of every single line you are changing.
 
 ### Communication Rules (MANDATORY)
 
@@ -79,7 +79,7 @@ Historical issues that have caused failures:
 **If implementation doesn't work:**
 1. ✅ Admit the specific mistake immediately
 2. ✅ Explain EXACTLY what you got wrong (not generic "sorry")
-3. ✅ Since this is TEST ENVIRONMENT: FIX IT PROPERLY, don't revert
+3. ✅ FIX IT PROPERLY (don't revert in test environment)
 4. ✅ Trace the ACTUAL code flow before next attempt
 5. ✅ Test logic mentally step-by-step before coding
 
@@ -326,7 +326,7 @@ ngrok http 10000
 RESTAURANT_SHORTCUTS = {
     "Julis Spätzlerei": "JS", "Zweite Heimat": "ZH", "Hello Burrito": "HB", "Kahaani": "KA",
     "i Sapori della Toscana": "SA", "Leckerolls": "LR", "dean & david": "DD",
-    "Pommes Freunde": "PF", "Wittelsbacher Apotheke": "AP", "Safi": "SF"
+    "Pommes Freunde": "PF", "Wittelsbacher Apotheke": "AP", "Safi": "SF", "Kimbu": "KI"
 }
 ```
 Keep synced across `main.py`, `mdg.py`, and environment variables.
@@ -413,13 +413,13 @@ Detected by "Abholung" in Shopify payload (case-insensitive). Special handling:
 
 **Order Missing from STATE**:
 - Symptom: Callback handler can't find `order_id`
-- Cause: Server restart (in-memory state cleared), or order never processed
+- Cause: Redis persistence exists but order may have expired (7-day TTL), or order never processed
 - Recovery: Log warning, return early from callback handler
-- Prevention: Consider persisting critical state to Redis/database
+- Prevention: Redis/Upstash automatic backup with 7-day TTL active
 
 **Message ID Mismatch**:
 - Symptom: Edit/delete operations fail
-- Check: `order["mdg_message_id"]` matches actual Telegram message
+- Check: `order["mdg_message_id"]` and `order["rg_message_ids"]` match actual Telegram messages
 - Recovery: Send new message, update STATE with new ID
 
 **Orphaned Messages**:
@@ -448,9 +448,10 @@ Detected by "Abholung" in Shopify payload (case-insensitive). Special handling:
 - Or: Use `run_async()` to offload work to background thread
 
 **Memory Leaks**:
-- `STATE` grows unbounded (50 orders tracked in `RECENT_ORDERS`, but all orders stay in `STATE`)
+- `STATE` grows in-memory but Redis persists with 7-day auto-cleanup
+- `RECENT_ORDERS` limited to 50 entries (configurable via RECENT_ORDERS_MAX_SIZE constant)
 - Monitor via health check: `GET /` shows `orders_in_state`
-- Consider periodic cleanup of delivered orders older than 24h
+- Redis automatically removes orders after 7 days
 
 **Render Cold Starts**:
 - Free tier: Render spins down after 15min inactivity
@@ -525,19 +526,7 @@ Centralized product name simplification with 17 rules:
 
 Applied at source in `main.py` Shopify webhook handler. All modules (MDG, RG, UPC) receive cleaned names.
 
-### 3. Assignment Confirmation Message Format
-Enhanced vendor confirmation message showing detailed breakdown:
-```
-🔖 #58 - dishbee (JS+LR)
-✅ Restaurants confirmed:
-� Julis Spätzlerei: 12:50 📦 1
-� Leckerolls: 12:55 📦 3
-```
-- Shows vendor shortcuts in header
-- Lists each vendor with confirmed time and product count
-- Singular/plural title based on vendor count
-
-### 4. Message Cleanup System
+### 3. Message Cleanup System
 Comprehensive temporary message tracking and deletion:
 - Tracks all temporary messages in `order["mdg_additional_messages"]`
 - Cleans up time pickers, vendor menus, courier selection menus
