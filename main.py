@@ -75,6 +75,11 @@ import upc
 from upc import check_all_vendors_confirmed, mdg_assignment_keyboard, courier_selection_keyboard
 from utils import clean_product_name, RESTAURANT_SHORTCUTS
 
+# --- CONFIGURATION CONSTANTS ---
+# Order tracking and logging limits
+RECENT_ORDERS_MAX_SIZE = 50   # Maximum number of recent orders to keep for "same time as" feature
+LOG_MESSAGE_TRUNCATE_LENGTH = 200  # Truncate long log messages to this length
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -1950,7 +1955,7 @@ def telegram_webhook():
             logger.info(f"  From Username: {from_user.get('username', 'N/A')}")
             logger.info(f"  From First Name: {from_user.get('first_name', 'N/A')}")
             logger.info(f"  From Last Name: {from_user.get('last_name', 'N/A')}")
-            logger.info(f"  Message Text: {text[:200]}{'...' if len(text) > 200 else ''}")
+            logger.info(f"  Message Text: {text[:LOG_MESSAGE_TRUNCATE_LENGTH]}{'...' if len(text) > LOG_MESSAGE_TRUNCATE_LENGTH else ''}")
             logger.info(f"  Message Length: {len(text)}")
 
             # Flag potential spam
@@ -4500,14 +4505,14 @@ def shopify_webhook():
                 # Update STATE with message IDs
                 STATE[order_id] = order
                 
-                # Keep only recent orders
+                # Keep only recent orders (up to RECENT_ORDERS_MAX_SIZE)
                 RECENT_ORDERS.append({
                     "order_id": order_id,
                     "created_at": now(),
                     "vendors": vendors
                 })
                 
-                if len(RECENT_ORDERS) > 50:
+                if len(RECENT_ORDERS) > RECENT_ORDERS_MAX_SIZE:
                     RECENT_ORDERS.pop(0)
                 
                 logger.info(f"Order {order_id} processed successfully")

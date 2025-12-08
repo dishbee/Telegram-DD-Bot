@@ -25,6 +25,10 @@ RESTAURANT_SHORTCUTS: Dict[str, str] = {}
 # Chef emojis for rotating display in multi-vendor buttons
 CHEF_EMOJIS = ['👩‍🍳', '👩🏻‍🍳', '👩🏼‍🍳', '👩🏾‍🍳', '🧑‍🍳', '🧑🏻‍🍳', '🧑🏼‍🍳', '🧑🏾‍🍳', '👨‍🍳', '👨🏻‍🍳', '👨🏼‍🍳', '👨🏾‍🍳']
 
+# Telegram button text limits (enforced by Telegram API)
+TELEGRAM_BUTTON_TEXT_LIMIT = 64  # Maximum characters for inline button text
+SINGLE_LINE_BUTTON_LIMIT = 30   # Practical limit for single-line button display
+
 # Courier shortcuts for combine orders menu
 COURIER_SHORTCUTS = {
     "Bee 1": "B1",
@@ -731,8 +735,8 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                         abbreviated_address = abbreviate_street(recent['address'], max_length=15)
                         button_text = f"{recent['order_num']} - {ref_vendor_shortcut} - {vendor_time} - {abbreviated_address}"
                         
-                        # TIER 2: If button exceeds 64 chars (Telegram limit), apply aggressive abbreviation
-                        if len(button_text) > 64:
+                        # TIER 2: If button exceeds Telegram limit, apply aggressive abbreviation
+                        if len(button_text) > TELEGRAM_BUTTON_TEXT_LIMIT:
                             import re
                             # Extract house number from original address
                             house_match = re.search(r'\s+(\d+[a-zA-Z]?)$', recent['address'])
@@ -769,8 +773,8 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                     abbreviated_address = abbreviate_street(recent['address'], max_length=15)
                     button_text = f"{recent['order_num']} - {ref_vendor_shortcut} - {recent['confirmed_time']} - {abbreviated_address}"
                     
-                    # TIER 2: If button exceeds 64 chars (Telegram limit), apply aggressive abbreviation
-                    if len(button_text) > 64:
+                    # TIER 2: If button exceeds Telegram limit, apply aggressive abbreviation
+                    if len(button_text) > TELEGRAM_BUTTON_TEXT_LIMIT:
                         import re
                         # Extract house number from original address
                         house_match = re.search(r'\s+(\d+[a-zA-Z]?)$', recent['address'])
@@ -1126,8 +1130,8 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
                 # Build button text: {address} - {time} - {vendor}  |  {courier}
                 button_text = f"{final_address} - {vendor_time} - {vendor_shortcut}  |  {courier_name}"
                 
-                # If > 30 chars (single-line limit), reduce street name letter-by-letter
-                while len(button_text) > 30 and len(final_address) > 1:
+                # If exceeds single-line limit, reduce street name letter-by-letter
+                while len(button_text) > SINGLE_LINE_BUTTON_LIMIT and len(final_address) > 1:
                     final_address = final_address[:-1]
                     button_text = f"{final_address} - {vendor_time} - {vendor_shortcut}  |  {courier_name}"
                 
