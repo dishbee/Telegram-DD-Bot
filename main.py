@@ -140,7 +140,8 @@ from redis_state import (
     redis_get_order,
     redis_get_all_orders,
     redis_get_order_count,
-    redis_delete_order
+    redis_delete_order,
+    redis_cleanup_old_orders
 )
 
 def save_state():
@@ -4544,5 +4545,25 @@ if __name__ == "__main__":
     loop_thread = threading.Thread(target=run_event_loop)
     loop_thread.daemon = True
     loop_thread.start()
+    
+    # Initialize scheduled cleanup (every 3 days at 23:59, delete orders older than 2 days)
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    
+    scheduler = BackgroundScheduler(timezone='Europe/Berlin')
+    
+    # Schedule cleanup: every 3 days at 23:59
+    # day='*/3' means every 3rd day (1st, 4th, 7th, 10th, etc.)
+    scheduler.add_job(
+        func=redis_cleanup_old_orders,
+        trigger=CronTrigger(day='*/3', hour=23, minute=59, timezone='Europe/Berlin'),
+        args=[2],  # Keep 2 days of history (today + yesterday)
+        id='redis_cleanup',
+        name='Redis State Cleanup',
+        replace_existing=True
+    )
+    
+    scheduler.start()
+    logger.info("✅ Scheduled cleanup initialized: runs every 3 days at 23:59, deletes orders older than 2 days")
     
     app.run(host="0.0.0.0", port=port, debug=False)

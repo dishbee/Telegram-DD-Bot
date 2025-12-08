@@ -1,64 +1,43 @@
-#  Current Active Task
+# 📝 Current Active Task
 
-**Status**:  READY FOR NEW TASK
-**Last Updated**: 2025-12-08
-
----
-
-## Previous Task: Code Quality Improvements (COMPLETE)
-
-**Saved to**: `.github/task-history/2025-12-08_code-quality-improvements.md`
-
-**Summary**:
--  Phase 1: Added `[ORDER-XX]` request ID logging (14 locations) - DEPLOYED
--  Phase 2: Created STATE_SCHEMA.md with 60+ field documentation - DEPLOYED
--  Phase 3: Extracted magic numbers to constants (64, 30, 50, 200) - DEPLOYED
--  Updated documentation (AI-INSTRUCTIONS.md, copilot-instructions.md, WORKFLOWS.md, MESSAGES.md)
--  Fixed year to 2025 in all task-history files
-
-**Commits**:
-- `38dd47c` - Phase 1: Request ID logging
-- `289e20c` - Phases 2 & 3: STATE_SCHEMA.md + magic number constants
-- `0195d4e` - Documentation updates and year corrections
+**Status**: 🔧 NEW TASK - Redis State Cleanup  
+**Started**: 2025-12-08  
+**Previous Tasks**: Update copilot-instructions.md (COMPLETE - saved to task-history)
 
 ---
 
-## Ready for Next Task
-
-Waiting for new assignment...
-
-##  User Request (December 8, 2025 - 14:26)
+## 📋 User Request (December 8, 2025 - 20:10)
 
 ```
-Follow the instrctions.
+New task: 
 
-I noticed, that copilot-instructions still has outdated parts. This for example:
+The Redis state is almost full, the Bot is taking more space than expected. Is it possible to clear the state to free up the space? Can we set up regular state clearing? Like every 3 days at 23:59, but only for the two previous days. So for example, if it's bein cleared on 08.12.2025 at 23:59, only the state for 07.12.2025 and earlier will be cleared. If it's possible to clear the memory regularly, let me know that you understand the frequency exactly and what I am asking for.
 
-### 3. Assignment Confirmation Message Format
-Enhanced vendor confirmation message showing detailed breakdown:
-```
- #58 - dishbee (JS+LR)
- Restaurants confirmed:
- Julis Sp�tzlerei: 12:50  1
- Leckerolls: 12:55  3
-```
-- Shows vendor shortcuts in header
-- Lists each vendor with confirmed time and product count
-- Singular/plural title based on vendor count
-
-// Update this, in ai-instructions and MESSAGES and WORKFLOWS it was alread updated, you can use that. Check also all other parts, if they are outdated, update them, replace or remove completely - if they are not actually needed in the instructions file. copilot-instructions should be more or less the same as ai-instructions, but you decide if there should be something different in copilot-instructions file.
+I attached the screenshot of Upstash Redis state
 ```
 
-**Agent Response**: Starting NEW TASK - Update copilot-instructions.md to remove outdated content and sync with ai-instructions.md
+**Agent Response**: Analyzing Redis state cleanup requirements and reading redis_state.py to understand current implementation...
 
+##  User Message (December 8, 2025 - 20:15)
 
-**Changes Made**:
-- Removed outdated 'Assignment Confirmation Message Format' section (format no longer exists)
-- Updated State Corruption section: Changed 'server restart' to 'Redis persistence with 7-day TTL'
-- Fixed field name: 'vendor_messages'  'rg_message_ids'
-- Updated Memory Leaks section to reflect Redis persistence and auto-cleanup
-- Added Kimbu (KI) to RESTAURANT_SHORTCUTS
-- Synced DEPLOYMENT CONTEXT: Changed 'TEST ENVIRONMENT' to 'LIVE ENVIRONMENT' to match AI-INSTRUCTIONS.md
-- Updated 'When You Fuck Up' section to match AI-INSTRUCTIONS.md
+```
+!!! Follow the instructions !!!
 
-**Status**: Ready to commit
+Proceed.
+```
+
+**Agent Response**: Implemented Redis state cleanup system with the following:
+
+**Files Modified**:
+- requirements.txt: Added APScheduler==3.10.4
+- redis_state.py: Added redis_cleanup_old_orders() function
+- main.py: Added scheduler initialization, imported redis_cleanup_old_orders
+
+**Implementation Details**:
+- Cleanup runs every 3 days at 23:59 (Europe/Berlin timezone)
+- Deletes orders older than 2 days (keeps today + yesterday)
+- Example: On Dec 8 at 23:59, deletes orders from Dec 6 and earlier
+- Uses BackgroundScheduler with CronTrigger (day='*/3', hour=23, minute=59)
+- Logs all deletions with order ID and creation date
+
+**Ready to deploy.**

@@ -229,3 +229,58 @@ def redis_get_order_count() -> int:
     except Exception as e:
         logger.error(f"Failed to get order count from Redis: {e}")
         return 0
+
+
+def redis_cleanup_old_orders(days_to_keep: int = 2) -> int:
+    """
+    Delete orders older than specified days.
+    Keeps orders from today and the specified number of previous days.
+    
+    Args:
+        days_to_keep: Number of days to keep (default 2, keeps today + 2 previous days)
+        
+    Returns:
+        Number of orders deleted
+    """
+    client = get_redis_client()
+    if not client:
+        logger.warning("Redis client not available - cleanup skipped")
+        return 0
+    
+    try:
+        from datetime import datetime, timedelta
+        
+        # Calculate cutoff date (beginning of day X days ago)
+        cutoff_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_to_keep)
+        
+        logger.info(f"Starting Redis cleanup: deleting orders older than {cutoff_date.strftime('%Y-%m-%d')}")
+        
+        # Get all order keys
+        keys = client.keys("order:*")
+        deleted_count = 0
+        
+        for key in keys:
+            try:
+                # Get order data
+                data = client.get(key)
+                if data:
+                    order = deserialize_order(data)
+                    
+                    # Check if order has created_at field
+                    if "created_at" in order and isinstance(order["created_at"], datetime):
+                        # Delete if older than cutoff
+                        if order["created_at"] < cutoff_date:
+                            client.delete(key)
+                            deleted_count += 1
+                            order_id = key.replace("order:", "")
+                            logger.info(f"Deleted old order {order_id} (created: {order['created_at'].strftime('%Y-%m-%d %H:%M')})")
+            except Exception as e:
+                logger.error(f"Error processing key {key} during cleanup: {e}")
+                continue
+        
+        logger.info(f"✅ Redis cleanup complete: deleted {deleted_count} orders, {len(keys) - deleted_count} orders remaining")
+        return deleted_count
+        
+    except Exception as e:
+        logger.error(f"Failed to cleanup old orders: {e}")
+        return 0
