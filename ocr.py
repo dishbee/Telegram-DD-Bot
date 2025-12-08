@@ -196,16 +196,18 @@ def parse_pf_order(ocr_text: str) -> dict:
         address_lines.append(line)
         # Stop after first valid address line (before comma/Etage)
         if ',' in line:
-            # Take only part before comma
-            address_lines = [line.split(',')[0].strip()]
+            # Take only part before comma (DON'T replace entire list - keep building number!)
+            address_lines[-1] = line.split(',')[0].strip()
             break
     
     if not address_lines:
         raise ParseError(detect_collapse_error(ocr_text))
     
     # Join address lines WITH spaces (preserve multi-word patterns like "1/ app Nr 316")
-    # Note: Word wrapping in street names (e.g., "Dr.-Hans-Kapfin\nger-Straße") is rare in address line
+    # Handle word wrapping in street names (e.g., "Dr.-Hans-Kapfi\nger-Straße" split across lines)
     full_address_raw = ' '.join(address_lines)
+    # Remove word-wrap artifacts: if hyphenated word is split with space, rejoin it
+    full_address_raw = re.sub(r'(\w+)- (\w+)', r'\1-\2', full_address_raw)
     
     # Remove ZIP and city if they appear in address
     full_address_raw = re.sub(r',?\s*940\d{2}\s*,?', '', full_address_raw)
@@ -226,7 +228,7 @@ def parse_pf_order(ocr_text: str) -> dict:
         found_street = False
         
         # Define street patterns for comprehensive detection
-        street_suffixes = ('straße', 'strasse', 'str', 'gasse', 'platz', 'ring', 'weg', 'allee', 'hof', 'damm', 'ort')
+        street_suffixes = ('straße', 'strasse', 'str', 'gasse', 'platz', 'ring', 'weg', 'allee', 'hof', 'damm', 'ort', 'markt', 'dobl')
         street_prefixes = ('untere', 'obere', 'alte', 'neue', 'große', 'kleine', 'innere', 'äußere', 'am')
         
         for part in address_parts:
@@ -305,7 +307,9 @@ def parse_pf_order(ocr_text: str) -> dict:
         # Search for time in section immediately before "Geplant"
         search_start = max(0, geplant_pos - 200)
         search_area = ocr_text[search_start:geplant_pos]
-        geplant_match = re.search(r'(\d{1,2}):(\d{2})', search_area)
+        # Find ALL time matches, take LAST one (closest to "Geplant")
+        matches = list(re.finditer(r'(\d{1,2}):(\d{2})', search_area))
+        geplant_match = matches[-1] if matches else None
     else:
         geplant_match = None
     
@@ -334,8 +338,8 @@ def parse_pf_order(ocr_text: str) -> dict:
         if is_collapsed:
             raise ParseError(detect_collapse_note(ocr_text))
         
-        # Extract note from quotes
-        note_match = re.search(r'[""\'\'\u201c\u201d]([^""\'\'\u201c\u201d\n]{5,})[""\'\'\u201c\u201d]', ocr_text)
+        # Extract note from quotes (allow newlines for multi-line notes)
+        note_match = re.search(r'[""\'\'\u201c\u201d]([^""\'\'\u201c\u201d]{10,})[""\'\'\u201c\u201d]', ocr_text)
         result['note'] = note_match.group(1).strip() if note_match else None
     else:
         result['note'] = None
