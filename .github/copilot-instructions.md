@@ -9,12 +9,28 @@
 3. ✅ Update `CURRENT-TASK.md` - Append user's EXACT message (full copy-paste) + your response summary
 4. ✅ If NEW task - Save old CURRENT-TASK.md to `.github/task-history/YYYY-MM-DD_task-name.md` first
 5. ✅ If task COMPLETE - Save to task-history before clearing
-6. ✅ Reference previous messages - Show you remember what user said earlier
-7. ✅ Quote relevant failure patterns - Prove you checked FAILURES.md
+6. ✅ If task PAUSED/UNFINISHED - Save to task-history with `-UNFINISHED.md` suffix
+7. ✅ Reference previous messages - Show you remember what user said earlier
+8. ✅ Quote relevant failure patterns - Prove you checked FAILURES.md
+
+**Task Save Options**:
+- **COMPLETE**: `YYYY-MM-DD_task-name.md` (finished successfully)
+- **UNFINISHED**: `YYYY-MM-DD_task-name-UNFINISHED.md` (paused, can resume later)
+  - When: User postpones, needs more info, wants to revisit
+  - Include: Discussion summary, decisions made, missing info, resume steps
+  - Mark: Why paused, what's needed, next steps
 
 **CRITICAL**: Copy user's EXACT words, not summaries. This creates permanent searchable history.
 
 **If you skip ANY step, user will reject response immediately.**
+
+**After completing a task and saving to task-history**, update:
+- `docs/WORKFLOWS.md` - If any workflow or button changed
+- `docs/MESSAGES.md` - If any message format changed
+
+This keeps documentation synchronized with code.
+
+**Quick Reference**: See `docs/WORKFLOWS.md` and `docs/MESSAGES.md` for all message formats, buttons, and workflows with shortcuts (MDG-ORD, RG-SUM, BTN-ASAP, etc.)
 
 ---
 
@@ -138,27 +154,7 @@ Why needed: [one sentence]
 - ✅ Multi-vendor vs single-vendor paths
 - ✅ Existing working buttons/keyboards
 
-### 4️⃣ SHOW DIFF ONLY - NO EXPLANATIONS
-
-**Use this exact format:**
-
-```diff
---- a/filename.py
-+++ b/filename.py
-@@ -line,count +line,count @@
--old code
-+new code
- unchanged context
-```
-
-**Rules:**
-- Show ONLY actual code changes
-- Include 3 lines of context before/after
-- NO prose explanations
-- NO "this will fix..." comments
-- Just the diff
-
-### 5️⃣ FINAL CONFIRMATION
+### 4️⃣ FINAL CONFIRMATION
 
 **Answer these YES/NO questions:**
 
@@ -166,7 +162,6 @@ Why needed: [one sentence]
 - [ ] Am I changing ONLY what was requested?
 - [ ] Did I check for circular imports and STATE corruption?
 - [ ] Did I list 3 specific things this could break?
-- [ ] Is my diff clean with NO extra changes?
 - [ ] Did I verify callback data formats won't break old buttons?
 
 **If ANY answer is NO, STOP and redo the checklist.**
@@ -188,24 +183,30 @@ Flask webhook service orchestrating multi-channel Telegram order dispatch for fo
 ## State Management (CRITICAL)
 
 - **`STATE` dict** (`main.py`): Single source of truth for all orders, keyed by `order_id` (Shopify order ID)
-- **In-memory only**: No database persistence; Render restarts clear all state
+- **Redis/Upstash Persistence**: All orders automatically saved with 7-day TTL, survives restarts
 - **`RECENT_ORDERS` list**: Tracks last 50 orders for "same time as" feature (max 1 hour old, confirmed times only)
+- **Complete Documentation**: See `STATE_SCHEMA.md` for all 60+ STATE fields, types, formats, usage patterns
 
 ### Critical `STATE` Fields Per Order
 
+**See `STATE_SCHEMA.md` for complete documentation of all 60+ fields.**
+
+Key fields:
 ```python
 {
     "order_id": {
         "name": "order_number",
+        "order_type": "shopify|smoothr_lieferando|smoothr_dd_app|ocr_pf",
         "vendors": ["Restaurant Name"],  # List of vendor names
         "mdg_message_id": 123456,  # Main dispatch message ID
-        "vendor_messages": {"Restaurant": 789},  # vendor → message_id mapping
+        "rg_message_ids": {"Restaurant": 789},  # vendor → message_id mapping
         "vendor_expanded": {"Restaurant": False},  # Toggle state for details
         "requested_time": "14:30",  # Time requested from vendors
         "confirmed_time": "14:35",  # Time confirmed by vendor
         "mdg_additional_messages": [123, 456],  # Temporary messages for cleanup
         "assigned_to": user_id,  # Courier assignment
-        "status": "new|assigned|delivered"
+        "status": "new|assigned|delivered",
+        "status_history": [{"status": "new", "timestamp": datetime}]
     }
 }
 ```
@@ -461,9 +462,11 @@ Detected by "Abholung" in Shopify payload (case-insensitive). Special handling:
 
 - **Health check**: `GET /` returns `{"orders_in_state": N}`
 - **State inspection**: Log `STATE[order_id]` contents before state transitions
-- **Verify message IDs**: Check `mdg_message_id` and `vendor_messages` populated after Shopify webhook
+- **Verify message IDs**: Check `mdg_message_id` and `rg_message_ids` populated after webhook
+- **Order tracking**: All order-related logs include `[ORDER-XX]` prefix (last 2 digits/chars of order ID)
 - **Spam detection**: All incoming messages logged with user info (watch for "FOXY", "airdrop", "t.me/" patterns)
 - **Verbose logging**: All incoming updates logged with full metadata (update_id, chat_id, user_id, message text)
+- **Log format**: `[ORDER-XX]` prefix allows filtering logs by specific order (e.g., grep "ORDER-26" to trace order #26)
 
 ## Common Gotchas
 
@@ -473,7 +476,31 @@ Detected by "Abholung" in Shopify payload (case-insensitive). Special handling:
 - **No tests**: Manual validation via Telegram sandbox + Shopify webhook replay only
 - **Production deployment**: Render uses Gunicorn (`Procfile: web: gunicorn main:app`), Python 3.10.13 (`runtime.txt`)
 
-## Recent Major Additions (October 2025)
+## Recent Major Additions (December 2025)
+
+### 1. Request ID Logging (December 2025)
+All order-related log statements now include `[ORDER-XX]` prefix for easy tracing:
+- **Format**: Last 2 digits for most orders, full 3 digits for Smoothr D&D
+- **Locations**: Webhook handlers, vendor confirmations, assignments, delivery, test commands
+- **Usage**: `grep "ORDER-26"` to filter logs for specific order
+- **Files**: main.py (13 locations), ocr.py (1 location)
+
+### 2. STATE Schema Documentation (December 2025)
+Comprehensive documentation of all STATE fields:
+- **File**: `STATE_SCHEMA.md` (442 lines)
+- **Content**: 60+ STATE fields with types, formats, examples, usage patterns
+- **Categories**: Core Fields, Message Tracking, Time Management, Assignment & Delivery, Payment & Order Details
+- **Features**: Field dependencies, lifecycle transitions, common pitfalls, usage examples
+- **Persistence**: Documents Redis/Upstash automatic backup (7-day TTL)
+
+### 3. Magic Number Constants (December 2025)
+Hardcoded values extracted to named constants for maintainability:
+- **mdg.py**: `TELEGRAM_BUTTON_TEXT_LIMIT = 64`, `SINGLE_LINE_BUTTON_LIMIT = 30`
+- **main.py**: `RECENT_ORDERS_MAX_SIZE = 50`, `LOG_MESSAGE_TRUNCATE_LENGTH = 200`
+- **Benefit**: Easier to update limits, self-documenting code, no scattered magic numbers
+- **No behavior change**: Pure refactoring for code quality
+
+## Earlier Additions (October 2025)
 
 ### 1. Assignment System (UPC Module)
 Complete courier assignment and delivery workflow implemented:

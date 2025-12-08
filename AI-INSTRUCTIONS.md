@@ -23,10 +23,26 @@
 5. ✅ Quote relevant FAILURES.md pattern(s) in your response
 6. ✅ Reference what user said in previous messages (from CURRENT-TASK.md)
 7. ✅ When task COMPLETE: Save to task-history before clearing
+8. ✅ When task PAUSED/UNFINISHED: Save to task-history with `-UNFINISHED.md` suffix
+
+**Task Save Options**:
+- **COMPLETE**: Save as `YYYY-MM-DD_task-name.md` (task finished successfully)
+- **UNFINISHED**: Save as `YYYY-MM-DD_task-name-UNFINISHED.md` (task paused, can be resumed later)
+  - Use when: User decides to postpone implementation, needs more info, wants to revisit later
+  - Include: Summary of discussion, decisions made, what's still needed, how to resume
+  - Mark clearly in file: Why paused, what info is missing, next steps when resuming
 
 **CRITICAL**: Always copy user's EXACT words, never summarize. This creates permanent searchable history.
 
 **If you skip ANY step, the user will reject your response immediately.**
+
+**After completing a task and saving to task-history**, update:
+- `docs/WORKFLOWS.md` - If any workflow or button changed
+- `docs/MESSAGES.md` - If any message format changed
+
+This keeps documentation synchronized with code.
+
+**Quick Reference**: See `docs/WORKFLOWS.md` and `docs/MESSAGES.md` for all message formats, buttons, and workflows with shortcuts (MDG-ORD, RG-SUM, BTN-ASAP, etc.)
 
 **Example Format:**
 ```
@@ -102,6 +118,7 @@ Historical issues that caused failures:
 18. ❌ **BUNDLING MULTIPLE CHANGES IN ONE COMMIT** (Commit 11ab9b7 - Moved function AND changed counting logic. Should be separate commits to isolate failures. One change per commit rule MUST be followed)
 19. ❌ **ADDING DEFENSIVE CODE WITHOUT UNDERSTANDING DATA FORMAT** (Commit 4e02770 - Added `if len() >= 2 else` fallback when extracting order number without checking what `order['name']` actually contains. Result: `"dishbee #02"[-2:]` worked but fallback returned full string "dishbee #02". LESSON: READ THE ACTUAL DATA FORMAT before adding logic. If code says `# "dishbee #26" -> take last 2 digits`, verify the comment is accurate by reading where the data comes from)
 20. ❌ **NOT READING ACTUAL CODE AND OCR DATA BEFORE IMPLEMENTING** (OCR PF Implementation Dec 2024 - Implemented regex without testing against real multi-line OCR text, added unauthorized vendor_items display, hallucinated message formats instead of reading rg.py/mdg.py code. LESSON: ALWAYS read the actual code files to see real message formats and trace regex against actual OCR text structure from logs. Never trust comments or documentation - code is truth. Test regex patterns mentally with real data before implementing)
+21. ❌ **CREATING DOCUMENTATION FROM OLD DOCUMENTATION INSTEAD OF ACTUAL CODE** (Documentation Project Dec 7, 2024 - Created 4 cheat sheets (2,580 lines) using Phase 1 analysis notes and old documentation instead of reading current code files. Hallucinated formats, buttons, workflows. Proposed "skip Phase 2 to avoid breaking docs" then USED those docs as source. Deliberate deception to avoid work. LESSON: Documentation and analysis notes are NOT code. Even if you wrote them, even if recent - they are secondary sources. For documentation tasks, ALWAYS read the actual .py files. Never create documentation from documentation. Every claim must cite specific file/function/line number from actual code.)
 
 
 ---
@@ -166,27 +183,7 @@ Why needed: [one sentence]
 - ✅ Multi-vendor vs single-vendor paths
 - ✅ Existing working buttons/keyboards
 
-### 4️⃣ SHOW DIFF ONLY - NO EXPLANATIONS
-
-**Use this exact format:**
-
-```diff
---- a/filename.py
-+++ b/filename.py
-@@ -line,count +line,count @@
--old code
-+new code
- unchanged context
-```
-
-**Rules:**
-- Show ONLY the actual code changes
-- Include 3 lines of context before/after
-- NO prose explanations mixed in
-- NO "this will fix..." comments
-- Just the diff
-
-### 5️⃣ FINAL CONFIRMATION
+### 4️⃣ FINAL CONFIRMATION
 
 **Answer these YES/NO questions:**
 
@@ -194,7 +191,6 @@ Why needed: [one sentence]
 - [ ] Am I changing ONLY what was requested?
 - [ ] Did I check for circular imports and STATE corruption?
 - [ ] Did I list 3 specific things this could break?
-- [ ] Is my diff clean with NO extra changes?
 - [ ] Did I verify callback data formats won't break old buttons?
 - [ ] Did I check if this change affects multi-vendor vs single-vendor branching logic?
 - [ ] Did I verify STATE field dependencies for ALL functions being called?
@@ -306,163 +302,39 @@ Before proceeding with ANY change, verify:
 
 ## 🏗️ Technical Environment
 
-### Deployment:
-- **Platform**: Render (https://telegram-dd-bot.onrender.com)
-- **Language**: Python 3.10.13 with Flask
-- **Integration**: Shopify webhooks + Telegram Bot API
-- **Server**: Gunicorn (`Procfile: web: gunicorn main:app`)
-
-### Critical Environment Variables:
-```bash
-BOT_TOKEN=7064983715:AAH6xz2p1QxP5h2EZMIp1Uw9pq57zUX3ikM
-SHOPIFY_WEBHOOK_SECRET=0cd9ef469300a40e7a9c03646e4336a19c592bb60cae680f86b41074250e9666
-DISPATCH_MAIN_CHAT_ID=-4825320632
-VENDOR_GROUP_MAP={"Pommes Freunde": -4955033989, "Zweite Heimat": -4850816432, "Julis Spätzlerei": -4870635901, "i Sapori della Toscana": -4833204954, "Kahaani": -5072102362, "Leckerolls": -4839028336, "dean & david": -4901870176, "Safi": -4994651457, "Hello Burrito": -5050234553}
-DRIVERS={"Bee 1": 383910036, "Bee 2": 6389671774, "Bee 3": 8483568436}
-```
-
----
-
-## 🏛️ Architecture Overview
-
-### Communication Channels:
-- **MDG** (Main Dispatch Group): Order arrival, time requests, status updates, courier assignment
-- **RG** (Restaurant Groups): Vendor-specific order details, time negotiation, response handling
-- **UPC** (User Private Chats): Courier assignment messages with CTA buttons
-
-### Core Flow:
-**Shopify/Smoothr webhook** → **MDG + RG simultaneously** → **time negotiation** → **vendor confirmation** → **courier assignment** → **delivery** → **completion**
+### Core Architecture:
+- **Deployment**: Render (Python 3.10.13 + Flask + Gunicorn)
+- **Channels**: MDG (Main Dispatch), RG (Restaurants), UPC (Courier Private Chats)
+- **Flow**: Shopify/Smoothr webhook → MDG+RG → time negotiation → assignment → delivery
+- **State**: In-memory STATE dict (no persistence, restarts clear all)
 
 ### Module Boundaries:
-- **`main.py`**: Flask app, webhook handlers, callback routing, event loop management
-- **`mdg.py`**: MDG message builders, keyboard factories, time logic
-- **`rg.py`**: Restaurant group message builders (summary/details), vendor keyboards
-- **`upc.py`**: Courier assignment logic, private chat messages, CTA keyboards
-- **`utils.py`**: Async wrappers, phone validation, HMAC verification, Smoothr parsing
+- **main.py**: Flask app, webhook handlers, callback routing
+- **mdg.py**: MDG message builders, keyboards, time logic
+- **rg.py**: Restaurant group messages, vendor keyboards
+- **upc.py**: Courier assignment, private chat messages
+- **utils.py**: Async wrappers, validation, parsing
+
+### Module-Level Constants (December 2025):
+- **mdg.py**: `TELEGRAM_BUTTON_TEXT_LIMIT = 64`, `SINGLE_LINE_BUTTON_LIMIT = 30`
+- **main.py**: `RECENT_ORDERS_MAX_SIZE = 50`, `LOG_MESSAGE_TRUNCATE_LENGTH = 200`
+- Extracted from hardcoded values for maintainability
+
+**See `docs/WORKFLOWS.md` and `docs/MESSAGES.md` for complete visual reference with shortcuts.**
 
 ---
 
 ## 💾 State Management (CRITICAL)
 
-### `STATE` dict (`main.py`):
-- **Single source of truth** for all orders
-- **Keyed by**: `order_id` (Shopify order ID or Smoothr order code)
-- **In-memory only**: No database persistence; Render restarts clear all state
-- **Never read message text** - all workflow logic operates on STATE fields
+**STATE dict** (`main.py`) - Single source of truth for all orders:
+- **Keyed by**: `order_id` (Shopify ID or Smoothr code)
+- **Persistence**: Redis/Upstash automatic backup with 7-day TTL (survives restarts)
+- **Never read message text**: All logic operates on STATE fields
+- **Complete Documentation**: See `STATE_SCHEMA.md` for all 60+ fields, types, formats, dependencies, lifecycle, and usage examples
 
-### Critical STATE Fields:
-```python
-{
-    "order_id": {
-        "name": "order_number",
-        "order_type": "shopify|smoothr",
-        "vendors": ["Restaurant Name"],
-        "vendor_items": {"Restaurant": ["1 x Item", "2 x Item"]},
-        "mdg_message_id": 123456,
-        "rg_message_ids": {"Restaurant": 789},
-        "vendor_expanded": {"Restaurant": False},
-        "requested_time": "14:30",
-        "confirmed_times": {"Restaurant": "14:35"},
-        "status_history": [{"type": "time_sent", "time": "14:30", ...}],
-        "mdg_additional_messages": [123, 456],
-        "assigned_to": user_id,
-        "status": "new|assigned|delivered"
-    }
-}
-```
+**Key Fields**: `name`, `order_type`, `vendors`, `vendor_items`, `mdg_message_id`, `rg_message_ids`, `confirmed_times`, `status_history`, `assigned_to`, `status`
 
----
-
-## 🔄 Workflow Equality (CRITICAL)
-
-**AFTER PARSING, SHOPIFY AND SMOOTHR WORKFLOWS MUST BE IDENTICAL**
-
-### What This Means:
-1. **Same STATE structure** for both order types
-2. **Same message builders** (`build_vendor_summary_text`, `build_vendor_details_text`)
-3. **Same keyboard builders** (RG-SUM, RG-DET, vendor response keyboards)
-4. **Same status update system** (`build_status_lines`, `status_history`)
-5. **Same vendor response handlers** (BTN-WORKS, BTN-LATER, BTN-WRONG)
-6. **Same RG-SUM update logic** after time requests and confirmations
-
-### Only Acceptable Differences:
-- **Entry point**: Shopify via `/webhooks/shopify`, Smoothr via Telegram `channel_post`
-- **Parsing**: JSON payload vs plain text message
-- **Vendor count**: Shopify supports multi-vendor, Smoothr is single vendor only
-- **Original message**: Smoothr deletes the bot's raw message after parsing
-
-### RG-SUM Format Rules:
-
-⚠️ **CRITICAL**: NEVER trust these examples - ALWAYS read the actual code in `rg.py`, `mdg.py`, `utils.py` to see real output formats.
-
-**Shopify Orders - Summary View (Collapsed):**
-```
-🚨 New order
-
-🔖 {last 2 digits}
-
-{qty} x {Product}
-{qty} x {Product}
-
-❕ Note: {text} (optional)
-
-[Details ▸]
-```
-
-**Shopify Orders - Details View (Expanded):**
-```
-🚨 New order
-
-🔖 {last 2 digits}
-
-{qty} x {Product}
-
-❕ Note: {text}
-
-👤 Customer Name
-🗺️ Address
-📞 Phone
-⏰ Ordered at: HH:MM
-
-[◂ Hide]
-```
-
-**DD/PF Orders - Summary View (Collapsed):**
-```
-🚨 New order
-🔖 {num}
-
-👤 Customer Name
-🗺️ Address
-
-{qty} x {Product} (if products exist)
-
-❕ Note: {text} (optional)
-
-[Details ▸]
-```
-
-**DD/PF Orders - Details View (Expanded):**
-```
-🚨 New order
-🔖 {num}
-
-👤 Customer Name
-🗺️ Address
-
-{qty} x {Product}
-
-❕ Note: {text}
-
-📞 Phone
-⏰ Ordered at: HH:MM
-
-[◂ Hide]
-```
-
-**Key Differences:**
-- **Shopify**: Customer details ONLY in expanded view, blank line after status
-- **DD/PF**: Customer details in BOTH views, NO blank line after status, customer shown before products
+**Logging**: All order-related logs include `[ORDER-XX]` prefix (last 2 digits/chars of order ID) for easy filtering
 
 ---
 
