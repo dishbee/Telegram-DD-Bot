@@ -41,3 +41,21 @@ Proceed.
 - Logs all deletions with order ID and creation date
 
 **Ready to deploy.**
+
+## 📋 User Message (December 8, 2025 - 20:30)
+
+```
+First cleanup execution Dec 10 at 23:59
+
+// This is too late, we have to clean up also today, all order before 07.12.2025
+```
+
+**Agent Response**: User needs IMMEDIATE cleanup for orders before Dec 7, 2025 + adjusted schedule. Will:
+1. Run manual cleanup NOW for orders before 07.12.2025
+2. Keep scheduled cleanup but verify it runs correctly
+
+**Solution**:
+- Created `manual_cleanup.py` script to run immediate cleanup
+- Uses `days_to_keep=1` to keep only Dec 7-8 orders
+- Deletes all orders before Dec 7, 2025
+- User will run this on Render console after deployment
