@@ -59,3 +59,29 @@ First cleanup execution Dec 10 at 23:59
 - Uses `days_to_keep=1` to keep only Dec 7-8 orders
 - Deletes all orders before Dec 7, 2025
 - User will run this on Render console after deployment
+
+## 📋 User Message (December 8, 2025 - 20:35)
+
+```
+Shell is not supported for free instance types. Upgrading to the Starter instance type also includes:
+Zero downtime
+Web shell and SSH access
+Persistent Disks
+One-off jobs
+Scaling
+```
+
+**Agent Response**: Render free tier doesn't have shell access. Added Telegram command instead:
+
+**NEW FEATURE: `/cleanup` command**
+- Syntax: `/cleanup [days_to_keep]`
+- Example: `/cleanup 1` → keeps today + yesterday (Dec 7-8), deletes Dec 6 and earlier
+- Default: `/cleanup` → same as `/cleanup 1`
+- Works from any chat, shows status and results
+- Runs cleanup immediately without needing Render shell
+
+**Files Modified**:
+- main.py: Added `/cleanup` command detection and `handle_cleanup_command()` function
+- Shows progress message, runs cleanup, displays result with deleted count
+
+**Ready to deploy and test.**

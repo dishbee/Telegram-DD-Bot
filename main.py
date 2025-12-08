@@ -1216,6 +1216,62 @@ async def handle_test_vendor_command(chat_id: int, vendor: str, message_id: int)
         logger.exception(e)
 
 
+# =============================================================================
+# REDIS CLEANUP COMMAND HANDLER
+# =============================================================================
+
+async def handle_cleanup_command(chat_id: int, days_to_keep: int, message_id: int):
+    """
+    Handle /cleanup command to manually trigger Redis cleanup.
+    
+    Usage: /cleanup [days_to_keep]
+    Example: /cleanup 1  → keeps today + 1 previous day (deletes orders before yesterday)
+    """
+    # Delete the command message
+    await safe_delete_message(chat_id, message_id)
+    
+    # Send "processing" message
+    status_msg = await safe_send_message(
+        chat_id,
+        f"🗑️ **Starting Redis cleanup...**\n\n"
+        f"📅 Keeping last {days_to_keep + 1} day{'s' if days_to_keep > 0 else ''} (today + {days_to_keep} previous)\n"
+        f"⏳ Please wait..."
+    )
+    
+    try:
+        # Run cleanup
+        from datetime import timedelta
+        cutoff_date = now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_to_keep)
+        logger.info(f"🗑️ Manual cleanup triggered: deleting orders before {cutoff_date.strftime('%Y-%m-%d')}")
+        
+        deleted_count = redis_cleanup_old_orders(days_to_keep)
+        
+        # Update status message with result
+        result_text = (
+            f"✅ **Redis cleanup complete!**\n\n"
+            f"📊 Deleted: {deleted_count} orders\n"
+            f"📅 Cutoff date: {cutoff_date.strftime('%Y-%m-%d')}\n"
+            f"📅 Kept: Orders from {cutoff_date.strftime('%Y-%m-%d')} onwards"
+        )
+        
+        if status_msg:
+            await safe_edit_message(chat_id, status_msg.message_id, result_text)
+        else:
+            await safe_send_message(chat_id, result_text)
+            
+        logger.info(f"✅ Manual cleanup complete: deleted {deleted_count} orders")
+        
+    except Exception as e:
+        error_text = f"❌ **Cleanup failed!**\n\nError: {str(e)}"
+        logger.error(f"Failed to execute cleanup command: {e}")
+        logger.exception(e)
+        
+        if status_msg:
+            await safe_edit_message(chat_id, status_msg.message_id, error_text)
+        else:
+            await safe_send_message(chat_id, error_text)
+
+
 async def process_shopify_webhook(payload: dict):
     """
     Process Shopify webhook payload (used by both real webhooks and test command).
@@ -2044,6 +2100,22 @@ def telegram_webhook():
             if text.startswith("/testki"):
                 logger.info("[ORDER-KI] === TEST KI COMMAND DETECTED ===")
                 run_async(handle_test_vendor_command(chat_id, "Kimbu", msg.get('message_id')))
+                return "OK"
+
+            # =================================================================
+            # REDIS CLEANUP COMMAND (admin only)
+            # =================================================================
+            if text.startswith("/cleanup"):
+                logger.info("=== REDIS CLEANUP COMMAND DETECTED ===")
+                # Extract days_to_keep from command (default: 1)
+                # /cleanup or /cleanup 1 → keep 1 day
+                # /cleanup 2 → keep 2 days
+                try:
+                    parts = text.split()
+                    days_to_keep = int(parts[1]) if len(parts) > 1 else 1
+                    run_async(handle_cleanup_command(chat_id, days_to_keep, msg.get('message_id')))
+                except ValueError:
+                    run_async(safe_send_message(chat_id, "❌ Invalid command. Usage: /cleanup [days_to_keep]\nExample: /cleanup 1"))
                 return "OK"
 
             # =================================================================
