@@ -113,32 +113,31 @@ def get_vendor_shortcuts_string(vendors: List[str]) -> str:
 
 
 def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str] = None) -> List[Dict[str, str]]:
-    """Get recent CONFIRMED orders (last 5 hours) for 'same time as' functionality.
+    """Get recent CONFIRMED orders (from today only) for 'same time as' functionality.
     
     Args:
         current_order_id: The current order to exclude from results
         vendor: Optional vendor name to filter by (only show orders containing this vendor)
     """
-    five_hours_ago = now() - timedelta(hours=5)
+    today_start = now().replace(hour=0, minute=1, second=0, microsecond=0)
     recent: List[Dict[str, str]] = []
 
     for order_id, order_data in STATE.items():
         if order_id == current_order_id:
             continue
         
-        # Check if order has ANY confirmed time (single-vendor OR multi-vendor)
+        # Check if order has ANY confirmed time (Shopify OR Smoothr/PF)
         confirmed_time = order_data.get("confirmed_time")
         confirmed_times = order_data.get("confirmed_times", {})
         has_confirmation = confirmed_time or (confirmed_times and any(confirmed_times.values()))
         
         status = order_data.get("status")
-        created_at = order_data.get("created_at")
         
         if not has_confirmation:
             continue
         
-        # Filter out delivered orders - only show scheduled (new/assigned)
-        if status == "delivered":
+        # Filter out delivered AND removed orders - only show scheduled (new/assigned)
+        if status in ["delivered", "removed"]:
             continue
         
         # Filter by vendor if specified
@@ -158,26 +157,36 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
         else:
             created_dt = created_at
         
-        if created_dt > five_hours_ago:
-            if order_data.get("order_type") == "shopify":
-                display_name = f"{order_data['name'][-2:]}"
+        # TODAY filter: only show orders from today
+        if created_dt < today_start:
+            continue
+            
+        # Support ALL order types (Shopify, Smoothr, OCR PF)
+        order_type = order_data.get("order_type", "")
+        if order_type == "shopify":
+            display_name = f"{order_data['name'][-2:]}"
+        elif order_type in ["smoothr_lieferando", "smoothr_dd_app"]:
+            # Smoothr orders - use address
+            customer = order_data.get('customer', {})
+            address = customer.get('address', '')
+            if address:
+                address_parts = address.split(',')
+                street_info = address_parts[0] if address_parts else "Unknown"
+                display_name = f"*{street_info}*"
             else:
-                # Safely access customer address for Smoothr orders
-                customer = order_data.get('customer', {})
-                address = customer.get('address', '')
-                if address:
-                    address_parts = address.split(',')
-                    street_info = address_parts[0] if address_parts else "Unknown"
-                    display_name = f"*{street_info}*"
-                else:
-                    # Fallback to order name if address missing
-                    display_name = f"Order {order_data.get('name', 'Unknown')}"
+                display_name = f"Order {order_data.get('name', 'Unknown')}"
+        elif order_type == "ocr_pf":
+            # OCR PF orders - use name (last 2 chars)
+            display_name = f"{order_data['name'][-2:]}"
+        else:
+            # Unknown type - fallback
+            display_name = f"Order {order_data.get('name', 'Unknown')}"
 
-            recent.append({
-                "order_id": order_id,
-                "display_name": display_name,
-                "vendor": order_data.get("vendors", ["Unknown"])[0],
-            })
+        recent.append({
+            "order_id": order_id,
+            "display_name": display_name,
+            "vendor": order_data.get("vendors", ["Unknown"])[0],
+        })
 
     return recent[-10:]
 
@@ -585,6 +594,10 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
             recent_orders = get_recent_orders_for_same_time(order_id, vendor=None)
             if recent_orders:
                 buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
+        
+        # Add Remove button for test orders
+        if order.get("is_test") == True:
+            buttons.append([InlineKeyboardButton("🗑 Remove", callback_data=f"remove_test|{order_id}|{int(now().timestamp())}")])
 
         return InlineKeyboardMarkup(buttons)
 
@@ -646,6 +659,10 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
         if recent_orders:
             buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
         
+        # Add Remove button for test orders
+        if order.get("is_test") == True:
+            buttons.append([InlineKeyboardButton("🗑 Remove", callback_data=f"remove_test|{order_id}|{int(now().timestamp())}")])
+        
         return InlineKeyboardMarkup(buttons)
 
     except Exception as exc:  # pragma: no cover - defensive
@@ -654,71 +671,64 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
 
 
 def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
-    """Build TIME submenu: show recent confirmed orders (not delivered, <1hr) or just EXACT TIME button."""
+    """Build TIME submenu: show recent confirmed orders (not delivered, from today) or just EXACT TIME button."""
     try:
         order = STATE.get(order_id)
         if not order:
             return InlineKeyboardMarkup([])
 
-        # Get all confirmed orders (not delivered) from last 5 hours
-        one_hour_ago = now() - timedelta(hours=5)
+        # Get all confirmed orders (not delivered/removed) from TODAY
+        today_start = now().replace(hour=0, minute=1, second=0, microsecond=0)
         recent_orders: List[Dict[str, Any]] = []
-        
-        logger.info(f"BTN-TIME: Searching for recent orders (current order: {order_id}, vendor: {vendor})")
-        logger.info(f"BTN-TIME: One hour ago cutoff: {one_hour_ago}")
-        logger.info(f"BTN-TIME: Total orders in STATE: {len(STATE)}")
 
         for oid, order_data in STATE.items():
             if oid == order_id:
                 continue
                 
+            # Check BOTH confirmed_time (Shopify) AND confirmed_times (Smoothr/PF)
             confirmed_time = order_data.get("confirmed_time")
             confirmed_times = order_data.get("confirmed_times", {})  # Dict of vendor -> time
             status = order_data.get("status")
-            created_at = order_data.get("created_at")
             
-            logger.info(f"BTN-TIME: Order {oid} - confirmed_time={confirmed_time}, confirmed_times={confirmed_times}, status={status}, created_at={created_at}")
-            
-            if not confirmed_time:
-                logger.info(f"BTN-TIME: Order {oid} - SKIP: no confirmed_time")
+            has_confirmation = confirmed_time or (confirmed_times and any(confirmed_times.values()))
+            if not has_confirmation:
                 continue
                 
-            if status == "delivered":
-                logger.info(f"BTN-TIME: Order {oid} - SKIP: status is delivered")
+            if status in ["delivered", "removed"]:
                 continue
             
+            created_at = order_data.get("created_at")
             # Normalize created_at to datetime for comparison
             if isinstance(created_at, str):
                 try:
                     created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
                 except:
-                    logger.info(f"BTN-TIME: Order {oid} - SKIP: invalid created_at format")
                     continue
             else:
                 created_dt = created_at
                 
-            if created_dt and created_dt > one_hour_ago:
-                # Safe access to customer address
-                address = order_data.get('customer', {}).get('address', 'Unknown')
-                address_short = address.split(',')[0].strip() if ',' in address else address
+            # TODAY filter: only show orders from today
+            if not created_dt or created_dt < today_start:
+                continue
                 
-                logger.info(f"BTN-TIME: Order {oid} - PASSED all filters, adding to list")
-                
-                recent_orders.append({
-                    "order_id": oid,
-                    "confirmed_time": confirmed_time,
-                    "confirmed_times": confirmed_times,  # Include per-vendor times
-                    "address": address_short,
-                    "vendors": order_data.get("vendors", []),
-                    "order_num": order_data['name'][-2:] if len(order_data['name']) >= 2 else order_data['name']
-                })
-            else:
-                logger.info(f"BTN-TIME: Order {oid} - SKIP: created_at check failed (created_at: {created_at}, cutoff: {one_hour_ago})")
+            # Safe access to customer address
+            address = order_data.get('customer', {}).get('address', 'Unknown')
+            address_short = address.split(',')[0].strip() if ',' in address else address
+            
+            # Use confirmed_time if available, otherwise get first value from confirmed_times dict
+            display_time = confirmed_time if confirmed_time else (list(confirmed_times.values())[0] if confirmed_times else "??:??")
+            
+            recent_orders.append({
+                "order_id": oid,
+                "confirmed_time": display_time,
+                "confirmed_times": confirmed_times,  # Include per-vendor times
+                "address": address_short,
+                "vendors": order_data.get("vendors", []),
+            })
 
-        logger.info(f"BTN-TIME: Found {len(recent_orders)} recent confirmed orders")
         buttons: List[List[InlineKeyboardButton]] = []
 
-        # If we have recent orders, show them + EXACT TIME button
+        # If we have recent orders, show them + Back button
         if recent_orders:
             for recent in recent_orders:
                 chef_emoji = CHEF_EMOJIS[recent_orders.index(recent) % len(CHEF_EMOJIS)]
@@ -731,9 +741,9 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                         # Get vendor-specific time from confirmed_times dict, fallback to confirmed_time
                         vendor_time = recent.get("confirmed_times", {}).get(ref_vendor, recent['confirmed_time'])
                         
-                        # Build button text: "02 - LR - 14:15 - Grabenga. 15"
+                        # Build button text: "14:15 - Grabenga. 15  - LR" (TWO spaces before vendor)
                         abbreviated_address = abbreviate_street(recent['address'], max_length=15)
-                        button_text = f"{recent['order_num']} - {ref_vendor_shortcut} - {vendor_time} - {abbreviated_address}"
+                        button_text = f"{vendor_time} - {abbreviated_address}  - {ref_vendor_shortcut}"
                         
                         # TIER 2: If button exceeds Telegram limit, apply aggressive abbreviation
                         if len(button_text) > TELEGRAM_BUTTON_TEXT_LIMIT:
@@ -754,7 +764,7 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                             
                             # Take first 4 letters only
                             aggressive_abbr = street_clean[:4] + house_num
-                            button_text = f"{recent['order_num']} - {ref_vendor_shortcut} - {vendor_time} - {aggressive_abbr}"
+                            button_text = f"{vendor_time} - {aggressive_abbr}  - {ref_vendor_shortcut}"
                         
                         # Callback contains SINGLE ref vendor shortcut (not comma-separated) and vendor-specific time
                         callback_data = f"order_ref|{order_id}|{recent['order_id']}|{vendor_time}|{ref_vendor_shortcut}"
@@ -769,9 +779,9 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                     ref_vendor = recent["vendors"][0]
                     ref_vendor_shortcut = RESTAURANT_SHORTCUTS.get(ref_vendor, ref_vendor[:2].upper())
                     
-                    # Build button text: "02 - LR - 14:15 - Grabenga. 15"
+                    # Build button text: "14:15 - Grabenga. 15  - LR" (TWO spaces before vendor)
                     abbreviated_address = abbreviate_street(recent['address'], max_length=15)
-                    button_text = f"{recent['order_num']} - {ref_vendor_shortcut} - {recent['confirmed_time']} - {abbreviated_address}"
+                    button_text = f"{recent['confirmed_time']} - {abbreviated_address}  - {ref_vendor_shortcut}"
                     
                     # TIER 2: If button exceeds Telegram limit, apply aggressive abbreviation
                     if len(button_text) > TELEGRAM_BUTTON_TEXT_LIMIT:
@@ -792,7 +802,7 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
                         
                         # Take first 4 letters only
                         aggressive_abbr = street_clean[:4] + house_num
-                        button_text = f"{recent['order_num']} - {ref_vendor_shortcut} - {recent['confirmed_time']} - {aggressive_abbr}"
+                        button_text = f"{recent['confirmed_time']} - {aggressive_abbr}  - {ref_vendor_shortcut}"
                     
                     # Callback contains SINGLE ref vendor shortcut
                     callback_data = f"order_ref|{order_id}|{recent['order_id']}|{recent['confirmed_time']}|{ref_vendor_shortcut}"

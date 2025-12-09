@@ -696,6 +696,9 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     logger.info(f"✅ Test Smoothr order parsed: {smoothr_data['order_id']} ({smoothr_data['order_type']})")
     logger.info(f"DEBUG - smoothr_data['total'] = {smoothr_data.get('total')}")
     
+    # Mark as test order
+    STATE[smoothr_data["order_id"]]["is_test"] = True
+    
     # Process the Smoothr order (sends MDG-ORD + RG-SUM)
     await process_smoothr_order(smoothr_data)
 
@@ -937,7 +940,7 @@ async def handle_test_shopify_command(chat_id: int, command: str, message_id: in
     # Process through Shopify webhook handler
     try:
         # Call the Shopify processing logic directly (simulate webhook)
-        run_async(process_shopify_webhook(webhook_payload))
+        run_async(process_shopify_webhook(webhook_payload, is_test=True))
         logger.info(f"✅ Test Shopify order {order_id} processing complete")
     except Exception as e:
         logger.error(f"❌ Failed to process test Shopify order: {e}")
@@ -1040,6 +1043,7 @@ async def handle_test_pf_command(chat_id: int, message_id: int):
         "vendor_expanded": {vendor: False},
         "mdg_additional_messages": [],
         "created_at": now(),
+        "is_test": True,
     }
     
     # Send MDG-ORD
@@ -1272,10 +1276,14 @@ async def handle_cleanup_command(chat_id: int, days_to_keep: int, message_id: in
             await safe_send_message(chat_id, error_text)
 
 
-async def process_shopify_webhook(payload: dict):
+async def process_shopify_webhook(payload: dict, is_test: bool = False):
     """
     Process Shopify webhook payload (used by both real webhooks and test command).
     Extracted from shopify_webhook() for reuse.
+    
+    Args:
+        payload: Shopify webhook payload dictionary
+        is_test: True if this is a test order (from /test commands)
     """
     try:
         order_id = str(payload.get("id"))
@@ -1412,7 +1420,8 @@ async def process_shopify_webhook(payload: dict):
             "rg_message_ids": {},
             "vendor_expanded": {vendor: False for vendor in vendors},
             "mdg_additional_messages": [],
-            "created_at": payload.get("created_at", now().isoformat())
+            "created_at": payload.get("created_at", now().isoformat()),
+            "is_test": is_test,
         }
         
         # Send MDG-ORD + RG-SUM messages
@@ -2535,6 +2544,45 @@ def telegram_webhook():
                         mdg_text,
                         mdg_initial_keyboard(order)
                     )
+                
+                elif action == "remove_test":
+                    # Remove test order - delete all messages and mark as removed
+                    order_id = data[1]
+                    order = STATE.get(order_id)
+                    if not order:
+                        logger.warning(f"Order {order_id} not found in state")
+                        return
+                    
+                    # Safety check: Only allow removal of test orders
+                    if not order.get("is_test"):
+                        logger.warning(f"Attempted to remove non-test order {order_id}")
+                        return
+                    
+                    # Delete MDG-ORD message
+                    if order.get("mdg_message_id"):
+                        await safe_delete_message(DISPATCH_MAIN_CHAT_ID, order["mdg_message_id"])
+                    
+                    # Delete RG-SUM messages
+                    for vendor, msg_id in order.get("rg_message_ids", {}).items():
+                        vendor_chat = VENDOR_GROUP_MAP.get(vendor)
+                        if vendor_chat and msg_id:
+                            await safe_delete_message(vendor_chat, msg_id)
+                    
+                    # Delete UPC-ASSIGN message if assigned
+                    assigned_to = order.get("assigned_to")
+                    if assigned_to:
+                        # Find and delete courier assignment message
+                        # Note: We don't track UPC message ID currently, so this is best-effort
+                        logger.info(f"Test order {order_id} was assigned to {assigned_to}, but UPC message ID not tracked")
+                    
+                    # Mark order as removed
+                    order["status"] = "removed"
+                    order["status_history"].append({
+                        "type": "removed",
+                        "timestamp": now()
+                    })
+                    
+                    logger.info(f"✅ Test order {order_id} removed successfully")
                 
                 # ORIGINAL TIME REQUEST ACTIONS (MDG)
                 elif action == "req_asap":

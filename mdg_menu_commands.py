@@ -11,8 +11,9 @@ from typing import Dict, List
 
 def build_scheduled_list_message(state_dict: dict, now_func) -> str:
     """
-    Build list of scheduled orders (confirmed but not assigned, last 5 hours).
-    Shows full street names (no truncation).
+    Build list of scheduled orders (confirmed, not delivered, from today only).
+    Shows street names only (no zip code).
+    Format: [time - street - vendor]
     
     Args:
         state_dict: STATE dictionary from main.py
@@ -23,61 +24,59 @@ def build_scheduled_list_message(state_dict: dict, now_func) -> str:
     """
     from utils import RESTAURANT_SHORTCUTS
     
-    # Filter confirmed orders from last 5 hours
-    cutoff = now_func() - timedelta(hours=5)
+    # Filter confirmed orders from TODAY only (after 00:01)
+    today_start = now_func().replace(hour=0, minute=1, second=0, microsecond=0)
     scheduled = []
     
-    import logging
-    logger = logging.getLogger(__name__)
-    
     for oid, order in state_dict.items():
-        # Must have confirmed_times, not delivered, within 5 hours
-        order_name = order.get("name", "??")
-        
+        # Check BOTH confirmed_time (Shopify) AND confirmed_times (Smoothr/PF)
+        confirmed_time = order.get("confirmed_time")
         confirmed_times = order.get("confirmed_times", {})
-        if not confirmed_times:
+        
+        has_confirmation = confirmed_time or (confirmed_times and any(confirmed_times.values()))
+        if not has_confirmation:
             continue
-        # Skip only delivered orders, not assigned ones
-        if order.get("status") == "delivered":
-            logger.info(f"SCHED DEBUG: Order {order_name} skipped - status is delivered")
+        
+        # Skip delivered AND removed orders
+        if order.get("status") in ["delivered", "removed"]:
             continue
+        
         created_at = order.get("created_at")
         # Convert created_at to datetime if it's a string (Shopify orders use ISO strings)
         if isinstance(created_at, str):
             try:
                 created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
             except:
-                logger.info(f"SCHED DEBUG: Order {order_name} skipped - invalid created_at format: {created_at}")
                 continue
         
-        if not created_at or created_at < cutoff:
-            logger.info(f"SCHED DEBUG: Order {order_name} skipped - outside 5h window (created_at={created_at}, cutoff={cutoff})")
+        # TODAY filter: only show orders from today
+        if not created_at or created_at < today_start:
             continue
-        
-        assigned_to = order.get("assigned_to")
-        status = order.get("status")
-        logger.info(f"SCHED DEBUG: Order {order_name} INCLUDED - status={status}, assigned_to={assigned_to}")
-        
-        # Get order number (last 2 digits)
-        order_num = order.get("name", "")[-2:] if len(order.get("name", "")) >= 2 else order.get("name", "??")
         
         # Get vendors and time
         vendors = order.get("vendors", [])
         if len(vendors) > 1:
             # Multi-vendor: show combo
             vendor_str = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors])
-            # Use first vendor's time
-            time = list(confirmed_times.values())[0]
+            # Use first vendor's time from confirmed_times dict
+            time = list(confirmed_times.values())[0] if confirmed_times else "??:??"
         else:
             # Single vendor
             vendor_str = RESTAURANT_SHORTCUTS.get(vendors[0], vendors[0][:2].upper()) if vendors else "??"
-            time = confirmed_times.get(vendors[0], "??:??") if vendors else "??:??"
+            # Use confirmed_time (Shopify) or confirmed_times dict (Smoothr/PF)
+            if confirmed_time:
+                time = confirmed_time
+            elif confirmed_times and vendors:
+                time = confirmed_times.get(vendors[0], "??:??")
+            else:
+                time = "??:??"
         
-        # Get FULL street (no truncation)
-        street = order.get("customer", {}).get("address", "Unknown")
+        # Get street ONLY (extract from full address, remove zip code)
+        full_address = order.get("customer", {}).get("address", "Unknown")
+        # Address format: "Street 123, 94032 Passau" -> extract "Street 123"
+        street = full_address.split(',')[0].strip() if ',' in full_address else full_address
         
         scheduled.append({
-            "num": order_num,
             "vendor": vendor_str,
             "time": time,
             "street": street
@@ -88,11 +87,12 @@ def build_scheduled_list_message(state_dict: dict, now_func) -> str:
     
     # Build message
     if not scheduled:
-        return "🗂️ Scheduled orders\n\nNo scheduled orders in the last 5 hours."
+        return "🗂️ Scheduled orders\n\nNo scheduled orders."
     
     lines = ["🗂️ Scheduled orders", ""]
     for item in scheduled:
-        lines.append(f"{item['num']} - {item['vendor']} - {item['time']} - {item['street']}")
+        # Format: [time - street  - vendor] (note: TWO spaces before vendor)
+        lines.append(f"{item['time']} - {item['street']}  - {item['vendor']}")
     
     return "\n".join(lines)
 
