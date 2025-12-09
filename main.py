@@ -1680,7 +1680,9 @@ async def handle_pf_photo(message: dict):
         # Determine specific error message based on error type
         error_type = str(e)
         
-        if error_type == "DETAILS_COLLAPSED":
+        if error_type == "SELBSTABHOLUNG":
+            error_msg = "⚠️ That is an order for Selbstabholung. Please don't send these ones."
+        elif error_type == "DETAILS_COLLAPSED":
             error_msg = "⚠️ Please send the photo with the Details opened. The arrow symbol on the right from the name. Otherwise system can't read it."
         elif error_type == "NOTE_COLLAPSED":
             error_msg = "⚠️ Please send the photo with the Note opened. The arrow symbol on the right. Otherwise system can't read it."

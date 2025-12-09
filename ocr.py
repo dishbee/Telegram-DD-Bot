@@ -108,6 +108,10 @@ def parse_pf_order(ocr_text: str) -> dict:
     """
     result = {}
     
+    # 0. Check for Selbstabholung (pickup orders - reject immediately)
+    if re.search(r'Bestellung zur Abholung|zur Abholung', ocr_text, re.IGNORECASE):
+        raise ParseError("SELBSTABHOLUNG")
+    
     # 1. Order # (required): #ABC XYZ format
     # Extract last 2 chars from 2nd group for display
     # Example: "#VCJ 34V" → order_num="4V"
