@@ -161,16 +161,20 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     # Find full address block: everything between customer name and phone
     name_end = order_end + name_match.end()
+    logger.info(f"[OCR] phone_pos found: {phone_pos is not None}")
     
     if phone_pos:
         address_block = ocr_text[name_end:order_end + phone_pos.start()].strip()
+        logger.info(f"[OCR] Using phone_pos for address_block, length: {len(address_block)}")
     else:
         # Fallback: look for address pattern before ZIP
         address_block = ocr_text[name_end:name_end + 200].strip()
+        logger.info(f"[OCR] Using fallback for address_block, length: {len(address_block)}")
     
     # Extract ONLY first line before comma (street + number only)
     # Ignore everything after comma (Etage, apartment, floor info)
     address_lines = []
+    logger.info(f"[OCR] address_block to process: {repr(address_block[:150])}")
     for line in address_block.split('\n'):
         line = line.strip()
         logger.info(f"[OCR] Processing address line: '{line}' (len={len(line)})")
@@ -200,7 +204,9 @@ def parse_pf_order(ocr_text: str) -> dict:
             address_lines[-1] = line.split(',')[0].strip()
             break
     
+    logger.info(f"[OCR] address_lines collected: {address_lines}")
     if not address_lines:
+        logger.error(f"[OCR] No valid address lines found in address_block")
         raise ParseError(detect_collapse_error(ocr_text))
     
     # Join address lines WITH spaces (preserve multi-word patterns like "1/ app Nr 316")
@@ -219,43 +225,56 @@ def parse_pf_order(ocr_text: str) -> dict:
     address_parts = full_address_raw.split()
     
     if len(address_parts) >= 2:
-        # OCR shows address in order: building number FIRST, street name AFTER
-        # Example: "2 Traminer Straße" or "1/ app Nr 316 Leonhard-Paminger-Straße"
-        # Need to identify where street name starts, collect everything before as building number
-        
-        building_number_parts = []
-        street_name_parts = []
-        found_street = False
-        
         # Define street patterns for comprehensive detection
         street_suffixes = ('straße', 'strasse', 'str', 'gasse', 'platz', 'ring', 'weg', 'allee', 'hof', 'damm', 'ort', 'markt', 'dobl')
         street_prefixes = ('untere', 'obere', 'alte', 'neue', 'große', 'kleine', 'innere', 'äußere', 'am')
         
-        for part in address_parts:
-            if not found_street:
-                # Check if this looks like start of street name:
-                # 1) Contains hyphen (e.g., "Dr.-Hans-Kapfinger-Straße")
-                # 2) Ends with street suffix (straße, gasse, platz, ring, etc.)
-                # 3) Is a multi-word street prefix (Untere, Alte, Neue, etc.)
-                if ('-' in part or 
-                    part.lower().endswith(street_suffixes) or 
-                    part.lower() in street_prefixes):
-                    # This is the street name
-                    found_street = True
-                    street_name_parts.append(part)
-                else:
-                    # Still part of building number
-                    building_number_parts.append(part)
-            else:
-                # Already found street, rest is part of street name
-                street_name_parts.append(part)
+        # Check for pattern: "Number Street" (e.g., "60 Neuburger Straße" or "129 Göttweiger Str.")
+        # First part is purely numeric, last part has street suffix
+        first_is_number = address_parts[0].replace('/', '').replace('.', '').isdigit()
+        last_has_suffix = address_parts[-1].lower().endswith(street_suffixes)
         
-        if street_name_parts and building_number_parts:
-            # Format: "Street Name Building Number" (e.g., "Traminer Straße 2")
-            street = ' '.join(street_name_parts)
-            number = ' '.join(building_number_parts)
+        if first_is_number and last_has_suffix:
+            # Pattern: "60 Neuburger Straße" → number="60", street="Neuburger Straße"
+            number = address_parts[0]
+            street = ' '.join(address_parts[1:])
             result['address'] = f"{street} {number}"
-            logger.info(f"OCR Address parsed: street='{street}', number='{number}'")
+            logger.info(f"OCR Address parsed (number-first pattern): street='{street}', number='{number}'")
+        else:
+            # Original logic: Scan for street start marker
+            # OCR shows address in order: building number FIRST, street name AFTER
+            # Example: "2 Traminer Straße" or "1/ app Nr 316 Leonhard-Paminger-Straße"
+            # Need to identify where street name starts, collect everything before as building number
+            
+            building_number_parts = []
+            street_name_parts = []
+            found_street = False
+            
+            for part in address_parts:
+                if not found_street:
+                    # Check if this looks like start of street name:
+                    # 1) Contains hyphen (e.g., "Dr.-Hans-Kapfinger-Straße")
+                    # 2) Ends with street suffix (straße, gasse, platz, ring, etc.)
+                    # 3) Is a multi-word street prefix (Untere, Alte, Neue, etc.)
+                    if ('-' in part or 
+                        part.lower().endswith(street_suffixes) or 
+                        part.lower() in street_prefixes):
+                        # This is the street name
+                        found_street = True
+                        street_name_parts.append(part)
+                    else:
+                        # Still part of building number
+                        building_number_parts.append(part)
+                else:
+                    # Already found street, rest is part of street name
+                    street_name_parts.append(part)
+            
+            if street_name_parts and building_number_parts:
+                # Format: "Street Name Building Number" (e.g., "Traminer Straße 2")
+                street = ' '.join(street_name_parts)
+                number = ' '.join(building_number_parts)
+                result['address'] = f"{street} {number}"
+                logger.info(f"OCR Address parsed: street='{street}', number='{number}'")
         elif street_name_parts:
             # Only street name found, no building number
             result['address'] = ' '.join(street_name_parts)
