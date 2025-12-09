@@ -1210,7 +1210,7 @@ async def handle_test_vendor_command(chat_id: int, vendor: str, message_id: int)
     
     # Process through Shopify webhook handler
     try:
-        run_async(process_shopify_webhook(webhook_payload))
+        run_async(process_shopify_webhook(webhook_payload, is_test=True))
         logger.info(f"✅ Test vendor order {order_id} processing complete")
     except Exception as e:
         logger.error(f"❌ Failed to process test vendor order: {e}")
