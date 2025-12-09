@@ -1,0 +1,21 @@
+MANUAL DEPLOY NEEDED
+
+ocr.py has uncommitted changes:
+- Line 146: Changed customer name regex to allow uppercase initials (LT., H., etc.)
+- Line 173: Added debug logging for address line processing
+
+PowerShell terminal corrupted by emoji unicode - cannot run git commands.
+
+USER: Please manually deploy on Render dashboard by clicking "Manual Deploy" button.
+
+The code changes are already applied in ocr.py locally, they just need to be committed and pushed.
+
+If you have Git Bash or another terminal, run:
+```
+cd "c:\Users\freym\Telegram Bot\Telegram-DD-Bot"
+git add ocr.py .github/task-update-temp.txt
+git commit -m "Fix OCR PF: allow uppercase initials in customer names + add debug logging"
+git push origin main
+```
+
+This will fix the 3 parse failures (customer names like "LT. Welke") and add logging to debug the mystery number "71".

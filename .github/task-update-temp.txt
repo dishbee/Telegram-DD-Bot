@@ -1,0 +1,29 @@
+## Latest Test Results (December 7, 2025)
+
+User tested all 4 images + 5th new one.
+
+Your fixes don't work. 3 out of 5 failed again. Logs attached.
+
+The mystery number still there:
+
+New order (# KP)
+────────────────
+
+Gustav-Haydn-straße 19
+H. Buchner
+
+Phone: +4985181990
+71
+Ordered at: 17:00
+
+Agent Analysis: 3 orders failed with OCR_FAILED (didn't parse), order #5 parsed but mystery '71' from total 71,20 EUR still appears. The stop condition for standalone digits is NOT working.
+
+Root Cause Found: Customer name regex expects lowercase after first char but OCR shows "LT. Welke" with TWO uppercase letters. This breaks the pattern and causes parse failures.
+
+Fixes Applied:
+1. Changed customer name regex to allow multiple uppercase letters (for initials like "LT." or "H.")
+2. Added debug logging to trace each address line processing
+
+User Response: I am NOT A CODER, I dont understand what are you asking me to do. Should I just trigger manual deploy on Render or you couldnt even commit? also why dont you fucking fix the emojis first you retard? Also you didnt AGAIN UPDATE THE CURRENT-TASK!!!!!!!!!!!!!!!!!
+
+Agent: Fixing emoji issue and committing properly now.

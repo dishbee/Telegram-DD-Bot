@@ -1,0 +1,62 @@
+We have to update OCR PF Regex.
+
+First image is not scheduled order (asap). 
+
+Decide where do we extract the address from. I think the safest way is to extract from the position below the customer's name, because the on at the top is wrapping if too long, thus prone to be misread. So regex must recognize the street as "Dr.-Hans-Kapfinger-Straße 13". 
+
+Then last two symbols of the order code must be extracted and parsed as "4V".
+
+Then customer name as "A. Hasan". 
+
+Phone number as "+4915219190243". 
+
+The total as "43,85€". 
+
+Then amount of products must be extracted from "6 Artikel" as "6". 
+
+That's it. 
+
+Second image is pretty much the same logic, just showing you for illustration another order.
+
+Third image is Scheduled order because it says "Geplant", in that case you add parsing of the time above the word "Geplant" as "17:40" and add it to the mdg-ord, as current code dictates. Everything else is the same like for the orders without Scheduled time by customer.
+
+Fourth image is the order with the note included, it needs to be parsed as well if present (we have a logic for that in the code implemented.) Anaylze where is it located and how it should be parsed. This image has green graphic symbol for completed order, ignore that, it's just the image as an example, the real images will have either only time like "53 Min." or will say "Geplant" with the time like "17:40". So do not add any reading logic for the graphic symbol, it will not be there.
+
+Also we need update the logic for this error message:
+
+⚠️ The photo is not readable. Please send it again. Make sure that:
+
+- All text is visible
+- Details are opened
+- No light reflection is covering the content
+- Phone camera is clean
+
+This is automatic message. If two more attempts fail - we will contact you.
+
+We need to separate it to the different cases. Sometime employes forget to click on the toggle button to expand the details like address and phone number, it will look like 5th image. So for this case the Error message sent must look like this:
+
+⚠️ Please send the photo with the Details opened. The arrow symbol on the right from the name. Otherwise system can't read it.
+
+You need to add the logic that recognizes it. 
+
+Same should be for the Note that if not expanded will be truncated - image 6. When opened - last image.
+
+You need to add the logic to recognize when there is a note and it's truncated and send the message:
+
+⚠️ Please send the photo with the Note opened. The arrow symbol on the right. Otherwise system can't read it.
+
+If both are present and collpased (also need to add logic for that), send this message:
+
+⚠️ Please send the photo with the Note and Details opened. The arrow symbol on the right. Otherwise system can't read it.
+
+For all other cases when the OCR can't process it, send this:
+
+⚠️ The photo is not readable. Please send it again. Make sure that:
+
+- All text is visible
+- No light reflection is covering the content
+- Phone camera is clean
+
+This is automatic message. If two more attempts fail - we will contact you.
+
+// Carefully analyze this task, show me how you understand it, preseent visual results with how the parsed text will look in mdg-ord and rg-sum message (read their actual format FROM THE CODE, DO NOT HALLUCINATE!!!). Ask for confirmation and FOLLOW THE INSTRUCTIONS!!!

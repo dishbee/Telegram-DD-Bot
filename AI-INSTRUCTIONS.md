@@ -284,7 +284,6 @@ git add file1.py file2.py; git commit -m "message"; git push origin main
 - **When in doubt, ask** for clarification rather than assume
 - **User's time is valuable** - don't waste it with unnecessary changes
 
----
 
 ## 📋 PRE-CHANGE CHECKLIST (MANDATORY)
 
