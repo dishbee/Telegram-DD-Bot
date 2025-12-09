@@ -275,14 +275,14 @@ def parse_pf_order(ocr_text: str) -> dict:
                 number = ' '.join(building_number_parts)
                 result['address'] = f"{street} {number}"
                 logger.info(f"OCR Address parsed: street='{street}', number='{number}'")
-        elif street_name_parts:
-            # Only street name found, no building number
-            result['address'] = ' '.join(street_name_parts)
-            logger.info(f"OCR Address parsed: only street='{result['address']}'")
-        else:
-            # No street name pattern found, use raw address
-            result['address'] = full_address_raw
-            logger.info(f"OCR Address parsed: no pattern match, using raw='{result['address']}'")
+            elif street_name_parts:
+                # Only street name found, no building number
+                result['address'] = ' '.join(street_name_parts)
+                logger.info(f"OCR Address parsed: only street='{result['address']}'")
+            else:
+                # No street name pattern found, use raw address
+                result['address'] = full_address_raw
+                logger.info(f"OCR Address parsed: no pattern match, using raw='{result['address']}'")
     else:
         result['address'] = full_address_raw
         logger.info(f"OCR Address parsed: single word, using raw='{result['address']}'")
