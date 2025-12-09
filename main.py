@@ -696,11 +696,8 @@ async def handle_test_smoothr_command(chat_id: int, command: str, message_id: in
     logger.info(f"✅ Test Smoothr order parsed: {smoothr_data['order_id']} ({smoothr_data['order_type']})")
     logger.info(f"DEBUG - smoothr_data['total'] = {smoothr_data.get('total')}")
     
-    # Mark as test order
-    STATE[smoothr_data["order_id"]]["is_test"] = True
-    
     # Process the Smoothr order (sends MDG-ORD + RG-SUM)
-    await process_smoothr_order(smoothr_data)
+    await process_smoothr_order(smoothr_data, is_test=True)
 
 
 
@@ -1470,7 +1467,7 @@ async def process_shopify_webhook(payload: dict, is_test: bool = False):
 # SMOOTHR ORDER PROCESSING
 # =============================================================================
 
-async def process_smoothr_order(smoothr_data: dict):
+async def process_smoothr_order(smoothr_data: dict, is_test: bool = False):
     """
     Process Smoothr order: Create STATE entry and send formatted messages.
     
@@ -1479,6 +1476,7 @@ async def process_smoothr_order(smoothr_data: dict):
     
     Args:
         smoothr_data: Parsed Smoothr order data from parse_smoothr_order()
+        is_test: Whether this is a test order (default: False)
     """
     try:
         from utils import build_status_lines
@@ -1521,6 +1519,7 @@ async def process_smoothr_order(smoothr_data: dict):
             "confirmed_time": None,
             "confirmed_times": {},
             "status": "new",
+            "is_test": is_test,
             "status_history": [{"type": "new", "timestamp": now()}],
             "assigned_to": None,
             "assigned_by": None,
