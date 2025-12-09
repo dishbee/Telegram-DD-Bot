@@ -144,10 +144,10 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     # Find name line: starts with letter (upper or lower case), not a street name pattern, not in quotes
     # Exclude lines with: numbers at start, quotes, bicycle emoji, "Bezahlt"
-    # Allow patterns: "H. Buchner", "LT. Welke", "M. Steinleitner", "Welke", "h. Khatib", "F. Auriemma"
-    # Pattern: One or more uppercase/lowercase letters, optional dot, optional space + more letters
+    # Allow patterns: "H. Buchner", "LT. Welke", "M. Steinleitner", "Welke", "h. Khatib", "F. Auriemma", "É. Frowein-Hundertmark"
+    # Pattern: One or more uppercase/lowercase letters (including accents), optional dot, optional space + more letters
     # Filter out "Bezahlt" payment status word
-    name_match = re.search(r'\n\s*(?!Bezahlt\s*\n)([A-ZÄÖÜa-zäöüß][A-ZÄÖÜa-zäöüß]*\.?(?:[ \t]+[A-ZÄÖÜa-zäöüß][^\n]{1,30})?)\s*\n', search_area, re.IGNORECASE)
+    name_match = re.search(r'\n\s*(?!Bezahlt\s*\n)([A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][A-ZÄÖÜÉÈÊÀa-zäöüéèêàß]*\.?(?:[ \t]+[A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][^\n]{1,30})?)\s*\n', search_area, re.IGNORECASE)
     
     if not name_match:
         raise ParseError(detect_collapse_error(ocr_text))
@@ -232,7 +232,7 @@ def parse_pf_order(ocr_text: str) -> dict:
         # Check for pattern: "Number Street" (e.g., "60 Neuburger Straße" or "129 Göttweiger Str.")
         # First part is purely numeric, last part has street suffix
         first_is_number = address_parts[0].replace('/', '').replace('.', '').isdigit()
-        last_has_suffix = address_parts[-1].lower().endswith(street_suffixes)
+        last_has_suffix = address_parts[-1].lower().rstrip('.').endswith(street_suffixes)
         
         if first_is_number and last_has_suffix:
             # Pattern: "60 Neuburger Straße" → number="60", street="Neuburger Straße"
