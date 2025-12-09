@@ -475,6 +475,58 @@ Even if you wrote analysis documents yourself, even if they're recent, even if t
 
 ---
 
+## Pattern #22: Not Presenting Visual Results First by Reading Actual Code
+
+**What Broke**: OCR PF address parsing fix (Dec 9, 2025) - Agent initially proposed fixes with code changes but WITHOUT showing visual results. User: "Where are the visual results you fucking nimord? DO NOT HALLUCINATE THE FUCKING UI FORMAT AND READ THE FUCKING CODE YOU FUCKING IDIOT!!!!!!!!!"
+
+**Why It Broke**:
+1. Agent violated mandatory rule: "MUST include visual representation of all affected UI elements"
+2. Agent tried to show visual results from MEMORY/ASSUMPTIONS instead of reading actual code
+3. Agent didn't read `mdg.py` lines 373-450 to see ACTUAL message format with exact emoji, spacing, blank lines
+4. User caught this immediately because format didn't match reality
+
+**How It Was Fixed**:
+1. Agent read `mdg.py` lines 250-450 to see actual `build_mdg_dispatch_text()` function
+2. Traced exact string concatenation: `address_line`, blank lines, `\n` characters
+3. Showed ACTUAL format from code:
+   ```
+   ────────────────
+   
+   🗺️ [Göttweiger Str. 129 (94032)](...)
+   
+   👩‍🍳 **PF** (2)
+   
+   📞 +4917664403641
+   
+   👤 h. klaster
+   ```
+4. User approved after seeing REAL format
+
+**Lesson**: ALWAYS present visual results FIRST by reading the actual code that generates the UI. NEVER guess or assume formats from memory, comments, or documentation.
+
+**How to Avoid**:
+- Before proposing ANY UI change, read the message builder function
+- For MDG messages: Read `build_mdg_dispatch_text()` in mdg.py
+- For RG messages: Read `build_vendor_summary_text()` in rg.py
+- For UPC messages: Read courier message builders in upc.py
+- Trace EVERY `\n`, `\n\n`, emoji, markdown character
+- Show exact format with proper spacing/blank lines
+- If you haven't read the actual code, you DON'T know the format
+
+**Red Flags that Mean You're Guessing**:
+- ❌ Describing format without reading actual code first
+- ❌ "The message will look like..." without citing mdg.py line numbers
+- ❌ Showing format based on previous examples or memory
+- ❌ Not mentioning which function builds the message
+
+**Correct Approach**:
+- ✅ Read mdg.py lines 373-450 FIRST
+- ✅ "From `build_mdg_dispatch_text()` in mdg.py line 391: `address_line = f"🗺️ [{display_address}]({maps_link})\n"`"
+- ✅ Show exact format with emoji, markdown, blank lines from actual code
+- ✅ Cite specific line numbers for each element
+
+---
+
 ## Maintenance
 
 This file should be updated whenever a NEW failure pattern is discovered. Each pattern must include:

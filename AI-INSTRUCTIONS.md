@@ -65,14 +65,15 @@ to see actual format, not trust AI-INSTRUCTIONS.md examples.
 ### ✅ ALWAYS DO:
 1. **READ `.github/CURRENT-TASK.md` FIRST** to maintain context within current task
 2. **READ `.github/FAILURES.md` BEFORE** proposing any code changes
-3. **UPDATE CURRENT-TASK.md** with every message exchange
-4. **ASK FOR CONFIRMATION** before making ANY code changes
-5. **Make SURGICAL changes** - touch ONLY what needs fixing
-6. **Test each change individually** before moving to next
-7. **Check every line** against original requirements
-8. **Explain exactly** what will change and why
-9. **TRACE THE ACTUAL CODE FLOW** before implementing - don't assume
-10. **READ THE ACTUAL CODE FIRST** - never hallucinate message formats or behavior, always read the code to see what it actually does
+3. **UPDATE CURRENT-TASK.md** with every message exchange - NEVER ask for "Allow", ALWAYS directly edit the file (do NOT remove, do NOT create new file)
+4. **PRESENT VISUAL RESULTS FIRST** by reading actual code (mdg.py, rg.py, upc.py) to show exact UI/message formats - NEVER hallucinate or guess formats
+5. **ASK FOR CONFIRMATION** before making ANY code changes
+6. **Make SURGICAL changes** - touch ONLY what needs fixing
+7. **Test each change individually** before moving to next
+8. **Check every line** against original requirements
+9. **Explain exactly** what will change and why
+10. **TRACE THE ACTUAL CODE FLOW** before implementing - don't assume
+11. **READ THE ACTUAL CODE FIRST** - never hallucinate message formats or behavior, always read the code to see what it actually does
 
 ### ❌ NEVER DO:
 1. **NO assumptions** - verify everything against assignment
@@ -259,10 +260,11 @@ Why needed: [one sentence]
 
 ### Implementation Pattern:
 1. **Analyze**: What exactly needs to change
-2. **Propose**: Specific changes with expected outcome
-3. **Confirm**: Get user approval before proceeding - **MUST include visual representation of all affected UI elements**
-4. **Implement**: Complete working solution
-5. **Verify**: Ensure fix works without breaking other things
+2. **Read Actual Code**: Read the actual .py files (mdg.py, rg.py, upc.py) to get exact message formats - NEVER hallucinate UI
+3. **Propose**: Specific changes with expected outcome - **MUST include visual representation of all affected UI elements BY READING ACTUAL CODE**
+4. **Confirm**: Get user approval before proceeding
+5. **Implement**: Complete working solution
+6. **Verify**: Ensure fix works without breaking other things
 
 ### Git Deployment Rules:
 **CRITICAL**: Always combine git commands in ONE terminal call using `;` separator:

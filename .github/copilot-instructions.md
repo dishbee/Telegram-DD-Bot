@@ -6,12 +6,13 @@
 
 1. ✅ Read `.github/CURRENT-TASK.md` - See what task is active and all previous context
 2. ✅ Read `.github/FAILURES.md` - Check documented failure patterns
-3. ✅ Update `CURRENT-TASK.md` - Append user's EXACT message (full copy-paste) + your response summary
+3. ✅ Update `CURRENT-TASK.md` - Append user's EXACT message (full copy-paste) + your response summary - NEVER ask for "Allow", ALWAYS directly edit the file (do NOT remove, do NOT create new file)
 4. ✅ If NEW task - Save old CURRENT-TASK.md to `.github/task-history/YYYY-MM-DD_task-name.md` first
 5. ✅ If task COMPLETE - Save to task-history before clearing
 6. ✅ If task PAUSED/UNFINISHED - Save to task-history with `-UNFINISHED.md` suffix
 7. ✅ Reference previous messages - Show you remember what user said earlier
 8. ✅ Quote relevant failure patterns - Prove you checked FAILURES.md
+9. ✅ **PRESENT VISUAL RESULTS FIRST** - Read actual code (mdg.py, rg.py, upc.py) to show exact UI/message formats - NEVER hallucinate or guess formats
 
 **Task Save Options**:
 - **COMPLETE**: `YYYY-MM-DD_task-name.md` (finished successfully)
@@ -43,12 +44,14 @@ This keeps documentation synchronized with code.
 ### Communication Rules (MANDATORY)
 
 **ALWAYS DO**:
+- ✅ **PRESENT VISUAL RESULTS FIRST** - Read actual code (mdg.py, rg.py, upc.py) to show exact UI/message formats before proposing changes
 - ✅ Ask for confirmation before making ANY code changes
 - ✅ Make surgical changes - touch ONLY what needs fixing
 - ✅ Test each change individually before moving to next
 - ✅ Check every line against original requirements
 - ✅ Explain exactly what will change and why
 - ✅ TRACE THE ACTUAL CODE FLOW before implementing - don't assume
+- ✅ READ THE ACTUAL CODE to see real message formats - NEVER hallucinate UI
 
 **NEVER DO**:
 - ❌ NO assumptions - verify everything against assignment
@@ -73,6 +76,7 @@ Historical issues that have caused failures:
 6. Making changes without user confirmation (caused frustration)
 7. **CLAIMING TO UNDERSTAND WITHOUT ACTUALLY TRACING CODE FLOW** (BTN-TIME failure - modified wrong function, didn't trace actual callback handlers)
 8. **READING EXISTING BROKEN CODE INSTEAD OF USER'S ORIGINAL ASSIGNMENT** (Fix #4 failure - looked at wrong implementation instead of user's specification)
+9. **NOT PRESENTING VISUAL RESULTS FIRST BY READING ACTUAL CODE** (Dec 9, 2025 - Proposed OCR fixes without showing visual results, tried to hallucinate UI format instead of reading mdg.py)
 
 ### When You Fuck Up
 

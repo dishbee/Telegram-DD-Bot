@@ -1,6 +1,6 @@
 # STATE Schema Documentation
 
-**Last Updated**: December 8, 2024  
+**Last Updated**: December 9, 2024  
 **Purpose**: Comprehensive reference for all STATE dictionary fields used across the Telegram Dispatch Bot
 
 ---
@@ -19,6 +19,8 @@
 - 7-day TTL (orders auto-delete after 1 week)
 - Graceful degradation (app works without Redis if credentials missing)
 - Restore on startup via `redis_get_all_orders()`
+- Scheduled cleanup every 3 days at 23:59 (keeps 2 days + today, deletes older)
+- Manual cleanup command: `/redis_cleanup` (keeps 2 days + today)
 
 ---
 
