@@ -319,6 +319,20 @@ async def safe_edit_message(chat_id: int, message_id: int, text: str, reply_mark
     except Exception as e:
         logger.error(f"Error editing message: {e}")
 
+async def safe_edit_message_text_only(chat_id: int, message_id: int, text: str, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
+    """Edit ONLY message text, preserving existing keyboard"""
+    try:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=parse_mode,
+            disable_web_page_preview=disable_web_page_preview
+            # NOTE: reply_markup is intentionally OMITTED to preserve existing keyboard
+        )
+    except Exception as e:
+        logger.error(f"Error editing message text: {e}")
+
 async def safe_delete_message(chat_id: int, message_id: int):
     """Delete message with error handling"""
     try:
@@ -2357,13 +2371,19 @@ def telegram_webhook():
                     
                     # Update MDG and RG messages
                     # Preserve keyboard for multi-vendor orders (don't rebuild until all vendors confirm)
-                    mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
-                    await safe_edit_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        order["mdg_message_id"],
-                        build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                        mdg_keyboard
-                    )
+                    if should_preserve_mdg_keyboard(order):
+                        await safe_edit_message_text_only(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
+                        )
+                    else:
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                            mdg_time_request_keyboard(order_id)
+                        )
                     
                     vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
                     rg_msg_id = order.get("rg_message_ids", {}).get(vendor)
@@ -2684,13 +2704,19 @@ def telegram_webhook():
                     # Update MDG message with new status
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
-                    mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
-                    await safe_edit_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        order["mdg_message_id"],
-                        mdg_text,
-                        mdg_keyboard  # Keep same buttons
-                    )
+                    if should_preserve_mdg_keyboard(order):
+                        await safe_edit_message_text_only(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text
+                        )
+                    else:
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text,
+                            mdg_time_request_keyboard(order_id)
+                        )
                     
                     # Update RG messages with new status
                     for vendor in vendors:
@@ -2866,13 +2892,19 @@ def telegram_webhook():
                     order["requested_time"] = requested_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
-                    mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
-                    await safe_edit_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        order["mdg_message_id"],
-                        mdg_text,
-                        mdg_keyboard
-                    )
+                    if should_preserve_mdg_keyboard(order):
+                        await safe_edit_message_text_only(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text
+                        )
+                    else:
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text,
+                            mdg_time_request_keyboard(order_id)
+                        )
                     
                     # Clean up additional MDG messages
                     await cleanup_mdg_messages(order_id)
@@ -3008,13 +3040,19 @@ def telegram_webhook():
                     order["requested_time"] = ref_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
-                    mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
-                    await safe_edit_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        order["mdg_message_id"],
-                        mdg_text,
-                        mdg_keyboard
-                    )
+                    if should_preserve_mdg_keyboard(order):
+                        await safe_edit_message_text_only(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text
+                        )
+                    else:
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text,
+                            mdg_time_request_keyboard(order_id)
+                        )
                     
                     # Clean up additional MDG messages
                     await cleanup_mdg_messages(order_id)
@@ -3101,13 +3139,19 @@ def telegram_webhook():
                     order["requested_time"] = requested_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
-                    mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
-                    await safe_edit_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        order["mdg_message_id"],
-                        mdg_text,
-                        mdg_keyboard
-                    )
+                    if should_preserve_mdg_keyboard(order):
+                        await safe_edit_message_text_only(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text
+                        )
+                    else:
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text,
+                            mdg_time_request_keyboard(order_id)
+                        )
                     
                     # Update RG messages with new status
                     for vendor in vendors_to_notify:
@@ -3240,13 +3284,19 @@ def telegram_webhook():
                     order["requested_time"] = reference_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
-                    mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
-                    await safe_edit_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        order["mdg_message_id"],
-                        mdg_text,
-                        mdg_keyboard
-                    )
+                    if should_preserve_mdg_keyboard(order):
+                        await safe_edit_message_text_only(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text
+                        )
+                    else:
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text,
+                            mdg_time_request_keyboard(order_id)
+                        )
                     
                     # Clean up additional MDG messages
                     await cleanup_mdg_messages(order_id)
@@ -3349,13 +3399,19 @@ def telegram_webhook():
                     order["requested_time"] = selected_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
-                    mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
-                    await safe_edit_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        order["mdg_message_id"],
-                        mdg_text,
-                        mdg_keyboard
-                    )
+                    if should_preserve_mdg_keyboard(order):
+                        await safe_edit_message_text_only(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text
+                        )
+                    else:
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            mdg_text,
+                            mdg_time_request_keyboard(order_id)
+                        )
                     
                     # Update RG messages with new status
                     for v in target_vendors:
@@ -3509,13 +3565,19 @@ def telegram_webhook():
                     
                     # Update MDG message with new status
                     # Preserve keyboard for multi-vendor orders (don't rebuild until all vendors confirm)
-                    mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
-                    await safe_edit_message(
-                        DISPATCH_MAIN_CHAT_ID,
-                        order["mdg_message_id"],
-                        build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                        mdg_keyboard
-                    )
+                    if should_preserve_mdg_keyboard(order):
+                        await safe_edit_message_text_only(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
+                        )
+                    else:
+                        await safe_edit_message(
+                            DISPATCH_MAIN_CHAT_ID,
+                            order["mdg_message_id"],
+                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                            mdg_time_request_keyboard(order_id)
+                        )
                     
                     # Update RG message with new status
                     rg_msg_id = order.get("rg_message_ids", {}).get(vendor) or order.get("vendor_messages", {}).get(vendor)
@@ -3624,13 +3686,19 @@ def telegram_webhook():
                         
                         # Update MDG message with new status
                         # Preserve keyboard for multi-vendor orders
-                        mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
-                        await safe_edit_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            order["mdg_message_id"],
-                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                            mdg_keyboard
-                        )
+                        if should_preserve_mdg_keyboard(order):
+                            await safe_edit_message_text_only(
+                                DISPATCH_MAIN_CHAT_ID,
+                                order["mdg_message_id"],
+                                build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
+                            )
+                        else:
+                            await safe_edit_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                order["mdg_message_id"],
+                                build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                                mdg_time_request_keyboard(order_id)
+                            )
                         
                         # Update RG message with new status
                         rg_msg_id = order.get("rg_message_ids", {}).get(vendor) or order.get("vendor_messages", {}).get(vendor)
@@ -3732,13 +3800,19 @@ def telegram_webhook():
                         
                         # Update MDG message with new status
                         # Preserve keyboard for multi-vendor orders
-                        mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
-                        await safe_edit_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            order["mdg_message_id"],
-                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                            mdg_keyboard
-                        )
+                        if should_preserve_mdg_keyboard(order):
+                            await safe_edit_message_text_only(
+                                DISPATCH_MAIN_CHAT_ID,
+                                order["mdg_message_id"],
+                                build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
+                            )
+                        else:
+                            await safe_edit_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                order["mdg_message_id"],
+                                build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                                mdg_time_request_keyboard(order_id)
+                            )
                         
                         # Update RG message with new status
                         rg_msg_id = order.get("rg_message_ids", {}).get(vendor) or order.get("vendor_messages", {}).get(vendor)
@@ -4387,13 +4461,19 @@ def telegram_webhook():
                         from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard
                         updated_mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_details_expanded", False))
                         # Preserve keyboard for multi-vendor orders
-                        mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
-                        await safe_edit_message(
-                            DISPATCH_MAIN_CHAT_ID,
-                            order["mdg_message_id"],
-                            updated_mdg_text,
-                            mdg_keyboard
-                        )
+                        if should_preserve_mdg_keyboard(order):
+                            await safe_edit_message_text_only(
+                                DISPATCH_MAIN_CHAT_ID,
+                                order["mdg_message_id"],
+                                updated_mdg_text
+                            )
+                        else:
+                            await safe_edit_message(
+                                DISPATCH_MAIN_CHAT_ID,
+                                order["mdg_message_id"],
+                                updated_mdg_text,
+                                mdg_time_request_keyboard(order_id)
+                            )
                     
                     # Send temporary notification
                     notif = await safe_send_message(

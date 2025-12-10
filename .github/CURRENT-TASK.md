@@ -53,6 +53,74 @@ Logs for this exact case are attached to this message.
 
 ---
 
+## 💬 USER MESSAGE (December 10, 2025 - 14:55)
+
+**USER'S EXACT MESSAGE**:
+```
+!!! Follow the AI-INSTRUCTIONS.md !!!
+
+Let's continue with the current-task.
+
+Your fix was depoyed and it's a total disaster. Despite your promises and claims, you have broken everything yet again. I did a test shopify multi-vendor order and now when Asap / Time picker request is sent (cliked the button), the **Initial Buttons** keyboards is just REMOVED COMPLETELY instead of KEEPING IT PERNAMENTLY. You you fucked it up even more now. As always, neverending loop of shit.
+
+Logs attached.
+
+!!! Follow the AI-INSTRUCTIONS.md !!!
+```
+
+**Agent Analysis**: The problem is in how Telegram Bot API handles `reply_markup=None`. When passing `None`, it REMOVES the keyboard instead of keeping it unchanged. My implementation called `safe_edit_message(..., reply_markup=None)` which deleted the keyboard entirely.
+
+**Root Cause**: `bot.edit_message_text(..., reply_markup=None)` → Telegram interprets this as "remove keyboard"
+
+**Correct Fix**: When keyboard should be preserved, SKIP the `reply_markup` parameter entirely (don't pass it at all). Telegram Bot API spec: omitting `reply_markup` preserves existing keyboard.
+
+---
+
+## ✅ PROPER FIX IMPLEMENTED (December 10, 2025 - 15:00)
+
+**Changes Made**:
+
+### 1️⃣ New Helper Function - `safe_edit_message_text_only()`
+- **File**: main.py lines 320-332
+- **Purpose**: Edit ONLY message text, preserve existing keyboard
+- **Implementation**: Calls `bot.edit_message_text()` WITHOUT `reply_markup` parameter
+- **Key**: Parameter is completely OMITTED, not set to `None`
+
+### 2️⃣ Fixed All 11 Handler Locations
+Changed from:
+```python
+mdg_keyboard = None if should_preserve_mdg_keyboard(order) else mdg_time_request_keyboard(order_id)
+await safe_edit_message(..., mdg_keyboard)
+```
+
+Changed to:
+```python
+if should_preserve_mdg_keyboard(order):
+    await safe_edit_message_text_only(...)  # No keyboard parameter
+else:
+    await safe_edit_message(..., mdg_time_request_keyboard(order_id))
+```
+
+**Affected Handlers** (all 11 fixed):
+1. Line 2374 - `vendor_asap` (vendor-specific ASAP)
+2. Line 2707 - `req_asap` (all vendors ASAP)
+3. Line 2895 - `prepare` (exact time all vendors)
+4. Line 3037 - `req_same` (same time as another order)
+5. Line 3136 - `prepare_plus` (time + minutes)
+6. Line 3287 - `req_from_ref` (request from reference)
+7. Line 3396 - `exact_selected` (exact time selected)
+8. Line 3556 - `works` (vendor confirmation)
+9. Line 3689 - `prepare_time` (vendor-specific time confirmation #1)
+10. Line 3797 - `prepare_time` (vendor-specific time confirmation #2)
+11. Line 4452 - `unassign` (courier unassignment)
+
+**Expected Behavior**:
+- Multi-vendor NOT all confirmed → Keyboard preserved ([Ask 👩‍🍳 JS], [Ask 👨‍🍳 LR] stay)
+- Multi-vendor ALL confirmed → Keyboard rebuilt to assignment buttons
+- Single-vendor → Keyboard always rebuilt ([⚡ Asap], [🕒 Time picker])
+
+---
+
 ## 🔍 ANALYSIS PHASE
 
 ### Understanding the Bug
