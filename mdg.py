@@ -585,6 +585,11 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
                     f"Ask {chef_emoji} {shortcut}",
                     callback_data=f"req_vendor|{order_id}|{vendor}|{int(now().timestamp())}"
                 )])
+            
+            # Show "Scheduled orders" button only if recent orders exist
+            recent_orders = get_recent_orders_for_same_time(order_id, vendor=None)
+            if recent_orders:
+                buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
         else:
             # Single vendor: show ASAP/TIME/SCHEDULED buttons (vertical)
             buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}")])
