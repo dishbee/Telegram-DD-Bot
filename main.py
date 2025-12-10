@@ -319,20 +319,6 @@ async def safe_edit_message(chat_id: int, message_id: int, text: str, reply_mark
     except Exception as e:
         logger.error(f"Error editing message: {e}")
 
-async def safe_edit_message_text_only(chat_id: int, message_id: int, text: str, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True):
-    """Edit ONLY message text, preserving existing keyboard"""
-    try:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=text,
-            parse_mode=parse_mode,
-            disable_web_page_preview=disable_web_page_preview
-            # NOTE: reply_markup is intentionally OMITTED to preserve existing keyboard
-        )
-    except Exception as e:
-        logger.error(f"Error editing message text: {e}")
-
 async def safe_delete_message(chat_id: int, message_id: int):
     """Delete message with error handling"""
     try:
@@ -2372,10 +2358,11 @@ def telegram_webhook():
                     # Update MDG and RG messages
                     # Preserve keyboard for multi-vendor orders (don't rebuild until all vendors confirm)
                     if should_preserve_mdg_keyboard(order):
-                        await safe_edit_message_text_only(
+                        await safe_edit_message(
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
-                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
+                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                            mdg_initial_keyboard(order)
                         )
                     else:
                         await safe_edit_message(
@@ -2705,10 +2692,11 @@ def telegram_webhook():
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
                     if should_preserve_mdg_keyboard(order):
-                        await safe_edit_message_text_only(
+                        await safe_edit_message(
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
-                            mdg_text
+                            mdg_text,
+                            mdg_initial_keyboard(order)
                         )
                     else:
                         await safe_edit_message(
@@ -2893,10 +2881,11 @@ def telegram_webhook():
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
                     if should_preserve_mdg_keyboard(order):
-                        await safe_edit_message_text_only(
+                        await safe_edit_message(
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
-                            mdg_text
+                            mdg_text,
+                            mdg_initial_keyboard(order)
                         )
                     else:
                         await safe_edit_message(
@@ -3041,10 +3030,11 @@ def telegram_webhook():
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
                     if should_preserve_mdg_keyboard(order):
-                        await safe_edit_message_text_only(
+                        await safe_edit_message(
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
-                            mdg_text
+                            mdg_text,
+                            mdg_initial_keyboard(order)
                         )
                     else:
                         await safe_edit_message(
@@ -3140,10 +3130,11 @@ def telegram_webhook():
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
                     if should_preserve_mdg_keyboard(order):
-                        await safe_edit_message_text_only(
+                        await safe_edit_message(
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
-                            mdg_text
+                            mdg_text,
+                            mdg_initial_keyboard(order)
                         )
                     else:
                         await safe_edit_message(
@@ -3285,10 +3276,11 @@ def telegram_webhook():
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
                     if should_preserve_mdg_keyboard(order):
-                        await safe_edit_message_text_only(
+                        await safe_edit_message(
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
-                            mdg_text
+                            mdg_text,
+                            mdg_initial_keyboard(order)
                         )
                     else:
                         await safe_edit_message(
@@ -3400,10 +3392,11 @@ def telegram_webhook():
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
                     if should_preserve_mdg_keyboard(order):
-                        await safe_edit_message_text_only(
+                        await safe_edit_message(
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
-                            mdg_text
+                            mdg_text,
+                            mdg_initial_keyboard(order)
                         )
                     else:
                         await safe_edit_message(
@@ -3566,10 +3559,11 @@ def telegram_webhook():
                     # Update MDG message with new status
                     # Preserve keyboard for multi-vendor orders (don't rebuild until all vendors confirm)
                     if should_preserve_mdg_keyboard(order):
-                        await safe_edit_message_text_only(
+                        await safe_edit_message(
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
-                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
+                            build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                            mdg_initial_keyboard(order)
                         )
                     else:
                         await safe_edit_message(
@@ -3687,10 +3681,11 @@ def telegram_webhook():
                         # Update MDG message with new status
                         # Preserve keyboard for multi-vendor orders
                         if should_preserve_mdg_keyboard(order):
-                            await safe_edit_message_text_only(
+                            await safe_edit_message(
                                 DISPATCH_MAIN_CHAT_ID,
                                 order["mdg_message_id"],
-                                build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
+                                build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                                mdg_initial_keyboard(order)
                             )
                         else:
                             await safe_edit_message(
@@ -3801,10 +3796,11 @@ def telegram_webhook():
                         # Update MDG message with new status
                         # Preserve keyboard for multi-vendor orders
                         if should_preserve_mdg_keyboard(order):
-                            await safe_edit_message_text_only(
+                            await safe_edit_message(
                                 DISPATCH_MAIN_CHAT_ID,
                                 order["mdg_message_id"],
-                                build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
+                                build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
+                                mdg_initial_keyboard(order)
                             )
                         else:
                             await safe_edit_message(
@@ -4462,10 +4458,11 @@ def telegram_webhook():
                         updated_mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_details_expanded", False))
                         # Preserve keyboard for multi-vendor orders
                         if should_preserve_mdg_keyboard(order):
-                            await safe_edit_message_text_only(
+                            await safe_edit_message(
                                 DISPATCH_MAIN_CHAT_ID,
                                 order["mdg_message_id"],
-                                updated_mdg_text
+                                updated_mdg_text,
+                                mdg_initial_keyboard(order)
                             )
                         else:
                             await safe_edit_message(
