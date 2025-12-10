@@ -112,17 +112,19 @@ def parse_pf_order(ocr_text: str) -> dict:
     if re.search(r'Bestellung zur Abholung|zur Abholung', ocr_text, re.IGNORECASE):
         raise ParseError("SELBSTABHOLUNG")
     
-    # 1. Order # (required): #ABC XYZ format
+    # 1. Order # (optional): #ABC XYZ format
     # Extract last 2 chars from 2nd group for display
     # Example: "#VCJ 34V" → order_num="4V"
     # Example: "#SM9 8H3" → order_num="H3"
+    # If OCR fails to extract order code, use "N/A" as fallback
     order_match = re.search(r'[#*]\s*([A-Z0-9]{3})\s+([A-Z0-9]{3})', ocr_text, re.IGNORECASE)
     if not order_match:
-        raise ParseError(detect_collapse_error(ocr_text))
-    
-    full_code = order_match.group(2).upper()
-    result['order_num'] = full_code[-2:]  # Last 2 chars
-    logger.info(f"[ORDER-{result['order_num']}] Parsed PF order from OCR")
+        result['order_num'] = "N/A"
+        logger.warning(f"[ORDER-N/A] Order code not found in OCR text, using fallback")
+    else:
+        full_code = order_match.group(2).upper()
+        result['order_num'] = full_code[-2:]  # Last 2 chars
+        logger.info(f"[ORDER-{result['order_num']}] Parsed PF order from OCR")
     
     # 2. ZIP (required): 5 digits (Passau = 940XX)
     zip_match = re.search(r'\b(940\d{2})\b', ocr_text)
