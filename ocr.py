@@ -188,6 +188,10 @@ def parse_pf_order(ocr_text: str) -> dict:
         # Stop at "Bezahlt" or empty lines
         if not line or line == 'Bezahlt' or line == 'Passau':
             continue
+        # Fix OCR misread: "I Franz-Stockbauer-Weg" → "1 Franz-Stockbauer-Weg"
+        if re.match(r'^[IO]\s+\w', line) and any(suffix in line.lower() for suffix in ('straße', 'str', 'weg', 'platz', 'ring', 'gasse')):
+            line = re.sub(r'^[IO](\s)', r'1\1', line)
+            logger.info(f"[OCR] Fixed OCR misread in address: {line}")
         # Skip lines that are just ZIP
         if re.match(r'^\d{5}$', line):
             continue
@@ -244,6 +248,12 @@ def parse_pf_order(ocr_text: str) -> dict:
             street = ' '.join(address_parts[1:])
             result['address'] = f"{street} {number}"
             logger.info(f"OCR Address parsed (number-first pattern): street='{street}', number='{number}'")
+        elif len(address_parts) == 2 and first_starts_with_digit:
+            # Simple 2-word pattern: "8 Roßtränke" → assume "Roßtränke 8"
+            number = address_parts[0]
+            street = address_parts[1]
+            result['address'] = f"{street} {number}"
+            logger.info(f"OCR Address parsed (2-word pattern): street='{street}', number='{number}'")
         else:
             # Original logic: Scan for street start marker
             # OCR shows address in order: building number FIRST, street name AFTER
