@@ -167,6 +167,23 @@ Fixed in `ocr.py` lines 115-132:
 
 ---
 
+## 💬 USER MESSAGE (December 10, 2025 - 20:16)
+
+**USER'S EXACT MESSAGE**:
+```
+What about "🚨 New order (# /A)" instead of "🚨 New order (# N/A)"? You didn't fix that!!!
+```
+
+**AGENT RESPONSE**:
+Another miss. The "# /A" display happens because `get_smoothr_order_type()` in `utils.py` line 932 takes last 2 chars of "N/A" → "/A".
+
+Fixed in `utils.py` lines 902-926:
+- Added special case: `if order_code == "N/A": return ("ocr_pf", "N/A")`
+- Returns full "N/A" string instead of slicing to "/A"
+- Now displays "🚨 New order (# N/A)" correctly
+
+---
+
 ## 💬 USER MESSAGE (December 10, 2025 - 16:50)
 
 **USER'S EXACT MESSAGE**:

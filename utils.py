@@ -906,6 +906,7 @@ def get_smoothr_order_type(order_code: str) -> tuple[str, str]:
     D&D App orders: 3 digits (e.g., "545", "123", "999")
     dishbee orders: 2 digits (e.g., "45", "01", "99")
     Lieferando orders: 6-character alphanumeric code (e.g., "JR6ZO9")
+    OCR fallback: "N/A" when order code not found in OCR
     
     Args:
         order_code: The order code from Smoothr
@@ -915,8 +916,13 @@ def get_smoothr_order_type(order_code: str) -> tuple[str, str]:
         - D&D App: ("smoothr_dnd", "545") - full 3 digits
         - dishbee: ("smoothr_dishbee", "45") - full 2 digits
         - Lieferando: ("smoothr_lieferando", "O9") - last 2 chars
+        - OCR fallback: ("ocr_pf", "N/A") - when order code missing
     """
     order_code = order_code.strip()
+    
+    # Special case: OCR fallback when order code not found
+    if order_code == "N/A":
+        return ("ocr_pf", "N/A")
     
     # Check if it's all digits
     if order_code.isdigit():
