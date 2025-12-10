@@ -234,11 +234,11 @@ def parse_pf_order(ocr_text: str) -> dict:
         street_prefixes = ('untere', 'obere', 'alte', 'neue', 'große', 'kleine', 'innere', 'äußere', 'am')
         
         # Check for pattern: "Number Street" (e.g., "60 Neuburger Straße" or "129 Göttweiger Str.")
-        # First part is purely numeric, last part has street suffix
-        first_is_number = address_parts[0].replace('/', '').replace('.', '').isdigit()
+        # First part starts with digit (allows alphanumeric like "25a", "1A"), last part has street suffix
+        first_starts_with_digit = address_parts[0][0].isdigit() if address_parts[0] else False
         last_has_suffix = address_parts[-1].lower().rstrip('.').endswith(street_suffixes)
         
-        if first_is_number and last_has_suffix:
+        if first_starts_with_digit and last_has_suffix:
             # Pattern: "60 Neuburger Straße" → number="60", street="Neuburger Straße"
             number = address_parts[0]
             street = ' '.join(address_parts[1:])
@@ -297,7 +297,11 @@ def parse_pf_order(ocr_text: str) -> dict:
     phone_search_area = ocr_text[name_end:name_end + 300]  # Search in next 300 chars after name
     logger.info(f"[OCR] Phone search area: {repr(phone_search_area[:100])}")
     # Allow any whitespace (including newlines) before phone number
+    # Match: +49..., 0... (German format), or phone emoji followed by number
     phone_match = re.search(r'📞?\s*([O0+]?\d[\d -)]{8,20})', phone_search_area)
+    # Fallback: try matching bare phone numbers starting with 0 (e.g., "017677276446")
+    if not phone_match:
+        phone_match = re.search(r'\b(0\d{9,14})\b', phone_search_area)
     logger.info(f"[OCR] Phone match result: {phone_match}")
     
     if not phone_match:
@@ -388,7 +392,8 @@ def detect_collapse_error(ocr_text: str) -> str:
     
     # Check if note indicator present with arrow (collapsed)
     has_note_indicator = bool(re.search(r'[🚚🚴]', ocr_text))
-    has_collapsed_arrow = bool(re.search(r'[▼▽]', ocr_text))
+    # Expanded arrow pattern to catch Unicode variations: ▼▽►▻⊳>vV( and parentheses
+    has_collapsed_arrow = bool(re.search(r'[▼▽►▻⊳>vV(]', ocr_text))
     has_collapsed_note = has_note_indicator and has_collapsed_arrow
     
     # Determine error type
