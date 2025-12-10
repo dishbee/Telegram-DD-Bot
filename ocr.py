@@ -121,10 +121,12 @@ def parse_pf_order(ocr_text: str) -> dict:
     if not order_match:
         result['order_num'] = "N/A"
         logger.warning(f"[ORDER-N/A] Order code not found in OCR text, using fallback")
+        order_end = 0  # Start from beginning if no order code
     else:
         full_code = order_match.group(2).upper()
         result['order_num'] = full_code[-2:]  # Last 2 chars
         logger.info(f"[ORDER-{result['order_num']}] Parsed PF order from OCR")
+        order_end = order_match.end()
     
     # 2. ZIP (required): 5 digits (Passau = 940XX)
     zip_match = re.search(r'\b(940\d{2})\b', ocr_text)
@@ -135,7 +137,6 @@ def parse_pf_order(ocr_text: str) -> dict:
     # 3. Customer Name (required): After order code, before full address
     # Pattern: Standalone line with name, may have prefix ("A. Hasan", "L. Hoffmann")
     # Must NOT be from note section (check for note indicators first)
-    order_end = order_match.end()
     
     # Find text between order code and phone number
     phone_pattern = r'📞?\s*\+?\d{10,}'
