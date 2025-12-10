@@ -1240,6 +1240,78 @@ async def handle_test_vendor_command(chat_id: int, vendor: str, message_id: int)
 
 
 # =============================================================================
+# OCR STATUS COMMAND HANDLER
+# =============================================================================
+
+async def handle_ocr_status_command(chat_id: int, message_id: int):
+    """
+    Test OCR.space API and report status.
+    Only responds in MDG chat (silent in other chats).
+    """
+    # Silent ignore if not MDG
+    if chat_id != DISPATCH_MAIN_CHAT_ID:
+        return
+    
+    import time
+    from io import BytesIO
+    from PIL import Image, ImageDraw, ImageFont
+    
+    try:
+        # Create a simple test image with text
+        img = Image.new('RGB', (400, 200), color='white')
+        draw = ImageDraw.Draw(img)
+        
+        # Use default font
+        try:
+            font = ImageFont.truetype("arial.ttf", 36)
+        except:
+            font = ImageFont.load_default()
+        
+        draw.text((50, 80), "OCR Test", fill='black', font=font)
+        
+        # Save to temporary file
+        test_path = 'temp_ocr_test.png'
+        img.save(test_path)
+        
+        # Test OCR API
+        start_time = time.time()
+        ocr_text = ocr.extract_text_from_image(test_path)
+        response_time = time.time() - start_time
+        
+        # Clean up test file
+        import os
+        if os.path.exists(test_path):
+            os.remove(test_path)
+        
+        # Success response
+        from datetime import datetime
+        status_msg = (
+            "✅ **OCR Service Status**\n\n"
+            f"Status: Operational ✅\n"
+            f"Response time: {response_time:.1f}s\n"
+            f"Last test: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            "You can send PF photos - they will be processed normally."
+        )
+        await safe_send_message(chat_id, status_msg)
+        
+    except ocr.ParseError as e:
+        # OCR service failure
+        error_details = str(e)
+        status_msg = (
+            "❌ **OCR Service Status**\n\n"
+            f"Status: DOWN ❌\n"
+            f"Error: {error_details}\n\n"
+            "PF photos will fail until service recovers. Wait 5-10 minutes and test again with /ocr command."
+        )
+        await safe_send_message(chat_id, status_msg)
+        
+    except Exception as e:
+        # Unexpected error
+        logger.error(f"OCR status command error: {e}")
+        await safe_send_message(chat_id, f"❌ Error testing OCR service: {str(e)}")
+
+
+# =============================================================================
 # REDIS CLEANUP COMMAND HANDLER
 # =============================================================================
 
@@ -1710,7 +1782,10 @@ async def handle_pf_photo(message: dict):
         # Determine specific error message based on error type
         error_type = str(e)
         
-        if error_type == "SELBSTABHOLUNG":
+        # Check for network errors first (OCR.space API timeout/connection issues)
+        if error_type.startswith("Network error:"):
+            error_msg = "⚠️ Server error. Please send this order again in 5 minutes."
+        elif error_type == "SELBSTABHOLUNG":
             error_msg = "⚠️ That is an order for Selbstabholung. Please don't send these ones."
         elif error_type == "DETAILS_COLLAPSED":
             error_msg = "⚠️ Please send the photo with the Details opened. The arrow symbol on the right from the name. Otherwise system can't read it."
@@ -2134,6 +2209,14 @@ def telegram_webhook():
                 run_async(handle_test_vendor_command(chat_id, "Kimbu", msg.get('message_id')))
                 return "OK"
 
+            # =================================================================
+            # OCR STATUS CHECK COMMAND (MDG only)
+            # =================================================================
+            if text.startswith("/ocr"):
+                logger.info("=== OCR STATUS COMMAND DETECTED ===")
+                run_async(handle_ocr_status_command(chat_id, msg.get('message_id')))
+                return "OK"
+            
             # =================================================================
             # REDIS CLEANUP COMMAND (admin only)
             # =================================================================
