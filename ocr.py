@@ -121,7 +121,14 @@ def parse_pf_order(ocr_text: str) -> dict:
     if not order_match:
         result['order_num'] = "N/A"
         logger.warning(f"[ORDER-N/A] Order code not found in OCR text, using fallback")
-        order_end = 0  # Start from beginning if no order code
+        # When order code missing, use "Bezahlt" marker as starting point for name/address search
+        bezahlt_match = re.search(r'Bezahlt', ocr_text, re.IGNORECASE)
+        if bezahlt_match:
+            order_end = bezahlt_match.end()
+        else:
+            # Fallback: use ZIP code as reference point
+            zip_fallback = re.search(r'\b940\d{2}\b', ocr_text)
+            order_end = zip_fallback.start() if zip_fallback else 0
     else:
         full_code = order_match.group(2).upper()
         result['order_num'] = full_code[-2:]  # Last 2 chars

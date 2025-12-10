@@ -97,6 +97,76 @@ Fixed in `ocr.py` lines 115-139:
 
 ---
 
+## 💬 USER MESSAGE (December 10, 2025 - 20:12)
+
+**USER'S EXACT MESSAGE**:
+```
+Result of how this order parsed now:
+
+Rg-sum:
+
+🚨 New order (# /A)
+────────────────
+
+🗺️ Franz-Stockbaue In Lieferung zubereitet 1
+👤 Wird
+
+Instead:
+
+🚨 New order (# N/A)
+────────────────
+
+🗺️ Franz-Stockbaue In Lieferung 1
+👤 M. Ali
+
+mdg-ord: 
+
+🚨 New order (# /A)
+────────────────
+
+🗺️ Franz-Stockbaue In Lieferung zubereitet 1 (94032)
+
+👩‍🍳 PF (1)
+
+📞 +4917677276446
+
+👤 Wird
+
+Total: 26.21
+
+Instead of:
+
+🚨 New order (# N/A)
+────────────────
+
+🗺️ Franz-Stockbaue In Lieferung 1 (94032)
+
+👩‍🍳 PF (1)
+
+📞 +4917677276446
+
+👤 M. Ali
+
+Total: 26.21
+```
+
+**AGENT RESPONSE**:
+Another fuckup. Setting `order_end = 0` makes parser search from very beginning, picking up status text ("Wird", "In Lieferung zubereitet") instead of actual customer name and address.
+
+OCR text structure:
+- Lines 1-4: Status ("Wird", "In Lieferung", "zubereitet")
+- Line 5+: Address "1 Franz-Stockbaue"
+- Then: "94032", "Bezahlt", note
+- Then: Customer name "M. ALi"
+
+Fixed in `ocr.py` lines 115-132:
+- When order code missing: Use "Bezahlt" marker as starting point
+- Fallback: Use ZIP code position if "Bezahlt" not found
+- This skips status text and starts from actual order details section
+- Ensures correct customer name ("M. ALi") and address parsing
+
+---
+
 ## 💬 USER MESSAGE (December 10, 2025 - 16:50)
 
 **USER'S EXACT MESSAGE**:
