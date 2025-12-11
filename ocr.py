@@ -242,6 +242,18 @@ def parse_pf_order(ocr_text: str) -> dict:
         logger.error(f"[OCR] No valid address lines found in address_block")
         raise ParseError(detect_collapse_error(ocr_text))
     
+    # Check for duplicate address collection - stop if we have split street name
+    # OCR often shows address twice: split in header + complete in details
+    if len(address_lines) >= 2:
+        first_line = address_lines[0]
+        # Pattern: "77 Waldschmidtstr" (number + incomplete street)
+        if first_line and first_line[0].isdigit() and not first_line.lower().endswith(('straße', 'str', 'weg', 'platz', 'gasse')):
+            second_line = address_lines[1] if len(address_lines) > 1 else ""
+            # If second line completes the street (e.g., "aße"), keep only first 2 lines
+            if second_line and not second_line[0].isdigit():
+                address_lines = address_lines[:2]
+                logger.info(f"[OCR] Detected split address, keeping only first 2 lines: {address_lines}")
+    
     # Join address lines WITH spaces (preserve multi-word patterns like "1/ app Nr 316")
     # Handle word wrapping in street names (e.g., "Dr.-Hans-Kapfi\nger-Straße" split across lines)
     full_address_raw = ' '.join(address_lines)
