@@ -2853,17 +2853,17 @@ def telegram_webhook():
                 
                 elif action == "req_scheduled":
                     order_id = data[1]
-                    vendor = data[2] if len(data) > 2 else None
+                    # data[2] is timestamp, NOT vendor - don't filter by vendor for scheduled list
                     
-                    logger.info(f"Showing scheduled orders for order {order_id}, vendor: {vendor}")
+                    logger.info(f"Showing scheduled orders for order {order_id}")
                     
                     order = STATE.get(order_id)
                     if not order:
                         logger.error(f"Order {order_id} not found in STATE")
                         return
                     
-                    # Show recent orders list
-                    keyboard = mdg_time_submenu_keyboard(order_id, vendor)
+                    # Show recent orders list (no vendor filtering - show ALL scheduled orders)
+                    keyboard = mdg_time_submenu_keyboard(order_id, vendor=None)
                     
                     # Initialize mdg_additional_messages if not exists
                     if "mdg_additional_messages" not in order:
