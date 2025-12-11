@@ -582,6 +582,110 @@ Proceed.
 
 **AGENT RESPONSE**: Implementing duplicate address detection fix now.
 
+## ✅ IMPLEMENTATION COMPLETE (December 11, 2025)
+
+**Commit**: `0e7eced` - "Fix OCR PF duplicate street name by filtering duplicate address lines"
+
+### Changes Made:
+
+**File**: `ocr.py` lines 245-254
+**Change**: Added duplicate address line detection before joining
+
+```python
+# Check for duplicate address collection - stop if we have split street name
+# OCR often shows address twice: split in header + complete in details
+if len(address_lines) >= 2:
+    first_line = address_lines[0]
+    # Pattern: "77 Waldschmidtstr" (number + incomplete street)
+    if first_line and first_line[0].isdigit() and not first_line.lower().endswith(('straße', 'str', 'weg', 'platz', 'gasse')):
+        second_line = address_lines[1] if len(address_lines) > 1 else ""
+        # If second line completes the street (e.g., "aße"), keep only first 2 lines
+        if second_line and not second_line[0].isdigit():
+            address_lines = address_lines[:2]
+            logger.info(f"[OCR] Detected split address, keeping only first 2 lines: {address_lines}")
+```
+
+### How It Works:
+
+**Detection Pattern**:
+1. Check if first line starts with digit: `"77 Waldschmidtstr"` → True
+2. Check if first line doesn't end with street suffix → True (ends with "str", not complete "straße")
+3. Check if second line doesn't start with digit: `"aße"` → True (starts with letter)
+4. **Action**: Keep only first 2 lines, discard any complete address lines after
+
+**Example**:
+- **Before**: `address_lines = ['77 Waldschmidtstr', 'aße', '77 Waldschmidtstraße, 94034, Passau']`
+- **After**: `address_lines = ['77 Waldschmidtstr', 'aße']`
+- **Result**: `"Waldschmidtstraße 77"` (no duplicate)
+
+### Expected Results:
+
+**Issue #4 Fix (Order #F6Y 99K)**:
+- OCR collects both split header and complete details line
+- New logic detects split address pattern and keeps only first 2 lines
+- Previous fix joins "str aße" → "straße"
+- Final address: `"Waldschmidtstraße 77"` ✅ (no duplicate)
+
+**Deployed**: Production (Render auto-deploys from main branch)
+
+---
+
+## 💬 USER MESSAGE (December 11, 2025 - 13:30)
+
+**USER'S EXACT MESSAGE**:
+```
+The fix didn't help, the attached image is still parsing the street as double: "🗺️ Waldschmidtstraße 77 Waldschmidtstraße 77" instead of "🗺️ Waldschmidtstraße 77"
+```
+
+**USER ATTACHED**:
+- Screenshot showing Order #F6Y 99K still has duplicate street name
+- Logs file (Temp LOGS)
+
+---
+
+## 🔍 AGENT ANALYSIS (December 11, 2025 - Issue #4 Continued)
+
+### Bug in Previous Fix (Commit 0e7eced)
+
+**Log Evidence**:
+```
+[OCR] address_lines collected: ['77 Waldschmidtstr', 'aße', '77 Waldschmidtstraße']
+OCR Address parsed (number-first pattern): street='Waldschmidtstraße 77 Waldschmidtstraße', number='77'
+```
+
+**Missing Log**: No `"[OCR] Detected split address, keeping only first 2 lines"` message → detection logic never triggered!
+
+**Root Cause of Bug**:
+
+Looking at line 250 in `ocr.py`:
+```python
+if first_line and first_line[0].isdigit() and not first_line.lower().endswith(('straße', 'str', 'weg', 'platz', 'gasse')):
+```
+
+**Problem**: `"77 Waldschmidtstr"` DOES end with `'str'`!
+- Check: `"77 Waldschmidtstr".lower().endswith('str')` → `True`
+- Result: `not True` → `False`
+- Condition fails → detection code never runs
+
+**The Fix**:
+
+Change the check to only match COMPLETE street suffixes, not partial ones:
+- ✅ Match: "straße", "weg", "platz", "gasse", "ring"
+- ❌ Don't match: "str" (too generic, catches "Waldschmidtstr" which is incomplete)
+
+**Correct Logic**:
+```python
+# Check if line ends with COMPLETE street suffix (not partial like "str")
+complete_suffixes = ('straße', 'strasse', 'weg', 'platz', 'gasse', 'ring', 'allee')
+if first_line and first_line[0].isdigit() and not first_line.lower().endswith(complete_suffixes):
+```
+
+This way:
+- `"77 Waldschmidtstr"` → doesn't end with complete suffix → condition passes → detection runs ✅
+- `"77 Waldschmidtstraße"` → ends with "straße" → condition fails → no trimming needed ✅
+
+**Implementing fix now.**
+
 ---
 
 ## 💬 ARCHIVE - Previous Task Messages

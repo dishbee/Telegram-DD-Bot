@@ -246,8 +246,10 @@ def parse_pf_order(ocr_text: str) -> dict:
     # OCR often shows address twice: split in header + complete in details
     if len(address_lines) >= 2:
         first_line = address_lines[0]
-        # Pattern: "77 Waldschmidtstr" (number + incomplete street)
-        if first_line and first_line[0].isdigit() and not first_line.lower().endswith(('straße', 'str', 'weg', 'platz', 'gasse')):
+        # Pattern: "77 Waldschmidtstr" (number + incomplete street, not ending with complete suffix)
+        # Only match COMPLETE suffixes to avoid false positives (e.g., "str" in "Waldschmidtstr")
+        complete_suffixes = ('straße', 'strasse', 'weg', 'platz', 'gasse', 'ring', 'allee')
+        if first_line and first_line[0].isdigit() and not first_line.lower().endswith(complete_suffixes):
             second_line = address_lines[1] if len(address_lines) > 1 else ""
             # If second line completes the street (e.g., "aße"), keep only first 2 lines
             if second_line and not second_line[0].isdigit():
