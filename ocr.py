@@ -146,8 +146,23 @@ def parse_pf_order(ocr_text: str) -> dict:
     # Must NOT be from note section (check for note indicators first)
     
     # Find text between order code and phone number
-    phone_pattern = r'📞?\s*\+?\d{10,}'
-    phone_pos = re.search(phone_pattern, ocr_text[order_end:])
+    # Skip phones inside quoted notes (e.g., "Bitte anrufen... +49...")
+    # Match phone with emoji OR on own line OR after newline
+    phone_pattern = r'(?:📞\s*|^\s*|\n\s*)(\+?\d{10,20})'
+    phone_matches = list(re.finditer(phone_pattern, ocr_text[order_end:], re.MULTILINE))
+    
+    # Filter out phones inside quotes by checking quote count before match
+    phone_pos = None
+    for match in phone_matches:
+        start_pos = order_end + match.start()
+        # Look back 100 chars for context
+        lookback = ocr_text[max(0, start_pos-100):start_pos]
+        # Count quotes before this phone
+        quote_count = lookback.count('"')
+        # If even number of quotes (or zero), phone is NOT inside quoted text
+        if quote_count % 2 == 0:
+            phone_pos = match
+            break
     
     if phone_pos:
         # Search for name in section BEFORE phone
@@ -232,6 +247,8 @@ def parse_pf_order(ocr_text: str) -> dict:
     full_address_raw = ' '.join(address_lines)
     # Remove word-wrap artifacts: if hyphenated word is split with space, rejoin it
     full_address_raw = re.sub(r'(\w+)- (\w+)', r'\1-\2', full_address_raw)
+    # Fix OCR word breaks in German street names: "Waldschmidtstr aße" → "Waldschmidtstraße"
+    full_address_raw = re.sub(r'(str|straß|gass|plätz|wag)\s+(aße|e|en)', r'\1\2', full_address_raw, flags=re.IGNORECASE)
     
     # Remove ZIP and city if they appear in address
     full_address_raw = re.sub(r',?\s*940\d{2}\s*,?', '', full_address_raw)
