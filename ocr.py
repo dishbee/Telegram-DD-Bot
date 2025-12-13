@@ -395,11 +395,14 @@ def parse_pf_order(ocr_text: str) -> dict:
         # OCR sometimes splits "47 Min." across lines, showing just "47" before "Geplant"
         pre_geplant = ocr_text[max(0, geplant_pos - 50):geplant_pos]
         # Match: "47 Min.", "47Min", or just "47" at end of line before "Geplant"
-        min_match = re.search(r'(\d{1,3})\s*(?:Min\.?)?\s*$', pre_geplant, re.IGNORECASE | re.MULTILINE)
+        # Use findall() to get ALL matches, then take LAST one (closest to "Geplant")
+        # This avoids matching "43" from screen time "5:43" in the search window
+        min_matches = re.findall(r'(\d{1,3})\s*(?:Min\.?)?\s*$', pre_geplant, re.IGNORECASE | re.MULTILINE)
         
-        if min_match:
+        if min_matches:
             # Found "XX Min." - need to calculate scheduled time
-            minutes_until_ready = int(min_match.group(1))
+            # Take last match (closest to "Geplant")
+            minutes_until_ready = int(min_matches[-1])
             
             # Extract screen time from top of OCR (first time pattern in text)
             screen_time_match = re.search(r'^[^\n]*?(\d{1,2}):(\d{2})', ocr_text, re.MULTILINE)
@@ -410,11 +413,11 @@ def parse_pf_order(ocr_text: str) -> dict:
                 screen_minute = int(screen_time_match.group(2))
                 
                 # Handle 12-hour format (5:43 could be AM or PM)
-                # If result would be in the past, assume PM (add 12 hours)
+                # Food delivery orders are typically PM (afternoon/evening)
                 current_time = datetime.now().replace(hour=screen_hour, minute=screen_minute, second=0, microsecond=0)
                 
-                # If screen time looks like it's in 12-hour format (< 12) and minutes suggest PM
-                if screen_hour < 12 and minutes_until_ready > 60:
+                # If hour < 12, assume it's PM (5:43 → 17:43)
+                if screen_hour < 12:
                     current_time = current_time.replace(hour=screen_hour + 12)
                 
                 scheduled_time = current_time + timedelta(minutes=minutes_until_ready)
