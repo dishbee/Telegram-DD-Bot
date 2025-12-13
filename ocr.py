@@ -380,12 +380,12 @@ def parse_pf_order(ocr_text: str) -> dict:
         raise ParseError(detect_collapse_error(ocr_text))
     result['phone'] = phone
     
-    # 6. Product count (required): Extract from "X Artikel"
+    # 6. Product count: Extract from "X Artikel" (fallback to "N/A" if OCR misreads)
     artikel_match = re.search(r'(\d+)\s*Artike?l?', ocr_text, re.IGNORECASE)
     if artikel_match:
         result['product_count'] = int(artikel_match.group(1))
     else:
-        # Fallback: If OCR misreads number (e.g., "3" as "$"), use N/A
+        # Fallback: OCR may misread number (e.g., "3" as "$")
         result['product_count'] = 'N/A'
     
     # 7. Scheduled Time: Check for "Geplant" indicator
