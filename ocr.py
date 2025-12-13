@@ -382,9 +382,11 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     # 6. Product count (required): Extract from "X Artikel"
     artikel_match = re.search(r'(\d+)\s*Artike?l?', ocr_text, re.IGNORECASE)
-    if not artikel_match:
-        raise ParseError(detect_collapse_error(ocr_text))
-    result['product_count'] = int(artikel_match.group(1))
+    if artikel_match:
+        result['product_count'] = int(artikel_match.group(1))
+    else:
+        # Fallback: If OCR misreads number (e.g., "3" as "$"), use N/A
+        result['product_count'] = 'N/A'
     
     # 7. Scheduled Time: Check for "Geplant" indicator
     # Pattern: OCR shows "XX Min." (minutes until ready) near "Geplant", need to calculate actual time
