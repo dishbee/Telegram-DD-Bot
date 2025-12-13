@@ -391,10 +391,11 @@ def parse_pf_order(ocr_text: str) -> dict:
     # Extract: screen_time (from top) + minutes = scheduled_time
     geplant_pos = ocr_text.lower().find('geplant')
     if geplant_pos != -1:
-        # Search for "XX Min." pattern in 200 chars before "Geplant"
-        search_start = max(0, geplant_pos - 200)
-        search_area = ocr_text[search_start:geplant_pos]
-        min_match = re.search(r'(\d{1,3})\s*Min\.?', search_area, re.IGNORECASE)
+        # Look in last 50 chars before "Geplant" for number (may or may not have "Min.")
+        # OCR sometimes splits "47 Min." across lines, showing just "47" before "Geplant"
+        pre_geplant = ocr_text[max(0, geplant_pos - 50):geplant_pos]
+        # Match: "47 Min.", "47Min", or just "47" at end of line before "Geplant"
+        min_match = re.search(r'(\d{1,3})\s*(?:Min\.?)?\s*$', pre_geplant, re.IGNORECASE | re.MULTILINE)
         
         if min_match:
             # Found "XX Min." - need to calculate scheduled time
