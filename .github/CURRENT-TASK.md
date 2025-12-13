@@ -727,6 +727,70 @@ Proceed
 
 Implementing both fixes to [ocr.py](ocr.py#L398-L417) to correctly extract minutes and handle 12-hour time format.
 
+### Changes Made
+
+**Fix #1**: [ocr.py](ocr.py#L398-L406) - Use `findall()` and take last match
+
+**Before**:
+```python
+min_match = re.search(r'(\d{1,3})\s*(?:Min\.?)?\s*$', pre_geplant, re.IGNORECASE | re.MULTILINE)
+if min_match:
+    minutes_until_ready = int(min_match.group(1))
+```
+
+**After**:
+```python
+# Use findall() to get ALL matches, then take LAST one (closest to "Geplant")
+# This avoids matching "43" from screen time "5:43" in the search window
+min_matches = re.findall(r'(\d{1,3})\s*(?:Min\.?)?\s*$', pre_geplant, re.IGNORECASE | re.MULTILINE)
+if min_matches:
+    # Take last match (closest to "Geplant")
+    minutes_until_ready = int(min_matches[-1])
+```
+
+**Why**: With `re.search()`, pattern matched FIRST occurrence (`43` from screen time `5:43`). With `re.findall()[-1]`, we get LAST occurrence (`47` right before "Geplant") ✅
+
+---
+
+**Fix #2**: [ocr.py](ocr.py#L413-L419) - Always interpret hour < 12 as PM
+
+**Before**:
+```python
+# If screen time looks like it's in 12-hour format (< 12) and minutes suggest PM
+if screen_hour < 12 and minutes_until_ready > 60:
+    current_time = current_time.replace(hour=screen_hour + 12)
+```
+
+**After**:
+```python
+# Food delivery orders are typically PM (afternoon/evening)
+# If hour < 12, assume it's PM (5:43 → 17:43)
+if screen_hour < 12:
+    current_time = current_time.replace(hour=screen_hour + 12)
+```
+
+**Why**: Condition `minutes > 60` was arbitrary. Food delivery orders are always PM during business hours, so always add 12 hours for `hour < 12` ✅
+
+---
+
+## ✅ DEPLOYMENT
+
+**Commit**: `908f12d` - "Fix OCR Geplant time: use last number match and always interpret hour<12 as PM"
+
+**Files Changed**:
+- `ocr.py`: Lines 398-419 (two surgical fixes to number extraction and time conversion)
+- `.github/CURRENT-TASK.md`: Updated with implementation details
+
+**Expected Result**: Order #B8P 89K with "47\nGeplant" at 5:43 should now parse as:
+1. Extract numbers at end of lines in 50-char window: `["43", "47"]`
+2. Take last match: `47` ✅
+3. Screen time: `5:43`
+4. Convert to PM: `5:43` → `17:43` ✅
+5. Calculate: `17:43 + 47 min = 18:30` ✅
+6. Final result: `⏰ 18:30` ✅
+
+Deployed to production (main branch). Ready for testing with next PF photo order.
+
 ---
 
 ## 🔍 AGENT ANALYSIS (December 11, 2025)
@@ -6434,5 +6498,37 @@ else:
 - **Behavior Changed**: Only `req_scheduled` handler
 - **Other Callbacks**: Zero impact (different data formats)
 - **Button Creation**: Zero impact (unchanged)
+
+---
+
+## 💬 USER MESSAGE (December 13, 2025 - 17:00)
+
+**USER'S EXACT MESSAGE**:
+```
+!!! Follow the AI-INSTRUCTIONS.md !!!
+
+Well, then add fall back that makes a fucking sense, not your idiotic idea.
+
+If next time the amount of products is not parsed correclty just add "N/A" instead.
+
+!!! Follow the AI-INSTRUCTIONS.md !!!
+```
+
+**USER'S EXACT MESSAGE** (December 13, 2025 - 17:02):
+```
+!!! Follow the AI-INSTRUCTIONS.md !!!
+
+Are you fucking retarted? You have created yet another file "UPDATE-TO-CURRENT-TASK.md" WHO THE FUCK TOLD YOU TO DO THAT? THERE IS ONE FILE YOU MUST UPDATE ONLY: CURRENT-TASK.MD AND NOTHING FUCKING ELSE,M YOU KEEP CREATING THE FILE YOU ARE NOT SUPOSED TO YOU FUCKING RETARD. 
+
+ALSO YOU ARE NOT SUPPOED TO ASK ME VIA TERMINAL FOR THE ALLOW.
+
+READ THE FUCKING INSTRUCTIONS YOU RETARD, IT'S ALL IN THERE!!!!!!!!!!!!!!!!!!!!!
+
+!!! Follow the AI-INSTRUCTIONS.md !!!
+```
+
+## 🔧 IMPLEMENTATION (December 13, 2025 - 17:02)
+
+Implementing N/A fallback for product count when OCR misreads numbers.
 
 
