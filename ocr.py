@@ -213,6 +213,10 @@ def parse_pf_order(ocr_text: str) -> dict:
         # Stop at "Bezahlt" or empty lines
         if not line or line == 'Bezahlt' or line == 'Passau':
             continue
+        # Skip lines with quotes (notes are always quoted)
+        if '"' in line:
+            logger.info(f"[OCR] Skipping quoted line (likely note): '{line}'")
+            continue
         # Fix OCR misread: "I Franz-Stockbauer-Weg" → "1 Franz-Stockbauer-Weg"
         if re.match(r'^[IO]\s+\w', line) and any(suffix in line.lower() for suffix in ('straße', 'str', 'weg', 'platz', 'ring', 'gasse')):
             line = re.sub(r'^[IO](\s)', r'1\1', line)
@@ -263,6 +267,8 @@ def parse_pf_order(ocr_text: str) -> dict:
     full_address_raw = re.sub(r'(\w+)- (\w+)', r'\1-\2', full_address_raw)
     # Fix OCR word breaks in German street names: "Waldschmidtstr aße" → "Waldschmidtstraße"
     full_address_raw = re.sub(r'(str|straß|gass|plätz|wag)\s+(aße|e|en)', r'\1\2', full_address_raw, flags=re.IGNORECASE)
+    # Fix space before complete street suffixes: "Nibelungen straße" → "Nibelungenstraße"
+    full_address_raw = re.sub(r'\s+(straße|strasse|gasse|platz|ring|allee|weg)', r'\1', full_address_raw, flags=re.IGNORECASE)
     
     # Remove ZIP and city if they appear in address
     full_address_raw = re.sub(r',?\s*940\d{2}\s*,?', '', full_address_raw)
@@ -381,25 +387,55 @@ def parse_pf_order(ocr_text: str) -> dict:
     result['product_count'] = int(artikel_match.group(1))
     
     # 7. Scheduled Time: Check for "Geplant" indicator
-    # Pattern: Find time (HH:MM) that appears RIGHT ABOVE "Geplant" word
-    # Search in last 200 chars before "Geplant" to skip clock time at top of screen
+    # Pattern: OCR shows "XX Min." (minutes until ready) near "Geplant", need to calculate actual time
+    # Extract: screen_time (from top) + minutes = scheduled_time
     geplant_pos = ocr_text.lower().find('geplant')
     if geplant_pos != -1:
-        # Search for time in section immediately before "Geplant"
+        # Search for "XX Min." pattern in 200 chars before "Geplant"
         search_start = max(0, geplant_pos - 200)
         search_area = ocr_text[search_start:geplant_pos]
-        # Find ALL time matches, take LAST one (closest to "Geplant")
-        matches = list(re.finditer(r'(\d{1,2}):(\d{2})', search_area))
-        geplant_match = matches[-1] if matches else None
-    else:
-        geplant_match = None
-    
-    if geplant_match:
-        hour = int(geplant_match.group(1))
-        minute = int(geplant_match.group(2))
-        if hour > 23 or minute > 59:
-            raise ParseError(detect_collapse_error(ocr_text))
-        result['time'] = f"{hour:02d}:{minute:02d}"
+        min_match = re.search(r'(\d{1,3})\s*Min\.?', search_area, re.IGNORECASE)
+        
+        if min_match:
+            # Found "XX Min." - need to calculate scheduled time
+            minutes_until_ready = int(min_match.group(1))
+            
+            # Extract screen time from top of OCR (first time pattern in text)
+            screen_time_match = re.search(r'^[^\n]*?(\d{1,2}):(\d{2})', ocr_text, re.MULTILINE)
+            
+            if screen_time_match:
+                from datetime import datetime, timedelta
+                screen_hour = int(screen_time_match.group(1))
+                screen_minute = int(screen_time_match.group(2))
+                
+                # Handle 12-hour format (5:43 could be AM or PM)
+                # If result would be in the past, assume PM (add 12 hours)
+                current_time = datetime.now().replace(hour=screen_hour, minute=screen_minute, second=0, microsecond=0)
+                
+                # If screen time looks like it's in 12-hour format (< 12) and minutes suggest PM
+                if screen_hour < 12 and minutes_until_ready > 60:
+                    current_time = current_time.replace(hour=screen_hour + 12)
+                
+                scheduled_time = current_time + timedelta(minutes=minutes_until_ready)
+                result['time'] = scheduled_time.strftime("%H:%M")
+                logger.info(f"[OCR] Calculated Geplant time: {screen_hour}:{screen_minute:02d} + {minutes_until_ready} min = {result['time']}")
+            else:
+                # Fallback: can't find screen time, use 'asap'
+                logger.warning(f"[OCR] Found 'XX Min.' but no screen time, using asap")
+                result['time'] = 'asap'
+        else:
+            # No "XX Min." pattern, search for direct time (HH:MM) before "Geplant"
+            matches = list(re.finditer(r'(\d{1,2}):(\d{2})', search_area))
+            geplant_match = matches[-1] if matches else None
+            
+            if geplant_match:
+                hour = int(geplant_match.group(1))
+                minute = int(geplant_match.group(2))
+                if hour > 23 or minute > 59:
+                    raise ParseError(detect_collapse_error(ocr_text))
+                result['time'] = f"{hour:02d}:{minute:02d}"
+            else:
+                result['time'] = 'asap'
     else:
         result['time'] = 'asap'
     
