@@ -163,12 +163,14 @@ def save_state():
 def load_state():
     """Load STATE from Redis on startup."""
     global STATE
+    logger.info(f"LOAD-STATE: Before load - STATE id={id(STATE)}, len={len(STATE)}")
     try:
         redis_orders = redis_get_all_orders()
         if redis_orders:
             STATE.clear()
             STATE.update(redis_orders)
             logger.info(f"📂 Redis: Loaded {len(STATE)} orders")
+            logger.info(f"LOAD-STATE: After load - STATE id={id(STATE)}, len={len(STATE)}")
         else:
             logger.info("📂 Redis: No existing orders found (starting fresh)")
             STATE.clear()
