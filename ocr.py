@@ -268,8 +268,6 @@ def parse_pf_order(ocr_text: str) -> dict:
     full_address_raw = re.sub(r'(\w+)- (\w+)', r'\1-\2', full_address_raw)
     # Fix OCR word breaks in German street names: "Waldschmidtstr aße" → "Waldschmidtstraße"
     full_address_raw = re.sub(r'(str|straß|gass|plätz|wag)\s+(aße|e|en)', r'\1\2', full_address_raw, flags=re.IGNORECASE)
-    # Fix space before complete street suffixes: "Nibelungen straße" → "Nibelungenstraße"
-    full_address_raw = re.sub(r'\s+(straße|strasse|gasse|platz|ring|allee|weg)', r'\1', full_address_raw, flags=re.IGNORECASE)
     
     # Remove ZIP and city if they appear in address
     full_address_raw = re.sub(r',?\s*940\d{2}\s*,?', '', full_address_raw)
