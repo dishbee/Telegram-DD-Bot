@@ -46,6 +46,7 @@ def configure(state_ref: Dict[str, Dict[str, Any]], restaurant_shortcuts: Dict[s
     global STATE, RESTAURANT_SHORTCUTS
     STATE = state_ref
     RESTAURANT_SHORTCUTS = restaurant_shortcuts
+    logger.info(f"MDG-CONFIGURE: STATE id={id(STATE)}, len={len(STATE) if STATE else 'None'}")
 
 
 def shortcut_to_vendor(shortcut: str) -> Optional[str]:
@@ -615,7 +616,7 @@ def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build MDG time request buttons per assignment requirements. Includes Details button."""
     try:
         logger.info(f"MDG-KB-DEBUG: Building keyboard for order_id={order_id}")
-        logger.info(f"MDG-KB-DEBUG: STATE has {len(STATE)} orders, keys={list(STATE.keys())[:10]}")
+        logger.info(f"MDG-KB-DEBUG: STATE id={id(STATE)}, len={len(STATE)}, keys={list(STATE.keys())[:5]}")
         
         order = STATE.get(order_id)
         logger.info(f"MDG-KB-DEBUG: order lookup result: {order is not None}")
