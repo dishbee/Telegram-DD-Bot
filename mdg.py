@@ -1136,9 +1136,9 @@ def get_assigned_orders(state_dict: dict, exclude_order_id: str) -> List[Dict[st
         # Get confirmed_times dict for multi-vendor
         confirmed_times = order_data.get("confirmed_times")
         
-        # Get courier name using DRIVERS reverse lookup
+        # Get courier name using COURIER_MAP reverse lookup
         courier_name = None
-        for name, uid in DRIVERS.items():
+        for name, uid in COURIER_MAP.items():
             if uid == assigned_to:
                 courier_name = name
                 break
