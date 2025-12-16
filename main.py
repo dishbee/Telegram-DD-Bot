@@ -1477,7 +1477,11 @@ async def process_shopify_webhook(payload: dict, is_test: bool = False):
                 break
         
         # Get total price from payload
-        total_price = payload.get("total_price", "0.00")
+        total_price_raw = payload.get("total_price", "0.00")
+        try:
+            total_price = f"{float(total_price_raw):.2f}€"
+        except (ValueError, TypeError):
+            total_price = "0.00€"
         
         # Get customer note
         note = payload.get("note", "")
@@ -1516,6 +1520,17 @@ async def process_shopify_webhook(payload: dict, is_test: bool = False):
             "mdg_additional_messages": [],
             "created_at": payload.get("created_at", now().isoformat()),
             "is_test": is_test,
+            "requested_time": None,
+            "requested_times": {},
+            "confirmed_time": None,
+            "confirmed_times": {},
+            "group_id": None,
+            "group_color": None,
+            "group_position": None,
+            "grouped_via": None,
+            "group_reference_order": None,
+            "upc_message_id": None,
+            "upc_assignment_message_id": None,
         }
         
         # Send MDG-ORD + RG-SUM messages
