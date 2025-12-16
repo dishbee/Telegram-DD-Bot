@@ -434,18 +434,20 @@ def parse_pf_order(ocr_text: str) -> dict:
                 logger.warning(f"[OCR] Found 'XX Min.' but no screen time, using asap")
                 result['time'] = 'asap'
         else:
-            # No "XX Min." pattern, search for direct time (HH:MM) before "Geplant"
-            matches = list(re.finditer(r'(\d{1,2}):(\d{2})', search_area))
-            geplant_match = matches[-1] if matches else None
+            # No "XX Min." pattern - this is a direct scheduled time like "12:35 Geplant"
+            # Search in the text before "Geplant" for a time pattern (HH:MM)
+            direct_time_match = re.search(r'(\d{1,2}):(\d{2})', pre_geplant)
             
-            if geplant_match:
-                hour = int(geplant_match.group(1))
-                minute = int(geplant_match.group(2))
+            if direct_time_match:
+                hour = int(direct_time_match.group(1))
+                minute = int(direct_time_match.group(2))
                 if hour > 23 or minute > 59:
                     raise ParseError(detect_collapse_error(ocr_text))
                 result['time'] = f"{hour:02d}:{minute:02d}"
+                logger.info(f"[OCR] Found direct Geplant time: {result['time']}")
             else:
                 result['time'] = 'asap'
+                logger.warning(f"[OCR] Found 'Geplant' but no time pattern in pre_geplant: {repr(pre_geplant)}")
     else:
         result['time'] = 'asap'
     
