@@ -1054,6 +1054,7 @@ async def handle_test_pf_command(chat_id: int, message_id: int):
         "original_requested_time": delivery_time,
         "confirmed_time": None,
         "confirmed_times": {},
+        "requested_times": {},
         "status": "new",
         "status_history": [{"type": "new", "timestamp": now()}],
         "assigned_to": None,
@@ -1612,6 +1613,7 @@ async def process_smoothr_order(smoothr_data: dict, is_test: bool = False):
             "original_requested_time": smoothr_data.get("requested_delivery_time"),
             "confirmed_time": None,
             "confirmed_times": {},
+            "requested_times": {},
             "status": "new",
             "is_test": is_test,
             "status_history": [{"type": "new", "timestamp": now()}],
@@ -1747,6 +1749,7 @@ async def handle_pf_photo(message: dict):
             "requested_time": None if parsed_data['time'] == 'asap' else parsed_data['time'],
             "confirmed_time": None,
             "confirmed_times": {},
+            "requested_times": {},
             "status": "new",
             "status_history": [{"type": "new", "timestamp": now()}],
             "assigned_to": None,
@@ -3472,6 +3475,11 @@ def telegram_webhook():
                     
                     # Update MDG
                     order["requested_time"] = selected_time
+                    # Store per-vendor requested time for multi-vendor orders
+                    if "requested_times" not in order:
+                        order["requested_times"] = {}
+                    for v in target_vendors:
+                        order["requested_times"][v] = selected_time
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     # Preserve keyboard for multi-vendor orders
                     if should_preserve_mdg_keyboard(order):
@@ -3602,8 +3610,8 @@ def telegram_webhook():
                     if order:
                         display_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order_id[-2:]
                         logger.info(f"[ORDER-{display_num}] Vendor {vendor} confirmed time")
-                        # Track confirmed time per vendor
-                        confirmed_time = order.get("requested_time", "ASAP")
+                        # Track confirmed time per vendor - read from per-vendor requested_times first
+                        confirmed_time = order.get("requested_times", {}).get(vendor) or order.get("requested_time", "ASAP")
                         if "confirmed_times" not in order:
                             order["confirmed_times"] = {}
                         order["confirmed_times"][vendor] = confirmed_time
@@ -4771,6 +4779,7 @@ def shopify_webhook():
             "vendor_messages": {},
             "vendor_expanded": {},
             "requested_time": None,
+            "requested_times": {},  # Track requested time per vendor (multi-vendor)
             "confirmed_times": {},  # Track confirmed time per vendor
             "confirmed_time": None,
             "status": "new",
