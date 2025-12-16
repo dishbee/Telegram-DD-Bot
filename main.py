@@ -4877,18 +4877,17 @@ if __name__ == "__main__":
     
     scheduler = BackgroundScheduler(timezone='Europe/Berlin')
     
-    # Schedule cleanup: every 3 days at 23:59
-    # day='*/3' means every 3rd day (1st, 4th, 7th, 10th, etc.)
+    # Schedule cleanup: daily at 23:59, keeps today + yesterday only
     scheduler.add_job(
         func=redis_cleanup_old_orders,
-        trigger=CronTrigger(day='*/3', hour=23, minute=59, timezone='Europe/Berlin'),
-        args=[2],  # Keep 2 days of history (today + yesterday)
+        trigger=CronTrigger(hour=23, minute=59, timezone='Europe/Berlin'),
+        args=[1],  # Keep 1 previous day (today + yesterday)
         id='redis_cleanup',
         name='Redis State Cleanup',
         replace_existing=True
     )
     
     scheduler.start()
-    logger.info("✅ Scheduled cleanup initialized: runs every 3 days at 23:59, deletes orders older than 2 days")
+    logger.info("✅ Scheduled cleanup initialized: runs daily at 23:59, keeps today + yesterday only")
     
     app.run(host="0.0.0.0", port=port, debug=False)
