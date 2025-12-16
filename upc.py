@@ -378,7 +378,7 @@ async def update_mdg_with_assignment(order_id: str, assigned_user_id: int):
             DISPATCH_MAIN_CHAT_ID,
             order["mdg_message_id"],
             updated_text,
-            mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
+            mdg.mdg_time_request_keyboard(order_id, order)  # Keep buttons
         )
 
         # Update all RG messages with new status
@@ -711,7 +711,7 @@ async def handle_delivery_completion(order_id: str, user_id: int):
                 DISPATCH_MAIN_CHAT_ID,
                 order["mdg_message_id"],
                 updated_text,
-                mdg.mdg_time_request_keyboard(order_id)  # Keep buttons
+                mdg.mdg_time_request_keyboard(order_id, order)  # Keep buttons
             )
 
         # Update all RG messages with delivered status
@@ -809,7 +809,7 @@ async def handle_undelivery(order_id: str, user_id: int):
                 DISPATCH_MAIN_CHAT_ID,
                 order["mdg_message_id"],
                 updated_text,
-                mdg.mdg_time_request_keyboard(order_id)
+                mdg.mdg_time_request_keyboard(order_id, order)
             )
         
         # Update all RG messages to remove delivered status

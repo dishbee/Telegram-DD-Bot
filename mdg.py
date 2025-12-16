@@ -612,13 +612,26 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([])
 
 
-def mdg_time_request_keyboard(order_id: str) -> InlineKeyboardMarkup:
-    """Build MDG time request buttons per assignment requirements. Includes Details button."""
+def mdg_time_request_keyboard(order_id: str, order: Optional[Dict[str, Any]] = None) -> InlineKeyboardMarkup:
+    """Build MDG time request buttons per assignment requirements. Includes Details button.
+    
+    Args:
+        order_id: The order ID string
+        order: Optional order dict. If provided, uses this instead of looking up in STATE.
+               This ensures the keyboard is built with the correct order data even if
+               STATE reference is not synchronized.
+    """
     try:
         logger.info(f"MDG-KB-DEBUG: Building keyboard for order_id={order_id}")
-        logger.info(f"MDG-KB-DEBUG: STATE id={id(STATE)}, len={len(STATE)}, keys={list(STATE.keys())[:5]}")
         
-        order = STATE.get(order_id)
+        # Use provided order if available, otherwise fall back to STATE lookup
+        if order is None:
+            logger.info(f"MDG-KB-DEBUG: No order provided, looking up in STATE")
+            logger.info(f"MDG-KB-DEBUG: STATE id={id(STATE)}, len={len(STATE) if STATE else 0}, keys={list(STATE.keys())[:5] if STATE else []}")
+            order = STATE.get(order_id) if STATE else None
+        else:
+            logger.info(f"MDG-KB-DEBUG: Using provided order directly")
+        
         logger.info(f"MDG-KB-DEBUG: order lookup result: {order is not None}")
         
         if not order:
