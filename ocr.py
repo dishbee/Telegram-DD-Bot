@@ -231,7 +231,8 @@ def parse_pf_order(ocr_text: str) -> dict:
         if re.match(r'^\d+[,\.]\d{2}\s*€', line):
             break
         # Stop at lines with just numbers (like "28" or "37" from total parsing errors)
-        if re.match(r'^\d{1,3}$', line):
+        # But KEEP alphanumeric building numbers like "9A", "19-21", "4a"
+        if re.match(r'^\d{1,3}$', line) and not re.match(r'^\d{1,3}[A-Za-z-]', line):
             break
         # Append valid address line
         address_lines.append(line)
@@ -416,10 +417,13 @@ def parse_pf_order(ocr_text: str) -> dict:
                 
                 # Handle 12-hour format (5:43 could be AM or PM)
                 # Food delivery orders are typically PM (afternoon/evening)
+                # But hours 10-11 should NOT add 12 (10:34 is already 10:34, not 22:34)
                 current_time = datetime.now().replace(hour=screen_hour, minute=screen_minute, second=0, microsecond=0)
                 
-                # If hour < 12, assume it's PM (5:43 → 17:43)
-                if screen_hour < 12:
+                # Only add 12 hours if hour is clearly morning (1-9)
+                # Hours 10-11 could be either AM or PM, assume AM (don't add 12)
+                # Hours 12+ are already PM
+                if screen_hour >= 1 and screen_hour <= 9:
                     current_time = current_time.replace(hour=screen_hour + 12)
                 
                 scheduled_time = current_time + timedelta(minutes=minutes_until_ready)
@@ -452,22 +456,26 @@ def parse_pf_order(ocr_text: str) -> dict:
     result['total'] = float(total_match.group(1).replace(',', '.'))
     
     # 9. Note (optional): Extract if note section present
-    # Look for bicycle/truck emoji indicators
-    has_note_indicator = bool(re.search(r'[🚚🚴]', ocr_text))
+    # Look for bicycle emoji indicator (🚴) - this appears when customer added a note
+    bike_emoji_match = re.search(r'🚴', ocr_text)
     
-    if has_note_indicator:
-        # Check if collapsed (arrow symbol present)
-        is_collapsed = bool(re.search(r'[▸▼▽]', ocr_text))
+    if bike_emoji_match:
+        # Found bike emoji - note section exists
+        # Check if collapsed (arrow symbol present AFTER the emoji)
+        emoji_pos = bike_emoji_match.start()
+        text_after_emoji = ocr_text[emoji_pos:emoji_pos + 50]
+        is_collapsed = bool(re.search(r'[▸▼▽►]', text_after_emoji))
         if is_collapsed:
             raise ParseError(detect_collapse_note(ocr_text))
         
-        # Extract note from quotes (allow newlines for multi-line notes)
-        note_match = re.search(r'[""\'\'\u201c\u201d]([^""\'\'\u201c\u201d]{10,})[""\'\'\u201c\u201d]', ocr_text)
+        # Extract note from quotes ONLY in area AFTER bike emoji (within 200 chars)
+        # This prevents capturing product names like "Classic Patty" from product section
+        note_search_area = ocr_text[emoji_pos:emoji_pos + 200]
+        note_match = re.search(r'[""\u201c\u201d]([^""\u201c\u201d]{5,})[""\u201c\u201d]', note_search_area)
         result['note'] = note_match.group(1).strip() if note_match else None
     else:
-        # No emoji indicator, but check for quoted text anyway (some notes lack emoji)
-        note_match = re.search(r'[""\'\'\u201c\u201d]([^""\'\'\u201c\u201d]{10,})[""\'\'\u201c\u201d]', ocr_text)
-        result['note'] = note_match.group(1).strip() if note_match else None
+        # No bike emoji = no customer note
+        result['note'] = None
     
     return result
 
