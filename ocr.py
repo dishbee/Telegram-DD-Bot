@@ -392,18 +392,17 @@ def parse_pf_order(ocr_text: str) -> dict:
     # Extract: screen_time (from top) + minutes = scheduled_time
     geplant_pos = ocr_text.lower().find('geplant')
     if geplant_pos != -1:
-        # Look in last 50 chars before "Geplant" for number (may or may not have "Min.")
-        # OCR sometimes splits "47 Min." across lines, showing just "47" before "Geplant"
+        # Look in last 50 chars before "Geplant" for "XX Min" pattern
         pre_geplant = ocr_text[max(0, geplant_pos - 50):geplant_pos]
-        # Match: "47 Min.", "47Min", or just "47" at end of line before "Geplant"
-        # Use findall() to get ALL matches, then take LAST one (closest to "Geplant")
-        # This avoids matching "43" from screen time "5:43" in the search window
-        min_matches = re.findall(r'(\d{1,3})\s*(?:Min\.?)?\s*$', pre_geplant, re.IGNORECASE | re.MULTILINE)
+        logger.info(f"[OCR] pre_geplant text: {repr(pre_geplant)}")
         
-        if min_matches:
+        # ONLY match explicit "XX Min" pattern - no fallback to random line-end numbers
+        min_pattern_match = re.search(r'(\d{1,3})\s*Min', pre_geplant, re.IGNORECASE)
+        
+        if min_pattern_match:
             # Found "XX Min." - need to calculate scheduled time
-            # Take last match (closest to "Geplant")
-            minutes_until_ready = int(min_matches[-1])
+            minutes_until_ready = int(min_pattern_match.group(1))
+            logger.info(f"[OCR] Found 'XX Min' pattern: {minutes_until_ready} minutes")
             
             # Extract screen time from top of OCR (first time pattern in text)
             screen_time_match = re.search(r'^[^\n]*?(\d{1,2}):(\d{2})', ocr_text, re.MULTILINE)
