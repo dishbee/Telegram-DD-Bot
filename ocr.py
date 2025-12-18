@@ -412,13 +412,27 @@ def parse_pf_order(ocr_text: str) -> dict:
         pre_geplant = ocr_text[max(0, geplant_pos - 50):geplant_pos]
         logger.info(f"[OCR] pre_geplant text: {repr(pre_geplant)}")
         
-        # ONLY match explicit "XX Min" pattern - no fallback to random line-end numbers
+        # Match "XX Min" pattern OR standalone minutes (just "45" on its own line before Geplant)
         min_pattern_match = re.search(r'(\d{1,3})\s*Min', pre_geplant, re.IGNORECASE)
         
-        if min_pattern_match:
-            # Found "XX Min." - need to calculate scheduled time
-            minutes_until_ready = int(min_pattern_match.group(1))
-            logger.info(f"[OCR] Found 'XX Min' pattern: {minutes_until_ready} minutes")
+        # Fallback: standalone number at end of pre_geplant (e.g., "45\r\n" without "Min")
+        # Only match 1-3 digit numbers that are reasonable minutes (1-180)
+        standalone_min_match = None
+        if not min_pattern_match:
+            standalone_min_match = re.search(r'(\d{1,3})\s*\r?\n\s*$', pre_geplant)
+            if standalone_min_match:
+                mins = int(standalone_min_match.group(1))
+                if mins < 1 or mins > 180:
+                    standalone_min_match = None  # Invalid range, ignore
+        
+        if min_pattern_match or standalone_min_match:
+            # Found minutes pattern - need to calculate scheduled time
+            if min_pattern_match:
+                minutes_until_ready = int(min_pattern_match.group(1))
+                logger.info(f"[OCR] Found 'XX Min' pattern: {minutes_until_ready} minutes")
+            else:
+                minutes_until_ready = int(standalone_min_match.group(1))
+                logger.info(f"[OCR] Found standalone minutes: {minutes_until_ready} minutes")
             
             # Extract screen time from top of OCR (first time pattern in text)
             screen_time_match = re.search(r'^[^\n]*?(\d{1,2}):(\d{2})', ocr_text, re.MULTILINE)
@@ -444,10 +458,10 @@ def parse_pf_order(ocr_text: str) -> dict:
                 logger.info(f"[OCR] Calculated Geplant time: {screen_hour}:{screen_minute:02d} + {minutes_until_ready} min = {result['time']}")
             else:
                 # Fallback: can't find screen time, use 'asap'
-                logger.warning(f"[OCR] Found 'XX Min.' but no screen time, using asap")
+                logger.warning(f"[OCR] Found minutes but no screen time, using asap")
                 result['time'] = 'asap'
         else:
-            # No "XX Min." pattern - this is a direct scheduled time like "12:35 Geplant"
+            # No minutes pattern - this is a direct scheduled time like "12:35 Geplant"
             # Search in the text before "Geplant" for a time pattern (HH:MM)
             direct_time_match = re.search(r'(\d{1,2}):(\d{2})', pre_geplant)
             
