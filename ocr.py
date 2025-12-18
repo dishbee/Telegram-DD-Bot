@@ -171,6 +171,11 @@ def parse_pf_order(ocr_text: str) -> dict:
         # Fallback: search in next 300 chars after order code
         search_area = ocr_text[order_end:order_end + 300]
     
+    # Strip multi-line quoted notes from search_area
+    # Notes like "text...\n more text...\n end" have quotes only on first/last line
+    # This prevents note lines from matching as customer name
+    search_area = re.sub(r'[""\u201c\u201d][^""\u201c\u201d]*[""\u201c\u201d]', '', search_area, flags=re.DOTALL)
+    
     # Find name line: starts with letter (upper or lower case), not a street name pattern, not in quotes
     # Exclude lines with: numbers at start, quotes, bicycle emoji, UI elements
     # Allow patterns: "H. Buchner", "LT. Welke", "M. Steinleitner", "Welke", "h. Khatib", "F. Auriemma", "É. Frowein-Hundertmark"
@@ -470,8 +475,9 @@ def parse_pf_order(ocr_text: str) -> dict:
         # Extract note from quotes ONLY in area AFTER bike emoji (within 200 chars)
         # This prevents capturing product names like "Classic Patty" from product section
         note_search_area = ocr_text[emoji_pos:emoji_pos + 200]
-        note_match = re.search(r'[""\u201c\u201d]([^""\u201c\u201d]{5,})[""\u201c\u201d]', note_search_area)
-        result['note'] = note_match.group(1).strip() if note_match else None
+        # Use DOTALL to match multi-line notes (quotes on first/last line only)
+        note_match = re.search(r'[""\u201c\u201d]([^""\u201c\u201d]{5,})[""\u201c\u201d]', note_search_area, re.DOTALL)
+        result['note'] = note_match.group(1).strip().replace('\r\n', ' ').replace('\n', ' ') if note_match else None
     else:
         # No bike emoji = no customer note
         result['note'] = None
