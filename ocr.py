@@ -172,11 +172,11 @@ def parse_pf_order(ocr_text: str) -> dict:
         search_area = ocr_text[order_end:order_end + 300]
     
     # Find name line: starts with letter (upper or lower case), not a street name pattern, not in quotes
-    # Exclude lines with: numbers at start, quotes, bicycle emoji, "Bezahlt", "Fertig" (UI button)
+    # Exclude lines with: numbers at start, quotes, bicycle emoji, UI elements
     # Allow patterns: "H. Buchner", "LT. Welke", "M. Steinleitner", "Welke", "h. Khatib", "F. Auriemma", "É. Frowein-Hundertmark"
     # Pattern: One or more uppercase/lowercase letters (including accents), optional dot, optional space + more letters
-    # Filter out "Bezahlt" payment status and "Fertig" UI button text
-    name_match = re.search(r'\n\s*(?!(?:Bezahlt|Fertig)\s*\n)([A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][A-ZÄÖÜÉÈÊÀa-zäöüéèêàß]*\.?(?:[ \t]+[A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][^\n]{1,30})?)\s*\n', search_area, re.IGNORECASE)
+    # Filter out: "Bezahlt" (payment status), "Fertig" (UI tab), "Wird zubereitet", "In Lieferung" (UI tabs)
+    name_match = re.search(r'\n\s*(?!(?:Bezahlt|Fertig|Wird|In Lieferung)(?:\s|$))([A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][A-ZÄÖÜÉÈÊÀa-zäöüéèêàß]*\.?(?:[ \t]+[A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][^\n]{1,30})?)\s*\n', search_area, re.IGNORECASE)
     
     if not name_match:
         raise ParseError(detect_collapse_error(ocr_text))
