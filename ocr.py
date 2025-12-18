@@ -172,11 +172,11 @@ def parse_pf_order(ocr_text: str) -> dict:
         search_area = ocr_text[order_end:order_end + 300]
     
     # Find name line: starts with letter (upper or lower case), not a street name pattern, not in quotes
-    # Exclude lines with: numbers at start, quotes, bicycle emoji, "Bezahlt"
+    # Exclude lines with: numbers at start, quotes, bicycle emoji, "Bezahlt", "Fertig" (UI button)
     # Allow patterns: "H. Buchner", "LT. Welke", "M. Steinleitner", "Welke", "h. Khatib", "F. Auriemma", "É. Frowein-Hundertmark"
     # Pattern: One or more uppercase/lowercase letters (including accents), optional dot, optional space + more letters
-    # Filter out "Bezahlt" payment status word
-    name_match = re.search(r'\n\s*(?!Bezahlt\s*\n)([A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][A-ZÄÖÜÉÈÊÀa-zäöüéèêàß]*\.?(?:[ \t]+[A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][^\n]{1,30})?)\s*\n', search_area, re.IGNORECASE)
+    # Filter out "Bezahlt" payment status and "Fertig" UI button text
+    name_match = re.search(r'\n\s*(?!(?:Bezahlt|Fertig)\s*\n)([A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][A-ZÄÖÜÉÈÊÀa-zäöüéèêàß]*\.?(?:[ \t]+[A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][^\n]{1,30})?)\s*\n', search_area, re.IGNORECASE)
     
     if not name_match:
         raise ParseError(detect_collapse_error(ocr_text))
@@ -210,8 +210,8 @@ def parse_pf_order(ocr_text: str) -> dict:
         # Stop at ZIP code line
         if re.match(r'^940\d{2}', line):
             break
-        # Stop at "Bezahlt" or empty lines
-        if not line or line == 'Bezahlt' or line == 'Passau':
+        # Stop at "Bezahlt", "Fertig" (UI button), or empty lines
+        if not line or line in ('Bezahlt', 'Fertig', 'Passau'):
             continue
         # Skip lines with quotes (notes are always quoted)
         if '"' in line:
