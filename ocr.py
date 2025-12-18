@@ -208,6 +208,7 @@ def parse_pf_order(ocr_text: str) -> dict:
     # Extract ONLY first line before comma (street + number only)
     # Ignore everything after comma (Etage, apartment, floor info)
     address_lines = []
+    apartment_info = None  # Store apartment info separately if found
     logger.info(f"[OCR] address_block to process: {repr(address_block[:150])}")
     for line in address_block.split('\n'):
         line = line.strip()
@@ -221,6 +222,16 @@ def parse_pf_order(ocr_text: str) -> dict:
         # Skip lines with quotes (notes are always quoted)
         if '"' in line:
             logger.info(f"[OCR] Skipping quoted line (likely note): '{line}'")
+            continue
+        # Detect apartment-only lines: "1/ app Nr 316", "App. 5", "Wohnung 12", etc.
+        # These should be stored separately, not as part of street address
+        # Pattern: optional building number + apartment keyword + optional apartment number
+        # Does NOT contain street name indicators (straße, weg, platz, etc.)
+        has_street_suffix = any(suffix in line.lower() for suffix in ('straße', 'strasse', 'str.', 'weg', 'platz', 'gasse', 'ring', 'allee'))
+        apartment_pattern = re.search(r'(?:app\.?\s*(?:nr\.?\s*)?|wohnung\s*|apt\.?\s*|[1-9]\.\s*og)', line, re.IGNORECASE)
+        if apartment_pattern and not has_street_suffix:
+            apartment_info = line
+            logger.info(f"[OCR] Detected apartment info (stored separately): '{line}'")
             continue
         # Fix OCR misread: "I Franz-Stockbauer-Weg" → "1 Franz-Stockbauer-Weg"
         if re.match(r'^[IO]\s+\w', line) and any(suffix in line.lower() for suffix in ('straße', 'str', 'weg', 'platz', 'ring', 'gasse')):
