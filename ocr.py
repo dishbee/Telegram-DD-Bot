@@ -194,7 +194,16 @@ def parse_pf_order(ocr_text: str) -> dict:
     # Pattern: Street + number, may span multiple lines with apartment info
     
     # Find full address block: everything between customer name and phone
-    name_end = order_end + name_match.end()
+    # CRITICAL: name_match position is in MODIFIED search_area (with quotes stripped)
+    # We must find the customer name position in the ORIGINAL ocr_text
+    customer_name = result['customer']
+    name_pos_in_original = ocr_text.find(customer_name, order_end)
+    if name_pos_in_original == -1:
+        # Fallback: try case-insensitive search
+        name_pos_in_original = ocr_text.lower().find(customer_name.lower(), order_end)
+    if name_pos_in_original == -1:
+        raise ParseError(detect_collapse_error(ocr_text))
+    name_end = name_pos_in_original + len(customer_name)
     logger.info(f"[OCR] phone_pos found: {phone_pos is not None}")
     
     if phone_pos:
