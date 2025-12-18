@@ -490,10 +490,13 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     if bike_emoji_match:
         # Found bike emoji - note section exists
-        # Check if collapsed (arrow symbol present AFTER the emoji)
+        # Check if collapsed (arrow symbol present AFTER the emoji OR truncated text with "...")
         emoji_pos = bike_emoji_match.start()
-        text_after_emoji = ocr_text[emoji_pos:emoji_pos + 50]
-        is_collapsed = bool(re.search(r'[▸▼▽►]', text_after_emoji))
+        text_after_emoji = ocr_text[emoji_pos:emoji_pos + 100]
+        # Detect collapse by: arrow symbols OR truncation pattern "..." at end of note preview
+        has_collapse_arrow = bool(re.search(r'[▸▼▽►∨˅ˇ]', text_after_emoji))
+        has_truncation = bool(re.search(r'\.\.\.[""\u201c\u201d]?\s*$', text_after_emoji.strip()))
+        is_collapsed = has_collapse_arrow or has_truncation
         if is_collapsed:
             raise ParseError(detect_collapse_note(ocr_text))
         
@@ -521,11 +524,13 @@ def detect_collapse_error(ocr_text: str) -> str:
     # Check if phone number is missing (details collapsed)
     has_phone = bool(re.search(r'📞?\s*\+?\d{10,20}', ocr_text))
     
-    # Check if note indicator present with arrow (collapsed)
+    # Check if note indicator present with arrow (collapsed) or truncated note text
     has_note_indicator = bool(re.search(r'[🚚🚴]', ocr_text))
-    # Expanded arrow pattern to catch Unicode variations: ▼▽►▻⊳>vV( and parentheses
-    has_collapsed_arrow = bool(re.search(r'[▼▽►▻⊳>vV(]', ocr_text))
-    has_collapsed_note = has_note_indicator and has_collapsed_arrow
+    # Expanded arrow pattern to catch Unicode variations including ∨ chevron
+    has_collapsed_arrow = bool(re.search(r'[▼▽►▻⊳∨˅ˇ>vV(]', ocr_text))
+    # Check for truncated note text (ends with "..." possibly followed by quote)
+    has_truncated_note = has_note_indicator and bool(re.search(r'[""\u201c][^""\u201c\u201d]*\.\.\.', ocr_text))
+    has_collapsed_note = has_note_indicator and (has_collapsed_arrow or has_truncated_note)
     
     # Determine error type
     if not has_phone and has_collapsed_note:
