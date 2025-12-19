@@ -112,6 +112,13 @@ def parse_pf_order(ocr_text: str) -> dict:
     if re.search(r'Bestellung zur Abholung|zur Abholung', ocr_text, re.IGNORECASE):
         raise ParseError("SELBSTABHOLUNG")
     
+    # 0.5 Check for collapsed note EARLY (before name parsing can fail)
+    # Pattern: opening quote + text + "..." without closing quote
+    collapsed_note_match = re.search(r'[""\u201c\u201d][^""\u201c\u201d]{5,}\.\.\.(?!\s*[""\u201c\u201d])', ocr_text)
+    if collapsed_note_match:
+        logger.info(f"[OCR] Detected collapsed note (truncated with ...): {repr(collapsed_note_match.group(0)[:50])}")
+        raise ParseError(detect_collapse_note(ocr_text))
+    
     # 1. Order # (optional): #ABC XYZ format
     # Extract last 2 chars from 2nd group for display
     # Example: "#VCJ 34V" → order_num="4V"
@@ -192,8 +199,9 @@ def parse_pf_order(ocr_text: str) -> dict:
     
     candidate_name = name_match.group(1).strip()
     
-    # Validate candidate name - reject order code fragments
+    # Validate candidate name - reject order code fragments AND street suffixes
     # Order codes are: 3 uppercase letters + digits, e.g., "CVY", "7G", "F9"
+    # Street suffixes: "Straße", "Weg", "Gasse", etc. (OCR may split street name across lines)
     # Real customer names have: lowercase letters, dots, multiple parts, or longer length
     is_order_code_fragment = (
         len(candidate_name) <= 3 and 
@@ -201,11 +209,22 @@ def parse_pf_order(ocr_text: str) -> dict:
         candidate_name.isalnum()
     )
     
-    if is_order_code_fragment:
-        # This looks like an order code fragment, not a real name
-        # Search for a better name pattern (with dot like "F. Name")
-        logger.info(f"[OCR] Rejecting order code fragment as name: '{candidate_name}'")
-        better_name_match = re.search(r'\n\s*([A-ZÄÖÜÉÈÊÀa-zäöüéèêàß]\.[ \t]+[A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][^\n]{1,30})\s*\n', search_area, re.IGNORECASE)
+    # Check if candidate is a street suffix (OCR split "52 Freyunger\nStraße" across lines)
+    street_suffixes_pattern = re.match(r'^(Straße|Strasse|Str\.?|Weg|Gasse|Platz|Ring|Allee|Hof|Damm)$', candidate_name, re.IGNORECASE)
+    is_street_suffix = bool(street_suffixes_pattern)
+
+    if is_order_code_fragment or is_street_suffix:
+        # This looks like an order code fragment or street suffix, not a real name
+        # Search for a better name pattern (with dot like "F. Name") in ORIGINAL ocr_text
+        # (search_area may have quotes stripped, removing the actual customer name)
+        if is_street_suffix:
+            logger.info(f"[OCR] Rejecting street suffix as name: '{candidate_name}'")
+        else:
+            logger.info(f"[OCR] Rejecting order code fragment as name: '{candidate_name}'")
+        
+        # Search in ORIGINAL ocr_text (not search_area) for "X. Name" pattern
+        # This finds names like "F. Pal Chowdhury", "L. Kramer" even if quotes were stripped
+        better_name_match = re.search(r'\n\s*([A-ZÄÖÜÉÈÊÀa-zäöüéèêàß]\.[ \t]+[A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][^\n]{1,30})\s*\n', ocr_text, re.IGNORECASE)
         if better_name_match:
             candidate_name = better_name_match.group(1).strip()
             logger.info(f"[OCR] Found better name pattern: '{candidate_name}'")
@@ -562,12 +581,7 @@ def parse_pf_order(ocr_text: str) -> dict:
     # Notes are ALWAYS in quotes in Lieferando OCR output
     # Search for quoted text AFTER order code but BEFORE products section
     
-    # First check for collapsed note (truncated with "..." before closing quote)
-    # Pattern: opening quote + text + "..." without closing quote
-    collapsed_note_match = re.search(r'[""\u201c\u201d][^""\u201c\u201d]{5,}\.\.\.(?!\s*[""\u201c\u201d])', ocr_text)
-    if collapsed_note_match:
-        logger.info(f"[OCR] Detected collapsed note (truncated with ...): {repr(collapsed_note_match.group(0)[:50])}")
-        raise ParseError(detect_collapse_note(ocr_text))
+    # NOTE: Collapsed note check moved to top of function (step 0.5) to detect early
     
     # Find note in quoted text between order code and product section
     # Limit search area to avoid matching product descriptions
