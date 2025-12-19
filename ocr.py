@@ -176,6 +176,10 @@ def parse_pf_order(ocr_text: str) -> dict:
     # This prevents note lines from matching as customer name
     search_area = re.sub(r'[""\u201c\u201d][^""\u201c\u201d]*[""\u201c\u201d]', '', search_area, flags=re.DOTALL)
     
+    # Also strip unclosed quoted notes (opening quote but no closing quote before end of block)
+    # Pattern: opening quote followed by text until end of search_area
+    search_area = re.sub(r'[""\u201c\u201d][^""\u201c\u201d]*$', '', search_area, flags=re.DOTALL)
+    
     # Find name line: starts with letter (upper or lower case), not a street name pattern, not in quotes
     # Exclude lines with: numbers at start, quotes, bicycle emoji, UI elements
     # Allow patterns: "H. Buchner", "LT. Welke", "M. Steinleitner", "Welke", "h. Khatib", "F. Auriemma", "É. Frowein-Hundertmark"
@@ -186,7 +190,29 @@ def parse_pf_order(ocr_text: str) -> dict:
     if not name_match:
         raise ParseError(detect_collapse_error(ocr_text))
     
-    result['customer'] = name_match.group(1).strip()
+    candidate_name = name_match.group(1).strip()
+    
+    # Validate candidate name - reject order code fragments
+    # Order codes are: 3 uppercase letters + digits, e.g., "CVY", "7G", "F9"
+    # Real customer names have: lowercase letters, dots, multiple parts, or longer length
+    is_order_code_fragment = (
+        len(candidate_name) <= 3 and 
+        candidate_name.isupper() and 
+        candidate_name.isalnum()
+    )
+    
+    if is_order_code_fragment:
+        # This looks like an order code fragment, not a real name
+        # Search for a better name pattern (with dot like "F. Name")
+        logger.info(f"[OCR] Rejecting order code fragment as name: '{candidate_name}'")
+        better_name_match = re.search(r'\n\s*([A-ZÄÖÜÉÈÊÀa-zäöüéèêàß]\.[ \t]+[A-ZÄÖÜÉÈÊÀa-zäöüéèêàß][^\n]{1,30})\s*\n', search_area, re.IGNORECASE)
+        if better_name_match:
+            candidate_name = better_name_match.group(1).strip()
+            logger.info(f"[OCR] Found better name pattern: '{candidate_name}'")
+        else:
+            raise ParseError(detect_collapse_error(ocr_text))
+    
+    result['customer'] = candidate_name
     
     # 4. Address (required): Full address from customer details section
     # Located AFTER customer name, BEFORE phone
@@ -222,15 +248,36 @@ def parse_pf_order(ocr_text: str) -> dict:
     for line in address_block.split('\n'):
         line = line.strip()
         logger.info(f"[OCR] Processing address line: '{line}' (len={len(line)})")
-        # Stop at ZIP code line
+        # Skip ZIP code line (don't break - address might come after)
         if re.match(r'^940\d{2}', line):
-            break
-        # Stop at "Bezahlt", "Fertig" (UI button), or empty lines
+            logger.info(f"[OCR] Skipping ZIP code line: '{line}'")
+            continue
+        # Skip "Bezahlt", "Fertig" (UI button), "Passau", or empty lines
         if not line or line in ('Bezahlt', 'Fertig', 'Passau'):
             continue
+        # Skip OCR garbage lines from notes (typically "00", "50", "OO" followed by text)
+        if re.match(r'^[O0]\s*[O0]\s+\w', line):
+            logger.info(f"[OCR] Skipping OCR garbage line from note: '{line}'")
+            continue
         # Skip lines with quotes (notes are always quoted)
-        if '"' in line:
+        if '"' in line or '"' in line or '"' in line:
             logger.info(f"[OCR] Skipping quoted line (likely note): '{line}'")
+            continue
+        # Skip customer name patterns (single letter + dot + space + name)
+        # These appear after notes in OCR: "L. Kramer", "M. ismail", "F. Weihrer"
+        if re.match(r'^[A-ZÄÖÜ]\.\s+\w', line):
+            logger.info(f"[OCR] Skipping customer name line: '{line}'")
+            continue
+        # Skip very short lines that are likely OCR fragments (e.g., "aße" from broken "straße")
+        # Valid address lines should be at least 5 characters
+        if len(line) < 5:
+            logger.info(f"[OCR] Skipping short fragment line: '{line}'")
+            continue
+        # Skip lines that are ONLY street suffix fragments without street name
+        # e.g., "aße", "weg", "gasse" on their own
+        suffix_only_pattern = re.match(r'^(a[sß]e|weg|gasse|platz|ring|allee|straße|strasse|str\.?)$', line, re.IGNORECASE)
+        if suffix_only_pattern:
+            logger.info(f"[OCR] Skipping suffix-only fragment: '{line}'")
             continue
         # Detect apartment-only lines: "1/ app Nr 316", "App. 5", "Wohnung 12", etc.
         # These should be stored separately, not as part of street address
@@ -372,6 +419,23 @@ def parse_pf_order(ocr_text: str) -> dict:
         result['address'] = full_address_raw
         logger.info(f"OCR Address parsed: single word, using raw='{result['address']}'")
     
+    # Append apartment info to address if detected
+    if apartment_info:
+        # Extract building number from apartment info if address is missing it
+        # Pattern: "1/ app Nr 316" → building number is "1"
+        apt_building_match = re.match(r'^(\d+[A-Za-z]?)[/\s]', apartment_info)
+        if apt_building_match:
+            building_num = apt_building_match.group(1)
+            # Check if address already has a building number
+            has_building_number = re.search(r'\d+[A-Za-z]?\s*$', result['address'])
+            if not has_building_number:
+                # Address is missing building number, prepend it
+                result['address'] = f"{result['address']} {building_num}"
+                logger.info(f"[OCR] Added building number from apartment info: {building_num}")
+        # Store apartment info separately for potential display
+        result['apartment_info'] = apartment_info
+        logger.info(f"[OCR] Apartment info stored: {apartment_info}")
+    
     # 5. Phone (required): Extract from expanded details section (after customer name, before total)
     # Phone appears with emoji: 📞 +4917647373945 or 📞 015739645573
     # Search in section AFTER customer name to avoid capturing ZIP or other numbers
@@ -494,29 +558,34 @@ def parse_pf_order(ocr_text: str) -> dict:
     result['total'] = float(total_match.group(1).replace(',', '.'))
     
     # 9. Note (optional): Extract if note section present
-    # Look for bicycle emoji indicator (🚴) - this appears when customer added a note
-    bike_emoji_match = re.search(r'🚴', ocr_text)
+    # OCR doesn't reliably capture bike emoji 🚴, so look for quoted text instead
+    # Notes are ALWAYS in quotes in Lieferando OCR output
+    # Search for quoted text AFTER order code but BEFORE products section
     
-    if bike_emoji_match:
-        # Found bike emoji - note section exists
-        # Check if collapsed (arrow symbol present AFTER the emoji OR truncated text with "...")
-        emoji_pos = bike_emoji_match.start()
-        text_after_emoji = ocr_text[emoji_pos:emoji_pos + 100]
-        # Detect collapse by: arrow symbols OR truncation pattern "..." at end of note preview
-        has_collapse_arrow = bool(re.search(r'[▸▼▽►∨˅ˇ]', text_after_emoji))
-        has_truncation = bool(re.search(r'\.\.\.[""\u201c\u201d]?\s*$', text_after_emoji.strip()))
-        is_collapsed = has_collapse_arrow or has_truncation
-        if is_collapsed:
-            raise ParseError(detect_collapse_note(ocr_text))
-        
-        # Extract note from quotes ONLY in area AFTER bike emoji (within 200 chars)
-        # This prevents capturing product names like "Classic Patty" from product section
-        note_search_area = ocr_text[emoji_pos:emoji_pos + 200]
-        # Use DOTALL to match multi-line notes (quotes on first/last line only)
-        note_match = re.search(r'[""\u201c\u201d]([^""\u201c\u201d]{5,})[""\u201c\u201d]', note_search_area, re.DOTALL)
-        result['note'] = note_match.group(1).strip().replace('\r\n', ' ').replace('\n', ' ') if note_match else None
+    # First check for collapsed note (truncated with "..." before closing quote)
+    # Pattern: opening quote + text + "..." without closing quote
+    collapsed_note_match = re.search(r'[""\u201c\u201d][^""\u201c\u201d]{5,}\.\.\.(?!\s*[""\u201c\u201d])', ocr_text)
+    if collapsed_note_match:
+        logger.info(f"[OCR] Detected collapsed note (truncated with ...): {repr(collapsed_note_match.group(0)[:50])}")
+        raise ParseError(detect_collapse_note(ocr_text))
+    
+    # Find note in quoted text between order code and product section
+    # Limit search area to avoid matching product descriptions
+    note_search_area = ocr_text[order_end:order_end + 500] if order_end else ocr_text[:500]
+    
+    # Match complete quoted note (with opening AND closing quotes)
+    # Use DOTALL to match multi-line notes
+    note_match = re.search(r'[""\u201c\u201d]([^""\u201c\u201d]{5,})[""\u201c\u201d]', note_search_area, re.DOTALL)
+    if note_match:
+        note_text = note_match.group(1).strip()
+        # Clean up OCR artifacts and multi-line formatting
+        note_text = re.sub(r'\r?\n', ' ', note_text)
+        # Remove OCR garbage like "00", "50", "e 4GÅR a" that appears in line breaks
+        note_text = re.sub(r'\s+(?:00|50|e 4GÅR a)\s+', ' ', note_text)
+        note_text = re.sub(r'\s+', ' ', note_text).strip()
+        result['note'] = note_text
+        logger.info(f"[OCR] Extracted note: {repr(result['note'][:50] if result['note'] else None)}")
     else:
-        # No bike emoji = no customer note
         result['note'] = None
     
     return result
