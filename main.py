@@ -3494,7 +3494,7 @@ def telegram_webhook():
                     )
                     
                     # Update MDG
-                    order["requested_time"] = selected_time
+                    # NOTE: Do NOT overwrite order["requested_time"] - keep original customer-requested time!
                     # Store per-vendor requested time for multi-vendor orders
                     if "requested_times" not in order:
                         order["requested_times"] = {}
