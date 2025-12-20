@@ -1598,6 +1598,7 @@ async def process_smoothr_order(smoothr_data: dict, is_test: bool = False):
         order_type = smoothr_data["order_type"]
         
         logger.info(f"Processing Smoothr order {order_id} ({order_type})")
+        logger.info(f"  WEBHOOK START - STATE id={id(STATE)}, len={len(STATE)}")
         logger.info(f"  Order num: {order_num}")
         logger.info(f"  Customer: {smoothr_data['customer']['name']}")
         logger.info(f"  DEBUG - Parsed tip: {smoothr_data.get('tip')}")
@@ -1656,7 +1657,9 @@ async def process_smoothr_order(smoothr_data: dict, is_test: bool = False):
         mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
         
         # Send MDG-ORD with initial keyboard
+        logger.info(f"  BEFORE mdg_initial_keyboard - STATE id={id(STATE)}, len={len(STATE)}")
         keyboard = mdg_initial_keyboard(STATE[order_id])
+        logger.info(f"  AFTER mdg_initial_keyboard - STATE id={id(STATE)}, len={len(STATE)}")
         mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard)
         
         if mdg_msg:

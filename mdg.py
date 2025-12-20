@@ -130,6 +130,8 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
     if state is None:
         state = STATE  # Fallback to module-level STATE for backwards compatibility
     
+    logger.info(f"SCHEDULED-DEBUG-ENTRY: Received state id={id(state)}, len={len(state)}, module STATE id={id(STATE)}, len={len(STATE) if STATE else 'None'}")
+    
     today_start = now().replace(hour=0, minute=1, second=0, microsecond=0)
     recent: List[Dict[str, str]] = []
 
