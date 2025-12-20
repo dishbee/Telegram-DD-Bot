@@ -2500,7 +2500,7 @@ def telegram_webhook():
                         return
                     
                     # Show TIME submenu for this vendor
-                    keyboard = mdg_time_submenu_keyboard(order_id, vendor)
+                    keyboard = mdg_time_submenu_keyboard(order_id, vendor, state=STATE)
                     
                     # If keyboard is None, no recent orders - show hour picker directly
                     if keyboard is None:
@@ -2841,7 +2841,7 @@ def telegram_webhook():
                     # For single vendor, show TIME submenu per assignment
                     if len(vendors) <= 1:
                         logger.info(f"SINGLE VENDOR detected: {vendors}")
-                        keyboard = mdg_time_submenu_keyboard(order_id)
+                        keyboard = mdg_time_submenu_keyboard(order_id, state=STATE)
                         
                         # Initialize mdg_additional_messages if not exists
                         if "mdg_additional_messages" not in order:
@@ -2886,7 +2886,7 @@ def telegram_webhook():
                         return
                     
                     # Show recent orders list (no vendor filtering - show ALL scheduled orders)
-                    keyboard = mdg_time_submenu_keyboard(order_id, vendor=None)
+                    keyboard = mdg_time_submenu_keyboard(order_id, vendor=None, state=STATE)
                     
                     # Initialize mdg_additional_messages if not exists
                     if "mdg_additional_messages" not in order:

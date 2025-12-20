@@ -717,10 +717,19 @@ def mdg_time_request_keyboard(order_id: str, order: Optional[Dict[str, Any]] = N
         return InlineKeyboardMarkup([])
 
 
-def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> InlineKeyboardMarkup:
-    """Build TIME submenu: show recent confirmed orders (not delivered, from today) or just EXACT TIME button."""
+def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None, state: Dict[str, Any] = None) -> InlineKeyboardMarkup:
+    """Build TIME submenu: show recent confirmed orders (not delivered, from today) or just EXACT TIME button.
+    
+    Args:
+        order_id: Current order ID
+        vendor: Optional vendor filter
+        state: STATE dictionary (uses module-level STATE as fallback for backwards compatibility)
+    """
+    if state is None:
+        state = STATE  # Fallback to module-level STATE for backwards compatibility
+    
     try:
-        order = STATE.get(order_id)
+        order = state.get(order_id)
         if not order:
             return InlineKeyboardMarkup([])
 
@@ -728,7 +737,7 @@ def mdg_time_submenu_keyboard(order_id: str, vendor: Optional[str] = None) -> In
         today_start = now().replace(hour=0, minute=1, second=0, microsecond=0)
         recent_orders: List[Dict[str, Any]] = []
 
-        for oid, order_data in STATE.items():
+        for oid, order_data in state.items():
             if oid == order_id:
                 continue
                 
