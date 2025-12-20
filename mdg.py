@@ -44,9 +44,15 @@ GROUP_COLORS = ["🟣", "🔵", "🟢", "🟡", "🟠", "🔴", "🟤"]
 def configure(state_ref: Dict[str, Dict[str, Any]], restaurant_shortcuts: Dict[str, str]) -> None:
     """Configure module-level references used by MDG helpers."""
     global STATE, RESTAURANT_SHORTCUTS
+    
+    import traceback
+    stack = traceback.format_stack()
+    caller_info = stack[-2] if len(stack) >= 2 else "Unknown"
+    
     STATE = state_ref
     RESTAURANT_SHORTCUTS = restaurant_shortcuts
     logger.info(f"MDG-CONFIGURE: STATE id={id(STATE)}, len={len(STATE) if STATE else 'None'}")
+    logger.info(f"MDG-CONFIGURE: Called from: {caller_info}")
 
 
 def shortcut_to_vendor(shortcut: str) -> Optional[str]:
