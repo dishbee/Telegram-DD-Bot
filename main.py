@@ -183,6 +183,9 @@ def load_state():
 # Format: {mdg_message_id: {"vendor": "Restaurant Name", "rg_chat_id": -1234567890}}
 RESTAURANT_FORWARDED_MESSAGES: Dict[int, Dict[str, Any]] = {}
 
+# Load STATE from Redis BEFORE configuring modules (critical for Gunicorn workers)
+load_state()
+
 configure_mdg(STATE, RESTAURANT_SHORTCUTS)
 upc.configure(STATE, bot)  # Configure UPC module with STATE and bot reference
 
@@ -1598,7 +1601,6 @@ async def process_smoothr_order(smoothr_data: dict, is_test: bool = False):
         order_type = smoothr_data["order_type"]
         
         logger.info(f"Processing Smoothr order {order_id} ({order_type})")
-        logger.info(f"  WEBHOOK START - STATE id={id(STATE)}, len={len(STATE)}")
         logger.info(f"  Order num: {order_num}")
         logger.info(f"  Customer: {smoothr_data['customer']['name']}")
         logger.info(f"  DEBUG - Parsed tip: {smoothr_data.get('tip')}")
@@ -1657,9 +1659,7 @@ async def process_smoothr_order(smoothr_data: dict, is_test: bool = False):
         mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
         
         # Send MDG-ORD with initial keyboard
-        logger.info(f"  BEFORE mdg_initial_keyboard - STATE id={id(STATE)}, len={len(STATE)}")
         keyboard = mdg_initial_keyboard(STATE[order_id])
-        logger.info(f"  AFTER mdg_initial_keyboard - STATE id={id(STATE)}, len={len(STATE)}")
         mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard)
         
         if mdg_msg:
@@ -4887,9 +4887,6 @@ def shopify_webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     logger.info(f"Starting Complete Assignment Implementation on port {port}")
-    
-    # Load STATE from file
-    load_state()
     
     # Start the event loop in a separate thread
     def run_event_loop():
