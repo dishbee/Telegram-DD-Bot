@@ -123,6 +123,8 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
     today_start = now().replace(hour=0, minute=1, second=0, microsecond=0)
     recent: List[Dict[str, str]] = []
 
+    logger.info(f"SCHEDULED-DEBUG: Checking for recent orders (current={current_order_id}, vendor={vendor}), STATE has {len(STATE)} orders")
+
     for order_id, order_data in STATE.items():
         if order_id == current_order_id:
             continue
@@ -135,18 +137,22 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
         status = order_data.get("status")
         
         if not has_confirmation:
+            logger.debug(f"SCHEDULED-DEBUG: Order {order_id} - no confirmation (confirmed_time={confirmed_time}, confirmed_times={confirmed_times})")
             continue
         
         # Filter out delivered AND removed orders - only show scheduled (new/assigned)
         if status in ["delivered", "removed"]:
+            logger.debug(f"SCHEDULED-DEBUG: Order {order_id} - filtered by status={status}")
             continue
         
         # Filter by vendor if specified
         if vendor and vendor not in order_data.get("vendors", []):
+            logger.debug(f"SCHEDULED-DEBUG: Order {order_id} - vendor mismatch (looking for {vendor}, has {order_data.get('vendors', [])})")
             continue
             
         created_at = order_data.get("created_at")
         if not created_at:
+            logger.debug(f"SCHEDULED-DEBUG: Order {order_id} - no created_at")
             continue
         
         # Handle both string (Shopify) and datetime (Smoothr)
@@ -154,12 +160,14 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
             try:
                 created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
             except:
+                logger.debug(f"SCHEDULED-DEBUG: Order {order_id} - invalid created_at format: {created_at}")
                 continue
         else:
             created_dt = created_at
         
         # TODAY filter: only show orders from today
         if created_dt < today_start:
+            logger.debug(f"SCHEDULED-DEBUG: Order {order_id} - not from today (created_dt={created_dt}, today_start={today_start})")
             continue
             
         # Support ALL order types (Shopify, Smoothr, OCR PF)
@@ -183,12 +191,14 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
             # Unknown type - fallback
             display_name = f"Order {order_data.get('name', 'Unknown')}"
 
+        logger.info(f"SCHEDULED-DEBUG: Order {order_id} PASSED all filters - adding to recent list")
         recent.append({
             "order_id": order_id,
             "display_name": display_name,
             "vendor": order_data.get("vendors", ["Unknown"])[0],
         })
 
+    logger.info(f"SCHEDULED-DEBUG: Found {len(recent)} recent orders after filtering")
     return recent[-10:]
 
 
@@ -589,8 +599,12 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
             
             # Show "Scheduled orders" button only if recent orders exist
             recent_orders = get_recent_orders_for_same_time(order_id, vendor=None)
+            logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} (multi-vendor) - checking scheduled button, found {len(recent_orders)} recent orders")
             if recent_orders:
                 buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
+                logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} (multi-vendor) - ADDED scheduled button")
+            else:
+                logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} (multi-vendor) - NOT adding scheduled button (no recent orders)")
         else:
             # Single vendor: show ASAP/TIME/SCHEDULED buttons (vertical)
             buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}")])
@@ -598,8 +612,12 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
             
             # Show "Scheduled orders" button only if recent orders exist
             recent_orders = get_recent_orders_for_same_time(order_id, vendor=None)
+            logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} - checking scheduled button, found {len(recent_orders)} recent orders")
             if recent_orders:
                 buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
+                logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} - ADDED scheduled button")
+            else:
+                logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} - NOT adding scheduled button (no recent orders)")
         
         # Add Remove button for test orders
         if order.get("is_test") == True:
