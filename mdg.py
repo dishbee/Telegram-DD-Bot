@@ -119,19 +119,23 @@ def get_vendor_shortcuts_string(vendors: List[str]) -> str:
     return shortcuts[0] if shortcuts else "**??**"
 
 
-def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str] = None) -> List[Dict[str, str]]:
+def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str] = None, state: Dict[str, Any] = None) -> List[Dict[str, str]]:
     """Get recent CONFIRMED orders (from today only) for 'same time as' functionality.
     
     Args:
         current_order_id: The current order to exclude from results
         vendor: Optional vendor name to filter by (only show orders containing this vendor)
+        state: STATE dictionary (uses module-level STATE as fallback for backwards compatibility)
     """
+    if state is None:
+        state = STATE  # Fallback to module-level STATE for backwards compatibility
+    
     today_start = now().replace(hour=0, minute=1, second=0, microsecond=0)
     recent: List[Dict[str, str]] = []
 
-    logger.info(f"SCHEDULED-DEBUG: Checking for recent orders (current={current_order_id}, vendor={vendor}), STATE has {len(STATE)} orders")
+    logger.info(f"SCHEDULED-DEBUG: Checking for recent orders (current={current_order_id}, vendor={vendor}), STATE has {len(state)} orders")
 
-    for order_id, order_data in STATE.items():
+    for order_id, order_data in state.items():
         if order_id == current_order_id:
             continue
         
@@ -604,7 +608,7 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
                 )])
             
             # Show "Scheduled orders" button only if recent orders exist
-            recent_orders = get_recent_orders_for_same_time(order_id, vendor=None)
+            recent_orders = get_recent_orders_for_same_time(order_id, vendor=None, state=STATE)
             logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} (multi-vendor) - checking scheduled button, found {len(recent_orders)} recent orders")
             if recent_orders:
                 buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
@@ -617,7 +621,7 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
             buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{int(now().timestamp())}")])
             
             # Show "Scheduled orders" button only if recent orders exist
-            recent_orders = get_recent_orders_for_same_time(order_id, vendor=None)
+            recent_orders = get_recent_orders_for_same_time(order_id, vendor=None, state=STATE)
             logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} - checking scheduled button, found {len(recent_orders)} recent orders")
             if recent_orders:
                 buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
@@ -698,7 +702,7 @@ def mdg_time_request_keyboard(order_id: str, order: Optional[Dict[str, Any]] = N
         buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{int(now().timestamp())}")])
         
         # Show "Scheduled orders" button only if recent orders exist
-        recent_orders = get_recent_orders_for_same_time(order_id, vendor=None)
+        recent_orders = get_recent_orders_for_same_time(order_id, vendor=None, state=STATE)
         if recent_orders:
             buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
         
@@ -939,7 +943,7 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
 def same_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
     """Build same time as selection keyboard."""
     try:
-        recent = get_recent_orders_for_same_time(order_id)
+        recent = get_recent_orders_for_same_time(order_id, state=STATE)
         rows: List[List[InlineKeyboardButton]] = []
 
         for order_info in recent:

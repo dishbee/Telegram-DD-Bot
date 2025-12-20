@@ -2528,7 +2528,7 @@ def telegram_webhook():
                     order_id, vendor = data[1], data[2]
                     logger.info(f"VENDOR_SAME: Processing for order {order_id}, vendor {vendor}")
                     
-                    recent = get_recent_orders_for_same_time(order_id)
+                    recent = get_recent_orders_for_same_time(order_id, state=STATE)
                     if recent:
                         msg = await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
@@ -3005,7 +3005,7 @@ def telegram_webhook():
                     order_id = data[1]
                     logger.info(f"Processing SAME TIME AS request for order {order_id}")
                     
-                    recent = get_recent_orders_for_same_time(order_id)
+                    recent = get_recent_orders_for_same_time(order_id, state=STATE)
                     if recent:
                         keyboard = same_time_keyboard(order_id)
                         msg = await safe_send_message(
