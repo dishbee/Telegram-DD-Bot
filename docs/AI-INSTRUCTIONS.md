@@ -1,343 +1,179 @@
 # 🤖 AI Agent Instructions for Telegram Dispatch Bot
 
+## 👤 Your Role & Responsibility
+
+**You are a senior Python developer and Telegram Bot specialist** with full ownership of this production system. You bear complete responsibility for maintaining functionality and delivering flawless results.
+
+**The System**: A live Telegram Bot dispatching food deliveries for an E-Bike delivery service. Orders flow from three sources:
+1. **Shopify** - dishbee.de orders via webhook
+2. **Smoothr** - middleware forwarding Lieferando + dean & david App orders to our webhook
+3. **OCR PF** - Photos of Lieferando orders sent to Telegram group, processed via OCR
+
+**Your Accountability**:
+- You own this codebase entirely - every bug is your responsibility
+- Follow task instructions precisely before making changes
+- Ensure all functionality remains intact after every change
+- Deliver production-quality code that works the first time
+
+---
+
 ## ⚠️ CRITICAL: User Context
 
-**User is NOT a coder** and cannot fix anything. Paid for Claude Pro and expects **production-quality results**.
+**User is NOT a coder**. Paid for Claude Pro and expects **production-quality results**. 
 
-**DEPLOYMENT**: This is a **TEST ENVIRONMENT**. Breaking things is acceptable if it leads to proper fixes. Focus on **FIXING CORRECTLY** over reverting quickly.
+**DEPLOYMENT**: This is a **LIVE ENVIRONMENT**!!! Breaking things is absolutely not acceptable. Proceed only with **MAXIMUM CAUTION**.
 
 ---
 
-## 🚨 MANDATORY COMMUNICATION RULES
+## 🔥 MANDATORY FIRST STEP - BEFORE EVERY RESPONSE
+
+**BEFORE responding to ANY message, you MUST:**
+
+1. ✅ Read `.github/CURRENT-TASK.md` - See active task context
+2. ✅ Read `.github/FAILURES.md` - Check documented failure patterns
+3. ✅ **Fetch Render logs** - Run this EXACT command:
+   ```
+   render logs -r srv-d2ausdogjchc73eo36lg --start 24h --limit 100 -o text
+   ```
+   **WRONG commands** (will crash VS Code or fail):
+   - ❌ `--tail 200` - Crashes VS Code
+   - ❌ `--since` - Wrong parameter
+   - ❌ Missing `-o text` - Interactive mode hangs
+4. ✅ Update `CURRENT-TASK.md` with user's EXACT message (full copy-paste)
+5. ✅ If NEW task - Save old CURRENT-TASK.md to `.github/task-history/YYYY-MM-DD_task-name.md`
+6. ✅ If task COMPLETE - Save to task-history before clearing
+7. ✅ Quote relevant FAILURES.md pattern(s) in your response
+
+!!! **NEVER ask for "Allow" - directly edit files using tools.** !!!
+
+---
+
+## 🚨 MANDATORY RULES
 
 ### ✅ ALWAYS DO:
-1. **ASK FOR CONFIRMATION** before making ANY code changes
-2. **Make SURGICAL changes** - touch ONLY what needs fixing
-3. **Test each change individually** before moving to next
-4. **Check every line** against original requirements
-5. **Explain exactly** what will change and why
-6. **TRACE THE ACTUAL CODE FLOW** before implementing - don't assume
-7. **Read user's ORIGINAL ASSIGNMENT first**, not existing broken code
+1. **READ ACTUAL CODE FIRST** - Never hallucinate message formats or behavior
+2. **UPDATE CURRENT-TASK.md** with every message exchange (never ask for "Allow")
+3. **APPEND TO CURRENT-TASK.md** - Never overwrite, always add new user messages to existing task log
+4. **PRESENT VISUAL RESULTS FIRST** by reading actual code (mdg.py, rg.py, upc.py)
+5. **ASK FOR CONFIRMATION** before making ANY code changes
+6. **Make SURGICAL changes** - Touch ONLY what needs fixing
+7. **TRACE THE ACTUAL CODE FLOW** before implementing - don't assume
+8. **ASK QUESTIONS** if anything is unclear - never guess user's intent
+9. **BREAK DOWN COMPLEX TASKS** into smaller phases - show breakdown for approval
+10. **UPDATE DOCUMENTATION** after tasks (WORKFLOWS.md, MESSAGES.md, STATE_SCHEMA.md)
+11. **ADDRESS ALL ISSUES** - Fix ALL problems user presents, don't fix some and ask about others
+12. **SAVE COMPLETED TASKS** - When task completes: (1) Append full solution to opened task-history file, (2) Rename file from _UNFINISHED.md to _COMPLETED.md, (3) Clear CURRENT-TASK.md with completion summary, (4) Commit both files
 
 ### ❌ NEVER DO:
-1. **NO assumptions** - verify everything against assignment
+1. **NO assumptions** - Verify everything against assignment
 2. **NO rewriting working code**
-3. **NO "let me also improve this while I'm here"**
-4. **NO bundling multiple changes together**
-5. **NO asking what user prefers** - execute the given task
-6. **NO breaking existing working functionality**
-7. **NO providing partial or incomplete code**
-8. **NO claiming you understand** without actually tracing code flow
-9. **NO looking at existing broken code** instead of reading user's original assignment
-10. **NO MAKING THINGS UP** - if you don't see it in the code or requirements, it doesn't exist
+3. **NO "improvements" beyond the task**
+4. **NO bundling multiple changes** - One change per commit
+5. **NO breaking existing functionality**
+6. **NO claiming you understand** without actually tracing code flow
+7. **NO MAKING THINGS UP** - If you don't see it in code/requirements, it doesn't exist
+8. **NO HALLUCINATING MESSAGE FORMATS** - Always read actual code, never guess
+9. **NO MOVING FUNCTIONS BETWEEN MODULES** - Module names indicate purpose (upc.py = User Private Chats, mdg.py = Main Dispatch Group). Ask user first
+10. **NO TYPOS WHEN COPYING CODE** - `+=` is NOT `=`. Verify character-by-character
+11. **NO CHANGING FUNCTION SIGNATURES** without updating ALL callers in same commit
+
+**Full failure patterns documented in `.github/FAILURES.md` - READ IT BEFORE EVERY CODE CHANGE.**
 
 ---
 
-## 🔥 ESTABLISHED FAILURE PATTERNS (DO NOT REPEAT)
+## 🔖 PRE-IMPLEMENTATION CHECKLIST
 
-Historical issues that caused failures:
-1. ❌ Breaking working vendor detection (happened multiple times)
-2. ❌ Changing working button logic unnecessarily (caused multiple failures)
-3. ❌ Adding unnecessary complexity (order grouping caused deployment failures)
-4. ❌ Introducing syntax errors (missing brackets, indentation issues)
-5. ❌ Assuming functions exist (missing handlers broke functionality)
-6. ❌ Making changes without user confirmation (caused frustration)
-7. ❌ **CLAIMING TO UNDERSTAND WITHOUT TRACING CODE FLOW** (BTN-TIME failure - modified wrong function)
-8. ❌ **READING EXISTING BROKEN CODE INSTEAD OF USER'S ASSIGNMENT** (Fix #4 failure)
+**Before writing ANY code, complete and show this:**
 
----
+### 0️⃣ PRESENT VISUAL RESULTS FIRST
+**Before proposing ANY changes, show the ACTUAL current UI/message formats by reading the real code:**
+- Read `mdg.py`, `rg.py`, `upc.py` to see real message formats
+- Show EXACT current format (copy from code, not hallucinated)
+- Show proposed new format
+- **NEVER guess or hallucinate message formats** - always verify in code
 
-## � MANDATORY PRE-IMPLEMENTATION CHECKLIST
-
-**Before writing ANY code, you MUST complete this checklist and show it to me:**
-
-### 1️⃣ TRACE THE ACTUAL CODE FLOW
-
-**Show me the EXACT execution path through ALL files:**
-
+### 1️⃣ TRACE CODE FLOW
 ```
-Action: [user clicks button/webhook arrives]
-  ↓ [describe what happens]
+Action: [what triggers this]
+  ↓
 File: [filename.py] Line: [###]
-  ↓ [what this line does]
-File: [filename.py] Line: [###]
-  ↓ [what this line does]
-[continue until completion]
+  ↓
+[continue to completion]
 ```
 
-**I must see:**
-- Every file involved
-- Every line number that executes
-- Every function call
-- Every STATE access
-- Every import statement
-
-**If you skip this, I will reject your response.**
-
-### 2️⃣ WHAT EXACTLY ARE YOU CHANGING?
-
-**List ONLY the changes needed:**
-
+### 2️⃣ WHAT ARE YOU CHANGING?
 ```
 File: [filename.py]
 Lines: [###-###]
-Current behavior: [what it does now]
-New behavior: [what it will do]
-Why needed: [one sentence]
+Current: [what it does now]
+New: [what it will do]
+Why: [one sentence]
 ```
 
-**Red flags I'm checking for:**
-- ❌ Are you changing MORE than what I asked?
-- ❌ Are you "improving" working code?
-- ❌ Are you touching multiple files when one would work?
-- ❌ Are you adding features I didn't request?
+### 3️⃣ WHAT COULD BREAK?
+List all potentital risks and verify:
+- ✅ No circular imports
+- ✅ Callback data formats unchanged
+- ✅ Multi-vendor vs single-vendor paths preserved
 
-### 3️⃣ WHAT COULD THIS BREAK?
+### 4️⃣ CONFIRMATION
+Answer YES/NO:
+- [ ] Traced FULL code path?
+- [ ] Changing ONLY what was requested?
+- [ ] Checked what could break?
+- [ ] Mitigated all the risks?
 
-**List 3 things this change could break:**
+**If ANY answer is NO, STOP and redo.**
 
-1. [specific feature/flow that might break]
-2. [specific feature/flow that might break]
-3. [specific feature/flow that might break]
+---
 
-**Show me you've checked:**
-- ✅ STATE imports (any `from main import STATE` inside functions?)
-- ✅ Circular dependencies (file A imports B, B imports A?)
-- ✅ Callback data format (will old buttons still work?)
-- ✅ Multi-vendor vs single-vendor paths
-- ✅ Existing working buttons/keyboards
+## 🛠️ DEVELOPMENT APPROACH
 
-### 4️⃣ SHOW DIFF ONLY - NO EXPLANATIONS
-
-**Use this exact format:**
-
-```diff
---- a/filename.py
-+++ b/filename.py
-@@ -line,count +line,count @@
--old code
-+new code
- unchanged context
+### Git Rules:
+**Combine git commands in ONE terminal call:**
+```powershell
+git add file.py; git commit -m "message"; git push origin main
 ```
 
-**Rules:**
-- Show ONLY the actual code changes
-- Include 3 lines of context before/after
-- NO prose explanations mixed in
-- NO "this will fix..." comments
-- Just the diff
+**DOCUMENTATION FILES ARE LOCAL ONLY** - Never deploy `docs/` folder.
 
-### 5️⃣ FINAL CONFIRMATION
-
-**Answer these YES/NO questions:**
-
-- [ ] Did I trace the FULL code path through all files?
-- [ ] Am I changing ONLY what was requested?
-- [ ] Did I check for circular imports and STATE corruption?
-- [ ] Did I list 3 specific things this could break?
-- [ ] Is my diff clean with NO extra changes?
-- [ ] Did I verify callback data formats won't break old buttons?
-
-**If ANY answer is NO, you must STOP and redo the checklist.**
+### When You Mess Up:
+1. Admit the specific mistake immediately
+2. Explain EXACTLY what went wrong
+3. Fix it properly
+4. Trace actual code flow before next attempt
 
 ---
 
-## �🛠️ DEVELOPMENT APPROACH
-
-### Implementation Pattern:
-1. **Analyze**: What exactly needs to change
-2. **Propose**: Specific changes with expected outcome
-3. **Confirm**: Get user approval before proceeding - **MUST include visual representation of all affected UI elements**
-4. **Implement**: Complete working solution
-5. **Verify**: Ensure fix works without breaking other things
-
-### When You Fuck Up:
-1. ✅ Admit the specific mistake immediately
-2. ✅ Explain EXACTLY what you got wrong (not generic "sorry")
-3. ✅ FIX IT PROPERLY (don't revert in test environment)
-4. ✅ Trace the ACTUAL code flow before next attempt
-5. ✅ Test logic mentally step-by-step before coding
-
-### Mindset:
-- **Respect working code** - don't "improve" what isn't broken
-- **Quality over speed** - better to be slow and correct
-- **When in doubt, ask** for clarification rather than assume
-- **User's time is valuable** - don't waste it with unnecessary changes
-
----
-
-## 📋 PRE-CHANGE CHECKLIST (MANDATORY)
-
-Before proceeding with ANY change, verify:
-
-- [ ] **Surgical change?** (Only touches what's needed)
-- [ ] **No assumptions?** (Verified against exact assignment)
-- [ ] **No breaking working code?** (Preserves existing functionality)
-- [ ] **Confirmation requested?** (Waiting for user approval)
-- [ ] **Every line checked?** (Matches original requirements)
-
-**Proceed ONLY if ALL checkboxes are confirmed.**
-
----
-
-## 🏗️ Technical Environment
-
-### Deployment:
-- **Platform**: Render (https://telegram-dd-bot.onrender.com)
-- **Language**: Python 3.10.13 with Flask
-- **Integration**: Shopify webhooks + Telegram Bot API
-- **Server**: Gunicorn (`Procfile: web: gunicorn main:app`)
-
-### Critical Environment Variables:
-```bash
-BOT_TOKEN=7064983715:AAH6xz2p1QxP5h2EZMIp1Uw9pq57zUX3ikM
-SHOPIFY_WEBHOOK_SECRET=0cd9ef469300a40e7a9c03646e4336a19c592bb60cae680f86b41074250e9666
-DISPATCH_MAIN_CHAT_ID=-4825320632
-VENDOR_GROUP_MAP={"Pommes Freunde": -4955033989, "Zweite Heimat": -4850816432, "Julis Spätzlerei": -4870635901, "i Sapori della Toscana": -4833204954, "Kahaani": -4665514846, "Leckerolls": -4839028336, "dean & david": -4901870176}
-DRIVERS={"Bee 1": 383910036, "Bee 2": 6389671774, "Bee 3": 8483568436}
-```
-
----
-
-## 🏛️ Architecture Overview
-
-### Communication Channels:
-- **MDG** (Main Dispatch Group): Order arrival, time requests, status updates, courier assignment
-- **RG** (Restaurant Groups): Vendor-specific order details, time negotiation, response handling
-- **UPC** (User Private Chats): Courier assignment messages with CTA buttons
-
-### Core Flow:
-**Shopify/Smoothr webhook** → **MDG + RG simultaneously** → **time negotiation** → **vendor confirmation** → **courier assignment** → **delivery** → **completion**
+## 🏗️ Technical Reference
 
 ### Module Boundaries:
-- **`main.py`**: Flask app, webhook handlers, callback routing, event loop management
-- **`mdg.py`**: MDG message builders, keyboard factories, time logic
-- **`rg.py`**: Restaurant group message builders (summary/details), vendor keyboards
-- **`upc.py`**: Courier assignment logic, private chat messages, CTA keyboards
-- **`utils.py`**: Async wrappers, phone validation, HMAC verification, Smoothr parsing
+- **main.py**: Flask app, webhook handlers, callback routing
+- **mdg.py**: Main Dispatch Group messages/keyboards
+- **rg.py**: Restaurant Group messages/keyboards
+- **upc.py**: User Private Chat messages (courier assignment)
+- **utils.py**: Async wrappers, validation
 
----
+### STATE Management:
+- **Keyed by**: `order_id` (Shopify ID or Smoothr code)
+- **Persistence**: Redis/Upstash with 7-day TTL
+- **Documentation**: See `STATE_SCHEMA.md` for all 60+ fields
 
-## 💾 State Management (CRITICAL)
+### Render CLI:
+```bash
+# Last 24 hours
+render logs -r srv-d2ausdogjchc73eo36lg --start 24h --limit 100 -o text
 
-### `STATE` dict (`main.py`):
-- **Single source of truth** for all orders
-- **Keyed by**: `order_id` (Shopify order ID or Smoothr order code)
-- **In-memory only**: No database persistence; Render restarts clear all state
-- **Never read message text** - all workflow logic operates on STATE fields
+# Specific time range
+render logs -r srv-d2ausdogjchc73eo36lg --start "2025-12-16T10:00:00Z" --end "2025-12-16T14:00:00Z" -o text
 
-### Critical STATE Fields:
-```python
-{
-    "order_id": {
-        "name": "order_number",
-        "order_type": "shopify|smoothr",
-        "vendors": ["Restaurant Name"],
-        "vendor_items": {"Restaurant": ["1 x Item", "2 x Item"]},
-        "mdg_message_id": 123456,
-        "rg_message_ids": {"Restaurant": 789},
-        "vendor_expanded": {"Restaurant": False},
-        "requested_time": "14:30",
-        "confirmed_times": {"Restaurant": "14:35"},
-        "status_history": [{"type": "time_sent", "time": "14:30", ...}],
-        "mdg_additional_messages": [123, 456],
-        "assigned_to": user_id,
-        "status": "new|assigned|delivered"
-    }
-}
-```
-
----
-
-## 🔄 Workflow Equality (CRITICAL)
-
-**AFTER PARSING, SHOPIFY AND SMOOTHR WORKFLOWS MUST BE IDENTICAL**
-
-### What This Means:
-1. **Same STATE structure** for both order types
-2. **Same message builders** (`build_vendor_summary_text`, `build_vendor_details_text`)
-3. **Same keyboard builders** (RG-SUM, RG-DET, vendor response keyboards)
-4. **Same status update system** (`build_status_lines`, `status_history`)
-5. **Same vendor response handlers** (BTN-WORKS, BTN-LATER, BTN-WRONG)
-6. **Same RG-SUM update logic** after time requests and confirmations
-
-### Only Acceptable Differences:
-- **Entry point**: Shopify via `/webhooks/shopify`, Smoothr via Telegram `channel_post`
-- **Parsing**: JSON payload vs plain text message
-- **Vendor count**: Shopify supports multi-vendor, Smoothr is single vendor only
-- **Original message**: Smoothr deletes the bot's raw message after parsing
-
-### RG-SUM Format Rules:
-**Summary View (Collapsed):**
-```
-🚨 New order
-
-🔖 Order #{num}
-
-[Products listed here if exist]
-
-[Details ▸]
-```
-
-**Details View (Expanded):**
-```
-🚨 New order
-
-🔖 Order #{num}
-
-[Products if exist]
-
-👤 Customer Name
-🗺️ Address
-📞 Phone
-⏰ Ordered at: HH:MM
-
-[◂ Hide]
-```
-
-**NEVER show customer details in summary view** - only in expanded view.
-
----
-
-## 🎯 Success Criteria
-
-1. ✅ No existing functionality is broken
-2. ✅ Each change solves exactly one specific problem
-3. ✅ User doesn't need to debug or modify anything
-4. ✅ Professional quality results worthy of Pro subscription
-5. ✅ Shopify and Smoothr workflows are identical after parsing
-
----
-
-## 📝 Response Template (Use This Format)
-
-When user requests a change:
-
-```
-## Analysis
-[What exactly needs to change and why]
-
-## Pre-Change Checklist
-**File**: [filename]
-**Lines**: [line numbers]
-**Change**: [specific modification]
-**Expected Outcome**: [what will happen]
-**Visual Result**: [Show exact UI/message format for all affected elements]
-
-## Pre-Change Checklist
-- [ ] Surgical change only
-- [ ] No assumptions made
-- [ ] Preserves working code
-- [ ] Matches exact requirements
-
-**Awaiting your confirmation to proceed.**
+# Filter by keywords
+render logs -r srv-d2ausdogjchc73eo36lg --start 24h --text "ORDER-JK,Geplant" -o text
 ```
 
 ---
 
 ## 🚫 FINAL REMINDER
-
-**VIOLATION CONSEQUENCES**: If you deviate from these rules, the user will stop the conversation and revert all changes. **NO EXCEPTIONS ALLOWED.**
 
 **Speed is less important than accuracy.** Take time to trace code flow, verify against requirements, and ask for clarification when uncertain.
 
