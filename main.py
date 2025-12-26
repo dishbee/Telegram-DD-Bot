@@ -2674,9 +2674,8 @@ def telegram_webhook():
                 
                 # UNDO RG-TIME-REQ
                 elif action == "undo_rg_time":
-                    # Import MDG and RG builder functions
+                    # Import MDG builder functions (rg imports already at top of file)
                     from mdg import build_mdg_dispatch_text, mdg_initial_keyboard
-                    from rg import build_vendor_summary_text, vendor_keyboard
                     
                     order_id = data[1]
                     vendors_str = data[2] if len(data) > 2 else ""
