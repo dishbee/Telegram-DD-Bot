@@ -332,7 +332,7 @@ async def safe_delete_message(chat_id: int, message_id: int):
     except Exception as e:
         logger.error(f"Error deleting message {message_id}: {e}")
 
-async def send_status_message(chat_id: int, text: str, auto_delete_after: int = 20):
+async def send_status_message(chat_id: int, text: str, auto_delete_after: int = 20, reply_markup=None):
     """
     Send a status message that auto-deletes after specified seconds.
     
@@ -345,9 +345,10 @@ async def send_status_message(chat_id: int, text: str, auto_delete_after: int = 
         chat_id: Chat to send message to
         text: Message text
         auto_delete_after: Seconds to wait before deletion (default: 20)
+        reply_markup: Optional keyboard to attach to message
     """
     try:
-        msg = await safe_send_message(chat_id, text)
+        msg = await safe_send_message(chat_id, text, reply_markup)
         # Schedule deletion in background
         asyncio.create_task(_delete_after_delay(chat_id, msg.message_id, auto_delete_after))
     except Exception as e:
@@ -360,6 +361,21 @@ async def _delete_after_delay(chat_id: int, message_id: int, delay: int):
         await safe_delete_message(chat_id, message_id)
     except Exception as e:
         logger.error(f"Error in _delete_after_delay: {e}")
+
+def build_undo_keyboard(order_id: str, vendors: list) -> InlineKeyboardMarkup:
+    """
+    Build keyboard with single Undo button for rg-time-req status messages.
+    
+    Args:
+        order_id: Order ID for callback data
+        vendors: List of vendor names (for multi-vendor tracking)
+    
+    Returns:
+        InlineKeyboardMarkup with [↩️ Undo] button
+    """
+    # Join vendors with comma for callback data
+    vendors_str = ",".join(vendors)
+    return InlineKeyboardMarkup([[InlineKeyboardButton("↩️ Undo", callback_data=f"undo_rg_time|{order_id}|{vendors_str}")]])
 
 def build_assignment_confirmation_message(order: dict) -> str:
     """
@@ -2458,7 +2474,8 @@ def telegram_webhook():
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
                         f"⚡ Asap request for 🔖 {order_num} sent to **{vendor_shortcut}**",
-                        auto_delete_after=20
+                        auto_delete_after=30,
+                        reply_markup=build_undo_keyboard(order_id, [vendor])
                     )
                     
                     # Update MDG and RG messages
@@ -2648,11 +2665,74 @@ def telegram_webhook():
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
                         f"🕒 Time request ({selected_time}) for 🔖 {order_num} sent to **{vendor_shortcut}**",
-                        auto_delete_after=20
+                        auto_delete_after=30,
+                        reply_markup=build_undo_keyboard(order_id, [vendor] if vendor != 'all' else order.get('vendors', []))
                     )
                     
                     # Clean up additional MDG messages
                     await cleanup_mdg_messages(order_id)
+                
+                # UNDO RG-TIME-REQ
+                elif action == "undo_rg_time":
+                    # Import MDG builder functions
+                    from mdg import build_mdg_dispatch_text, mdg_initial_keyboard
+                    
+                    order_id = data[1]
+                    vendors_str = data[2] if len(data) > 2 else ""
+                    vendors_to_undo = vendors_str.split(",") if vendors_str else []
+                    
+                    logger.info(f"UNDO rg-time-req for order {order_id}, vendors: {vendors_to_undo}")
+                    
+                    order = STATE.get(order_id)
+                    if not order:
+                        logger.warning(f"Order {order_id} not found in state for undo")
+                        return
+                    
+                    # 1. Delete RG-TIME-REQ messages from vendor groups
+                    rg_time_request_ids = order.get("rg_time_request_ids", {})
+                    for vendor in vendors_to_undo:
+                        rg_msg_id = rg_time_request_ids.get(vendor)
+                        vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+                        if rg_msg_id and vendor_group_id:
+                            await safe_delete_message(vendor_group_id, rg_msg_id)
+                            logger.info(f"Deleted RG-TIME-REQ message {rg_msg_id} from {vendor}")
+                            # Remove from tracking
+                            del rg_time_request_ids[vendor]
+                    
+                    # 2. Clear requested_time / requested_times for undone vendors
+                    if "requested_times" in order:
+                        for vendor in vendors_to_undo:
+                            if vendor in order["requested_times"]:
+                                del order["requested_times"][vendor]
+                    
+                    # If all vendors undone, clear requested_time
+                    if not order.get("requested_times") or all(v not in order.get("requested_times", {}) for v in order.get("vendors", [])):
+                        order["requested_time"] = None
+                    
+                    # 3. Remove status_history entries for undone vendors
+                    order["status_history"] = [
+                        s for s in order.get("status_history", [])
+                        if not (s.get("type") in ["asap_sent", "time_sent"] and s.get("vendor") in vendors_to_undo)
+                    ]
+                    
+                    # 4. Reset order status to 'new'
+                    order["status"] = "new"
+                    
+                    # 5. Update MDG message with initial keyboard (back to new order state)
+                    mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
+                    await safe_edit_message(
+                        DISPATCH_MAIN_CHAT_ID,
+                        order["mdg_message_id"],
+                        mdg_text,
+                        mdg_initial_keyboard(order)
+                    )
+                    
+                    # 6. Delete the status message (with undo button) that was clicked
+                    chat_id = cq["message"]["chat"]["id"]
+                    message_id = cq["message"]["message_id"]
+                    await safe_delete_message(chat_id, message_id)
+                    
+                    logger.info(f"UNDO complete for order {order_id}")
                 
                 # MDG DETAILS TOGGLE
                 elif action == "mdg_toggle":
@@ -2763,14 +2843,15 @@ def telegram_webhook():
                                     order["rg_time_request_ids"] = {}
                                 order["rg_time_request_ids"][vendor] = rg_time_msg.message_id
                     
-                    # Send status message to MDG (auto-delete after 20s)
+                    # Send status message to MDG (auto-delete after 30s with undo)
                     vendors = order.get("vendors", [])
                     vendor_shortcuts = "+".join([f"**{RESTAURANT_SHORTCUTS.get(v, v[:2].upper())}**" for v in vendors])
                     order_num = order.get('name', '')[-2:] if len(order.get('name', '')) >= 2 else order.get('name', '')
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
                         f"⚡ Asap request for 🔖 {order_num} sent to {vendor_shortcuts}",
-                        auto_delete_after=20
+                        auto_delete_after=30,
+                        reply_markup=build_undo_keyboard(order_id, vendors)
                     )
                     
                     # Add/update status in history (deduplicate by vendor)
@@ -3159,10 +3240,11 @@ def telegram_webhook():
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
                         f"🕒 Time request ({ref_time}) for 🔖 {order_num} sent to {vendor_shortcuts}",
-                        auto_delete_after=20
+                        auto_delete_after=30,
+                        reply_markup=build_undo_keyboard(order_id, vendors_to_notify)
                     )
-                
-                
+
+
                 elif action == "time_relative":
                     # Import MDG builder functions
                     from mdg import build_mdg_dispatch_text, mdg_time_request_keyboard, mdg_initial_keyboard
@@ -3270,8 +3352,9 @@ def telegram_webhook():
                     vendor_shortcuts = "+".join([RESTAURANT_SHORTCUTS.get(v, v[:2].upper()) for v in vendors_to_notify])
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
-                        f"� Time request ({requested_time}) for 🔖 {order_num} sent to {vendor_shortcuts}",
-                        auto_delete_after=20
+                        f"🕒 Time request ({requested_time}) for 🔖 {order_num} sent to {vendor_shortcuts}",
+                        auto_delete_after=30,
+                        reply_markup=build_undo_keyboard(order_id, vendors_to_notify)
                     )
                 
                 elif action == "no_recent":
@@ -3490,7 +3573,8 @@ def telegram_webhook():
                     await send_status_message(
                         DISPATCH_MAIN_CHAT_ID,
                         f"🕒 Time request ({selected_time}) for 🔖 {order_num} sent to {vendor_shortcuts}",
-                        auto_delete_after=20
+                        auto_delete_after=30,
+                        reply_markup=build_undo_keyboard(order_id, target_vendors)
                     )
                     
                     # Update MDG
