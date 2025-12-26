@@ -2674,8 +2674,9 @@ def telegram_webhook():
                 
                 # UNDO RG-TIME-REQ
                 elif action == "undo_rg_time":
-                    # Import MDG builder functions
+                    # Import MDG and RG builder functions
                     from mdg import build_mdg_dispatch_text, mdg_initial_keyboard
+                    from rg import build_vendor_summary_text, vendor_keyboard
                     
                     order_id = data[1]
                     vendors_str = data[2] if len(data) > 2 else ""
@@ -2709,16 +2710,30 @@ def telegram_webhook():
                     if not order.get("requested_times") or all(v not in order.get("requested_times", {}) for v in order.get("vendors", [])):
                         order["requested_time"] = None
                     
-                    # 3. Remove status_history entries for undone vendors
+                    # 3. Clear confirmed_times for undone vendors (if vendor already confirmed)
+                    if "confirmed_times" in order:
+                        for vendor in vendors_to_undo:
+                            if vendor in order["confirmed_times"]:
+                                del order["confirmed_times"][vendor]
+                                logger.info(f"Cleared confirmed_time for {vendor}")
+                    
+                    # 4. Remove status_history entries for undone vendors (asap_sent, time_sent, confirmed)
                     order["status_history"] = [
                         s for s in order.get("status_history", [])
-                        if not (s.get("type") in ["asap_sent", "time_sent"] and s.get("vendor") in vendors_to_undo)
+                        if not (s.get("type") in ["asap_sent", "time_sent", "confirmed"] and s.get("vendor") in vendors_to_undo)
                     ]
                     
-                    # 4. Reset order status to 'new'
+                    # 5. Reset order status to 'new'
                     order["status"] = "new"
                     
-                    # 5. Update MDG message with initial keyboard (back to new order state)
+                    # 6. Delete MDG-CONF message if exists (created after all vendors confirm)
+                    mdg_conf_id = order.get("mdg_conf_message_id")
+                    if mdg_conf_id:
+                        await safe_delete_message(DISPATCH_MAIN_CHAT_ID, mdg_conf_id)
+                        logger.info(f"Deleted MDG-CONF message {mdg_conf_id}")
+                        order["mdg_conf_message_id"] = None
+                    
+                    # 7. Update MDG-ORD message with initial keyboard (back to new order state)
                     mdg_text = build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False))
                     await safe_edit_message(
                         DISPATCH_MAIN_CHAT_ID,
@@ -2727,7 +2742,17 @@ def telegram_webhook():
                         mdg_initial_keyboard(order)
                     )
                     
-                    # 6. Delete the status message (with undo button) that was clicked
+                    # 8. Update RG-SUM messages for each vendor (reset status line + keyboard)
+                    for vendor in vendors_to_undo:
+                        vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
+                        rg_msg_id = order.get("rg_message_ids", {}).get(vendor)
+                        if vendor_group_id and rg_msg_id:
+                            rg_text = build_vendor_summary_text(order, vendor)
+                            rg_kb = vendor_keyboard(order_id, vendor, False, order)  # Collapsed, no Problem button
+                            await safe_edit_message(vendor_group_id, rg_msg_id, rg_text, rg_kb)
+                            logger.info(f"Reset RG-SUM for {vendor}")
+                    
+                    # 9. Delete the status message (with undo button) that was clicked
                     chat_id = cq["message"]["chat"]["id"]
                     message_id = cq["message"]["message_id"]
                     await safe_delete_message(chat_id, message_id)
