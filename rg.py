@@ -199,8 +199,8 @@ def vendor_time_keyboard(order_id: str, vendor: str, state: Dict[str, Any] = Non
     buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"vendor_asap|{order_id}|{vendor}")])
     buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{vendor}")])
     
-    # Show "Scheduled orders" button only if recent orders exist for this vendor
-    recent_orders = get_recent_orders_for_same_time(order_id, vendor=vendor, state=effective_state)
+    # Show "Scheduled orders" button if ANY confirmed orders exist today (not vendor-specific)
+    recent_orders = get_recent_orders_for_same_time(order_id, vendor=None, state=effective_state)
     if recent_orders:
         buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{vendor}")])
     
