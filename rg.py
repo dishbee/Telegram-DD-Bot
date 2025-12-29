@@ -187,17 +187,20 @@ def build_vendor_details_text(order: Dict[str, Any], vendor: str) -> str:
         return f"Error formatting details for {vendor}"
 
 
-def vendor_time_keyboard(order_id: str, vendor: str) -> InlineKeyboardMarkup:
+def vendor_time_keyboard(order_id: str, vendor: str, state: Dict[str, Any] = None) -> InlineKeyboardMarkup:
     """Build time request buttons for a specific vendor (vertical layout with scheduled orders)."""
     from mdg import get_recent_orders_for_same_time
-    from main import STATE
+    from main import STATE as MAIN_STATE
+    
+    # Use passed state if available, otherwise fall back to imported STATE
+    effective_state = state if state is not None else MAIN_STATE
     
     buttons = []
     buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"vendor_asap|{order_id}|{vendor}")])
     buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{vendor}")])
     
     # Show "Scheduled orders" button only if recent orders exist for this vendor
-    recent_orders = get_recent_orders_for_same_time(order_id, vendor=vendor, state=STATE)
+    recent_orders = get_recent_orders_for_same_time(order_id, vendor=vendor, state=effective_state)
     if recent_orders:
         buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{vendor}")])
     

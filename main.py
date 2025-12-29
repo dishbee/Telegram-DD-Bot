@@ -2409,7 +2409,7 @@ def telegram_webhook():
                     msg = await safe_send_message(
                         DISPATCH_MAIN_CHAT_ID,
                         f"Request time from {chef_emoji} **{vendor}**:",
-                        vendor_time_keyboard(order_id, vendor)
+                        vendor_time_keyboard(order_id, vendor, state=STATE)
                     )
                     
                     # Track additional message for cleanup
@@ -2492,7 +2492,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                            mdg_time_request_keyboard(order_id, order)
+                            mdg_time_request_keyboard(order_id, order, state=STATE)
                         )
                     
                     vendor_group_id = VENDOR_GROUP_MAP.get(vendor)
@@ -2553,7 +2553,7 @@ def telegram_webhook():
                         msg = await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             f"🔗 Select order to match timing for {vendor}:",
-                            same_time_keyboard(order_id)
+                            same_time_keyboard(order_id, state=STATE)
                         )
                         # Track additional message for cleanup
                         order = STATE.get(order_id)
@@ -2914,7 +2914,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_time_request_keyboard(order_id, order)
+                            mdg_time_request_keyboard(order_id, order, state=STATE)
                         )
                     
                     # Update RG messages with new status
@@ -3103,7 +3103,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_time_request_keyboard(order_id, order)
+                            mdg_time_request_keyboard(order_id, order, state=STATE)
                         )
                     
                     # Clean up additional MDG messages
@@ -3115,7 +3115,7 @@ def telegram_webhook():
                     
                     recent = get_recent_orders_for_same_time(order_id, state=STATE)
                     if recent:
-                        keyboard = same_time_keyboard(order_id)
+                        keyboard = same_time_keyboard(order_id, state=STATE)
                         msg = await safe_send_message(
                             DISPATCH_MAIN_CHAT_ID,
                             "🔗 Select order to match timing:",
@@ -3252,7 +3252,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_time_request_keyboard(order_id, order)
+                            mdg_time_request_keyboard(order_id, order, state=STATE)
                         )
                     
                     # Clean up additional MDG messages
@@ -3353,7 +3353,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_time_request_keyboard(order_id, order)
+                            mdg_time_request_keyboard(order_id, order, state=STATE)
                         )
                     
                     # Update RG messages with new status
@@ -3500,7 +3500,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_time_request_keyboard(order_id, order)
+                            mdg_time_request_keyboard(order_id, order, state=STATE)
                         )
                     
                     # Clean up additional MDG messages
@@ -3622,7 +3622,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_time_request_keyboard(order_id, order)
+                            mdg_time_request_keyboard(order_id, order, state=STATE)
                         )
                     
                     # Update RG messages with new status
@@ -3789,7 +3789,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                            mdg_time_request_keyboard(order_id, order)
+                            mdg_time_request_keyboard(order_id, order, state=STATE)
                         )
                     
                     # Update RG message with new status
@@ -3911,7 +3911,7 @@ def telegram_webhook():
                                 DISPATCH_MAIN_CHAT_ID,
                                 order["mdg_message_id"],
                                 build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                                mdg_time_request_keyboard(order_id, order)
+                                mdg_time_request_keyboard(order_id, order, state=STATE)
                             )
                         
                         # Update RG message with new status
@@ -4026,7 +4026,7 @@ def telegram_webhook():
                                 DISPATCH_MAIN_CHAT_ID,
                                 order["mdg_message_id"],
                                 build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                                mdg_time_request_keyboard(order_id, order)
+                                mdg_time_request_keyboard(order_id, order, state=STATE)
                             )
                         
                         # Update RG message with new status
@@ -4688,7 +4688,7 @@ def telegram_webhook():
                                 DISPATCH_MAIN_CHAT_ID,
                                 order["mdg_message_id"],
                                 updated_mdg_text,
-                                mdg_time_request_keyboard(order_id, order)
+                                mdg_time_request_keyboard(order_id, order, state=STATE)
                             )
                     
                     # Send temporary notification

@@ -649,7 +649,7 @@ def mdg_initial_keyboard(order: Dict[str, Any], state: Dict[str, Any] = None) ->
         return InlineKeyboardMarkup([])
 
 
-def mdg_time_request_keyboard(order_id: str, order: Optional[Dict[str, Any]] = None) -> InlineKeyboardMarkup:
+def mdg_time_request_keyboard(order_id: str, order: Optional[Dict[str, Any]] = None, state: Dict[str, Any] = None) -> InlineKeyboardMarkup:
     """Build MDG time request buttons per assignment requirements. Includes Details button.
     
     Args:
@@ -657,7 +657,11 @@ def mdg_time_request_keyboard(order_id: str, order: Optional[Dict[str, Any]] = N
         order: Optional order dict. If provided, uses this instead of looking up in STATE.
                This ensures the keyboard is built with the correct order data even if
                STATE reference is not synchronized.
+        state: Optional STATE dict. If provided, uses this for get_recent_orders_for_same_time.
+               This ensures fresh state from main.py is used instead of stale module-level STATE.
     """
+    # Use passed state if available, otherwise fall back to module-level STATE
+    effective_state = state if state is not None else STATE
     try:
         logger.info(f"MDG-KB-DEBUG: Building keyboard for order_id={order_id}")
         
@@ -711,7 +715,7 @@ def mdg_time_request_keyboard(order_id: str, order: Optional[Dict[str, Any]] = N
         buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{int(now().timestamp())}")])
         
         # Show "Scheduled orders" button only if recent orders exist
-        recent_orders = get_recent_orders_for_same_time(order_id, vendor=None, state=STATE)
+        recent_orders = get_recent_orders_for_same_time(order_id, vendor=None, state=effective_state)
         if recent_orders:
             buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
         
@@ -958,10 +962,12 @@ def order_reference_options_keyboard(current_order_id: str, ref_order_id: str, r
         return InlineKeyboardMarkup([])
 
 
-def same_time_keyboard(order_id: str) -> InlineKeyboardMarkup:
+def same_time_keyboard(order_id: str, state: Dict[str, Any] = None) -> InlineKeyboardMarkup:
     """Build same time as selection keyboard."""
     try:
-        recent = get_recent_orders_for_same_time(order_id, state=STATE)
+        # Use passed state if available, otherwise fall back to module-level STATE
+        effective_state = state if state is not None else STATE
+        recent = get_recent_orders_for_same_time(order_id, state=effective_state)
         rows: List[List[InlineKeyboardButton]] = []
 
         for order_info in recent:
