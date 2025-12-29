@@ -614,15 +614,8 @@ def mdg_initial_keyboard(order: Dict[str, Any], state: Dict[str, Any] = None) ->
                     f"Ask {chef_emoji} {shortcut}",
                     callback_data=f"req_vendor|{order_id}|{vendor}|{int(now().timestamp())}"
                 )])
-            
-            # Show "Scheduled orders" button only if recent orders exist
-            recent_orders = get_recent_orders_for_same_time(order_id, vendor=None, state=effective_state)
-            logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} (multi-vendor) - checking scheduled button, found {len(recent_orders)} recent orders")
-            if recent_orders:
-                buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
-                logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} (multi-vendor) - ADDED scheduled button")
-            else:
-                logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} (multi-vendor) - NOT adding scheduled button (no recent orders)")
+            # Note: btn-scheduled is NOT shown here for multi-vendor
+            # It appears after clicking a vendor button (in vendor_time_keyboard)
         else:
             # Single vendor: show ASAP/TIME/SCHEDULED buttons (vertical)
             buttons.append([InlineKeyboardButton("⚡ Asap", callback_data=f"req_asap|{order_id}|{int(now().timestamp())}")])
