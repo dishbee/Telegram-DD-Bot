@@ -133,7 +133,7 @@ def get_recent_orders_for_same_time(current_order_id: str, vendor: Optional[str]
     today_start = now().replace(hour=0, minute=1, second=0, microsecond=0)
     recent: List[Dict[str, str]] = []
 
-    logger.info(f"SCHEDULED-DEBUG: Checking for recent orders (current={current_order_id}, vendor={vendor}), STATE has {len(state)} orders")
+    logger.info(f"SCHEDULED-DEBUG: Checking for recent orders (current={current_order_id}, vendor={vendor}), state id={id(state)}, len={len(state)}, module STATE id={id(STATE)}, module STATE len={len(STATE) if STATE else 'None'}")
 
     for order_id, order_data in state.items():
         if order_id == current_order_id:
@@ -569,9 +569,14 @@ def build_mdg_dispatch_text(order: Dict[str, Any], show_details: bool = False) -
         return f"Error formatting order {order.get('name', 'Unknown')}"
 
 
-def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
+def mdg_initial_keyboard(order: Dict[str, Any], state: Dict[str, Any] = None) -> InlineKeyboardMarkup:
     """
     Build initial MDG keyboard with Details button above time request buttons.
+    
+    Args:
+        order: The order dict to build keyboard for
+        state: Optional STATE dict. If provided, uses this for recent orders check.
+               If None, falls back to module-level STATE.
     
     Layout:
     [Details ▸]
@@ -585,6 +590,9 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
     [Ask 👨‍🍳 LR]
     """
     try:
+        # Use provided state or fall back to module-level STATE
+        effective_state = state if state is not None else STATE
+        
         order_id = order["order_id"]
         vendors = order.get("vendors", [])
         order.setdefault("mdg_expanded", False)  # Track expansion state
@@ -608,7 +616,7 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
                 )])
             
             # Show "Scheduled orders" button only if recent orders exist
-            recent_orders = get_recent_orders_for_same_time(order_id, vendor=None, state=STATE)
+            recent_orders = get_recent_orders_for_same_time(order_id, vendor=None, state=effective_state)
             logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} (multi-vendor) - checking scheduled button, found {len(recent_orders)} recent orders")
             if recent_orders:
                 buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
@@ -621,7 +629,7 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
             buttons.append([InlineKeyboardButton("🕒 Time picker", callback_data=f"req_exact|{order_id}|{int(now().timestamp())}")])
             
             # Show "Scheduled orders" button only if recent orders exist
-            recent_orders = get_recent_orders_for_same_time(order_id, vendor=None, state=STATE)
+            recent_orders = get_recent_orders_for_same_time(order_id, vendor=None, state=effective_state)
             logger.info(f"SCHEDULED-KB-DEBUG: order_id={order_id} - checking scheduled button, found {len(recent_orders)} recent orders")
             if recent_orders:
                 buttons.append([InlineKeyboardButton("🗂 Scheduled orders", callback_data=f"req_scheduled|{order_id}|{int(now().timestamp())}")])
@@ -632,6 +640,7 @@ def mdg_initial_keyboard(order: Dict[str, Any]) -> InlineKeyboardMarkup:
         # Add Remove button for test orders
         if order.get("is_test") == True:
             buttons.append([InlineKeyboardButton("🗑 Remove", callback_data=f"remove_test|{order_id}|{int(now().timestamp())}")])
+
 
         return InlineKeyboardMarkup(buttons)
 

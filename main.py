@@ -156,7 +156,7 @@ def save_state():
                 success_count += 1
         
         if success_count > 0:
-            logger.info(f"💾 Redis: Saved {success_count}/{len(STATE)} orders")
+            logger.info(f"💾 Redis: Saved {success_count}/{len(STATE)} orders (STATE id={id(STATE)})")
     except Exception as e:
         logger.error(f"Failed to save STATE to Redis: {e}")
 
@@ -1090,7 +1090,7 @@ async def handle_test_pf_command(chat_id: int, message_id: int):
     # Send MDG-ORD
     from mdg import build_mdg_dispatch_text, mdg_initial_keyboard
     mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
-    keyboard = mdg_initial_keyboard(STATE[order_id])
+    keyboard = mdg_initial_keyboard(STATE[order_id], state=STATE)
     mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard)
     
     if mdg_msg:
@@ -1558,7 +1558,7 @@ async def process_shopify_webhook(payload: dict, is_test: bool = False):
         
         # Send to MDG
         mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
-        mdg_keyboard = mdg_initial_keyboard(STATE[order_id])
+        mdg_keyboard = mdg_initial_keyboard(STATE[order_id], state=STATE)
         mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, mdg_keyboard)
         
         if mdg_msg:
@@ -1675,7 +1675,7 @@ async def process_smoothr_order(smoothr_data: dict, is_test: bool = False):
         mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
         
         # Send MDG-ORD with initial keyboard
-        keyboard = mdg_initial_keyboard(STATE[order_id])
+        keyboard = mdg_initial_keyboard(STATE[order_id], state=STATE)
         mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard)
         
         if mdg_msg:
@@ -1799,7 +1799,7 @@ async def handle_pf_photo(message: dict):
         # Send MDG-ORD
         from mdg import build_mdg_dispatch_text
         mdg_text = build_mdg_dispatch_text(STATE[order_id], show_details=False)
-        keyboard = mdg_initial_keyboard(STATE[order_id])
+        keyboard = mdg_initial_keyboard(STATE[order_id], state=STATE)
         mdg_msg = await safe_send_message(DISPATCH_MAIN_CHAT_ID, mdg_text, keyboard)
         
         if mdg_msg:
@@ -2485,7 +2485,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                            mdg_initial_keyboard(order)
+                            mdg_initial_keyboard(order, state=STATE)
                         )
                     else:
                         await safe_edit_message(
@@ -2738,7 +2738,7 @@ def telegram_webhook():
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        mdg_initial_keyboard(order)
+                        mdg_initial_keyboard(order, state=STATE)
                     )
                     
                     # 8. Update RG-SUM messages for each vendor (reset status line + keyboard)
@@ -2782,7 +2782,7 @@ def telegram_webhook():
                         DISPATCH_MAIN_CHAT_ID,
                         order["mdg_message_id"],
                         mdg_text,
-                        mdg_initial_keyboard(order)
+                        mdg_initial_keyboard(order, state=STATE)
                     )
                 
                 elif action == "remove_test":
@@ -2907,7 +2907,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_initial_keyboard(order)
+                            mdg_initial_keyboard(order, state=STATE)
                         )
                     else:
                         await safe_edit_message(
@@ -3096,7 +3096,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_initial_keyboard(order)
+                            mdg_initial_keyboard(order, state=STATE)
                         )
                     else:
                         await safe_edit_message(
@@ -3245,7 +3245,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_initial_keyboard(order)
+                            mdg_initial_keyboard(order, state=STATE)
                         )
                     else:
                         await safe_edit_message(
@@ -3346,7 +3346,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_initial_keyboard(order)
+                            mdg_initial_keyboard(order, state=STATE)
                         )
                     else:
                         await safe_edit_message(
@@ -3493,7 +3493,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_initial_keyboard(order)
+                            mdg_initial_keyboard(order, state=STATE)
                         )
                     else:
                         await safe_edit_message(
@@ -3615,7 +3615,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             mdg_text,
-                            mdg_initial_keyboard(order)
+                            mdg_initial_keyboard(order, state=STATE)
                         )
                     else:
                         await safe_edit_message(
@@ -3782,7 +3782,7 @@ def telegram_webhook():
                             DISPATCH_MAIN_CHAT_ID,
                             order["mdg_message_id"],
                             build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                            mdg_initial_keyboard(order)
+                            mdg_initial_keyboard(order, state=STATE)
                         )
                     else:
                         await safe_edit_message(
@@ -3904,7 +3904,7 @@ def telegram_webhook():
                                 DISPATCH_MAIN_CHAT_ID,
                                 order["mdg_message_id"],
                                 build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                                mdg_initial_keyboard(order)
+                                mdg_initial_keyboard(order, state=STATE)
                             )
                         else:
                             await safe_edit_message(
@@ -4019,7 +4019,7 @@ def telegram_webhook():
                                 DISPATCH_MAIN_CHAT_ID,
                                 order["mdg_message_id"],
                                 build_mdg_dispatch_text(order, show_details=order.get("mdg_expanded", False)),
-                                mdg_initial_keyboard(order)
+                                mdg_initial_keyboard(order, state=STATE)
                             )
                         else:
                             await safe_edit_message(
@@ -4681,7 +4681,7 @@ def telegram_webhook():
                                 DISPATCH_MAIN_CHAT_ID,
                                 order["mdg_message_id"],
                                 updated_mdg_text,
-                                mdg_initial_keyboard(order)
+                                mdg_initial_keyboard(order, state=STATE)
                             )
                         else:
                             await safe_edit_message(
@@ -4947,7 +4947,7 @@ def shopify_webhook():
                 mdg_msg = await safe_send_message(
                     DISPATCH_MAIN_CHAT_ID,
                     mdg_text,
-                    mdg_initial_keyboard(order)
+                    mdg_initial_keyboard(order, state=STATE)
                 )
                 order["mdg_message_id"] = mdg_msg.message_id
                 
